@@ -1,0 +1,26 @@
+{
+  "name": "mental-board",
+  "productName": "Mental Board",
+  "version": "1.4.3",
+  "description": "An infinite canvas for your head: rich-text notes you can move, resize, link, colour and group into workflows.",
+  "main": "src/main.js",
+  "author": "Ahmad <ahmedbutixr@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "sandbox": "electron . --user-data-dir=.sandbox --remote-debugging-port=9444",
+    "icon": "node tools/make-icon.js",
+    "icons": "node tools/fetch-icons.js",
+    "fonts": "node tools/fetch-fonts.js",
+    "check:lang": "node tools/check-lang.js",
+    "check:icons": "node tools/check-icons.js",
+    "check:crlf": "node tools/check-crlf.js",
+    "check": "npm run check:lang && npm run check:icons && npm run check:crlf",
+    "build": "npm run check && node tools/build-app.js"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.3.6",
+    "electron": "^31.0.0"
+  }
+}

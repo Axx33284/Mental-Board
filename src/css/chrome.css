@@ -1,0 +1,116 @@
+/* Mental Board — chrome.css
+   The titlebar and the canvas itself: viewport, world, grid, marquee.
+
+   Sheet 2 of 8. styles.css was one append-only file and these are
+   its slices in the same order, so **later files still beat earlier ones** —
+   the <link> order in index.html is load-bearing, not decoration. Adding a
+   rule at the end of the last sheet is still how you win an argument with
+   one further up. See MAP.md §5. */
+/* ─────────────── 2. titlebar ─────────────── */
+.titlebar {
+  position: fixed; inset: 0 0 auto 0; height: 38px; z-index: 60;
+  display: flex; align-items: center;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.tb-drag { flex: 1; align-self: stretch; -webkit-app-region: drag; }
+.tb-left, .tb-right { display: flex; align-items: center; gap: 2px; padding: 0 4px; }
+.tb-left { padding-left: 6px; gap: 8px; }
+.tb-title { font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--dim); }
+/* the build number, quiet but permanent — see the comment in index.html */
+.tb-ver {
+  font-size: 10.5px; font-weight: 600; color: var(--dimmer);
+  padding: 1px 6px; border-radius: 6px; background: var(--surface-2);
+  font-variant-numeric: tabular-nums; unicode-bidi: isolate;
+}
+.tb-hint { font-size: 11.5px; color: var(--accent); opacity: 0; transition: opacity .18s; }
+.tb-hint.on { opacity: 1; }
+.tb-btn {
+  width: 30px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+  color: var(--dim); transition: background .14s, color .14s;
+}
+.tb-btn:hover { background: var(--surface-3); color: var(--text); }
+.tb-gear { width: 30px; height: 26px; }
+.tb-gear .ic { width: 17px; height: 17px; fill: none; }
+.tb-gear:hover .ic { transform: rotate(35deg); }
+.tb-gear .ic { transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+.win-btn { width: 40px; height: 38px; border-radius: 0; }
+.win-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.2; }
+.win-btn:hover { background: var(--surface-3); }
+.win-btn.danger:hover { background: #e03a3a; color: #fff; }
+
+/* ─────────────── 3. canvas ─────────────── */
+#stage { position: fixed; inset: 38px 0 0 0; }
+#viewport {
+  position: absolute; inset: 0; overflow: hidden; outline: none;
+  background-color: var(--bg);
+  background-repeat: repeat;
+  cursor: default;
+  touch-action: none;
+}
+/* ---- the paper ----
+   Six patterns, all of them background-images on one layer that paintGrid()
+   sizes and positions. They are declared here rather than built in JS because
+   a gradient stack is a thing you read, not a thing you compute — and because
+   each one has to pick up the theme's own `--grid-dot` / `--grid-line`, which
+   only CSS can see.
+
+   `--grid-fade` is why this is a layer and not a background on #viewport:
+   fading a pattern by multiplying alpha inside four gradient stops is a
+   calculation per theme per style, and fading a layer is one number. */
+#grid {
+  position: absolute; inset: 0; pointer-events: none;
+  background-repeat: repeat;
+  opacity: var(--grid-fade, 1);
+  transition: opacity .18s;
+}
+body[data-grid="plain"] #grid, .paper-eg[data-grid="plain"] { background-image: none; }
+body[data-grid="dots"] #grid, .paper-eg[data-grid="dots"] { background-image: radial-gradient(var(--grid-dot) 1.35px, transparent 1.35px); }
+body[data-grid="lines"] #grid, .paper-eg[data-grid="lines"] {
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+}
+/* Graph paper: a fine grid with a heavier line every fifth one, which is what
+   makes a distance readable at a glance instead of countable. */
+body[data-grid="graph"] #grid, .paper-eg[data-grid="graph"] {
+  background-image: linear-gradient(var(--grid-dot) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-dot) 1px, transparent 1px),
+                    linear-gradient(var(--grid-line) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+}
+/* Crosses: the intersections marked and the lines left out. Quieter than a
+   grid at the same pitch because there is nothing between the marks. */
+body[data-grid="cross"] #grid, .paper-eg[data-grid="cross"] {
+  background-image: linear-gradient(var(--grid-dot) 1.4px, transparent 1.4px),
+                    linear-gradient(90deg, var(--grid-dot) 1.4px, transparent 1.4px);
+  -webkit-mask-image: radial-gradient(circle at 0 0, #000 3.5px, transparent 3.6px);
+  mask-image: radial-gradient(circle at 0 0, #000 3.5px, transparent 3.6px);
+  -webkit-mask-repeat: repeat; mask-repeat: repeat;
+}
+/* Ruled lines, like a notebook — horizontal only, so long text on the canvas
+   sits on something rather than floating over a mesh. */
+body[data-grid="ruled"] #grid, .paper-eg[data-grid="ruled"] { background-image: linear-gradient(var(--grid-line) 1px, transparent 1px); }
+/* Isometric: three families of lines at 0°, 60° and 120°, for anything drawn
+   in plan. Repeating gradients rather than a tile, because the angle has to
+   stay exact at every zoom. */
+body[data-grid="iso"] #grid, .paper-eg[data-grid="iso"] {
+  background-image:
+    repeating-linear-gradient(60deg,  var(--grid-line) 0 1px, transparent 1px var(--iso-step, 26px)),
+    repeating-linear-gradient(-60deg, var(--grid-line) 0 1px, transparent 1px var(--iso-step, 26px)),
+    linear-gradient(90deg, var(--grid-dot) 1px, transparent 1px);
+}
+
+#viewport.panning, #viewport.panning * { cursor: grabbing !important; }
+#viewport.pan-ready { cursor: grab; }
+#viewport.linking { cursor: crosshair; }
+
+#world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+#framesLayer, #notesLayer { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+#linksSvg { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+#linkGhost { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40; }
+#linkGhost path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 6; opacity: .85; }
+
+#marquee {
+  position: absolute; z-index: 30; pointer-events: none;
+  border: 1.5px solid var(--accent); border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}

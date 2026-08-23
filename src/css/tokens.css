@@ -1,0 +1,266 @@
+/* Mental Board — tokens.css
+   Reset, design tokens, and all twelve theme palettes.
+
+   Sheet 1 of 8. styles.css was one append-only file and these are
+   its slices in the same order, so **later files still beat earlier ones** —
+   the <link> order in index.html is load-bearing, not decoration. Adding a
+   rule at the end of the last sheet is still how you win an argument with
+   one further up. See MAP.md §5. */
+/* =====================================================================
+   Mental Board — styles
+   Sections:
+     1  reset + design tokens (dark / light / accents / note colours)
+     2  titlebar
+     3  canvas: viewport, world, grid, marquee
+     4  notes
+     5  resize handles
+     6  workflow frames (groups)
+     7  links (ropes)
+     8  rich-text content inside a note
+     9  floating text toolbar + slash menu + context menu
+    10  fab, zoom bar, compass chips, toast, empty hint
+    11  overlays: settings, link, confirm, find
+    12  motion + reduced-motion
+   ===================================================================== */
+
+/* ─────────────── 1. reset + tokens ─────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body {
+  font-family: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+  font-size: calc(14px * var(--fs, 1));
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.hidden { display: none !important; }
+
+:root {
+  --accent: #6b8afd;
+  --accent-ink: #ffffff;
+  --radius: 14px;
+  --fs: 1;
+  --grid-size: 26px;
+}
+
+:root[data-theme="dark"] {
+  --bg:        #101118;
+  --grid-dot:  rgba(255,255,255,.085);
+  --grid-line: rgba(255,255,255,.045);
+  --surface:   #191b25;
+  --surface-2: #21242f;
+  --surface-3: #2a2e3b;
+  --text:      #e8eaf2;
+  --dim:       #9aa0b4;
+  --dimmer:    #6d7288;
+  --line:      rgba(255,255,255,.10);
+  --line-2:    rgba(255,255,255,.18);
+  --shadow:    0 12px 32px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.4);
+  --shadow-sm: 0 4px 14px rgba(0,0,0,.38);
+  --overlay:   rgba(6,7,11,.62);
+  --hi:        rgba(255,214,102,.32);
+  --danger:    #ff6b6b;
+  --code-bg:   rgba(255,255,255,.055);
+  --scroll:    rgba(255,255,255,.16);
+}
+
+:root[data-theme="light"] {
+  --bg:        #f2f3f7;
+  --grid-dot:  rgba(20,24,40,.14);
+  --grid-line: rgba(20,24,40,.07);
+  --surface:   #ffffff;
+  --surface-2: #f5f6fa;
+  --surface-3: #e9ebf2;
+  --text:      #1d2030;
+  --dim:       #666d85;
+  --dimmer:    #8a90a5;
+  --line:      rgba(20,24,40,.12);
+  --line-2:    rgba(20,24,40,.22);
+  --shadow:    0 12px 30px rgba(24,28,48,.14), 0 2px 6px rgba(24,28,48,.09);
+  --shadow-sm: 0 3px 12px rgba(24,28,48,.12);
+  --overlay:   rgba(28,32,48,.34);
+  --hi:        rgba(255,204,64,.45);
+  --danger:    #d64545;
+  --code-bg:   rgba(20,24,40,.055);
+  --scroll:    rgba(20,24,40,.2);
+}
+
+/* Accents are NOT listed here.
+
+   There used to be one `:root[data-accent="…"] { --accent: … }` rule per
+   accent, duplicating the `ACCENTS` map in renderer.js. Adding seven accents to
+   that map and forgetting the seven rules here is exactly what happened: the
+   swatches appeared in Settings and drew in the right colours (they are painted
+   from the map, inline), clicking one set `data-accent="lime"`, no rule
+   matched, and `--accent` silently kept its previous value. Half the palette
+   looked broken and nothing errored.
+
+   `applyTheme()` now writes `--accent` straight from the map, so the map is the
+   only place an accent exists. Adding one is one line, in one file, and it
+   cannot be half-done. The fallback below is what shows before the first
+   applyTheme() runs. */
+:root { --accent: #6b8afd; }
+
+/* ---- extra themes ----
+   Each one only restates the surface tokens; note colours below hang off
+   data-mode, so a new theme never has to repeat the nine-colour palette. */
+
+/* Paper — a brighter, higher-contrast white than Light */
+:root[data-theme="paper"] {
+  --bg:        #ffffff;
+  --grid-dot:  rgba(15,18,32,.16);
+  --grid-line: rgba(15,18,32,.08);
+  --surface:   #ffffff;
+  --surface-2: #f6f7fa;
+  --surface-3: #e7e9f0;
+  --text:      #0d1017;
+  --dim:       #4d5468;
+  --dimmer:    #7b8296;
+  --line:      rgba(15,18,32,.16);
+  --line-2:    rgba(15,18,32,.28);
+  --shadow:    0 12px 30px rgba(15,18,32,.13), 0 2px 6px rgba(15,18,32,.08);
+  --shadow-sm: 0 2px 10px rgba(15,18,32,.10);
+  --overlay:   rgba(20,24,38,.30);
+  --hi:        rgba(255,204,64,.5);
+  --danger:    #cc3434;
+  --code-bg:   rgba(15,18,32,.05);
+  --scroll:    rgba(15,18,32,.24);
+}
+
+/* Sand — warm paper, easier on the eyes for long sessions */
+:root[data-theme="sand"] {
+  --bg:        #f4efe4;
+  --grid-dot:  rgba(74,60,38,.17);
+  --grid-line: rgba(74,60,38,.08);
+  --surface:   #fffcf5;
+  --surface-2: #f7f1e4;
+  --surface-3: #ece3d1;
+  --text:      #2b2519;
+  --dim:       #6b6250;
+  --dimmer:    #968d78;
+  --line:      rgba(74,60,38,.15);
+  --line-2:    rgba(74,60,38,.26);
+  --shadow:    0 12px 30px rgba(74,60,38,.14), 0 2px 6px rgba(74,60,38,.09);
+  --shadow-sm: 0 3px 12px rgba(74,60,38,.12);
+  --overlay:   rgba(50,40,26,.32);
+  --hi:        rgba(255,196,60,.45);
+  --danger:    #bf4433;
+  --code-bg:   rgba(74,60,38,.06);
+  --scroll:    rgba(74,60,38,.22);
+}
+
+/* Midnight — true black, for OLED panels */
+:root[data-theme="midnight"] {
+  --bg:        #000000;
+  --grid-dot:  rgba(255,255,255,.10);
+  --grid-line: rgba(255,255,255,.05);
+  --surface:   #0a0a0d;
+  --surface-2: #121216;
+  --surface-3: #1d1d23;
+  --text:      #f0f1f6;
+  --dim:       #9b9daa;
+  --dimmer:    #6a6c7a;
+  --line:      rgba(255,255,255,.11);
+  --line-2:    rgba(255,255,255,.2);
+  --shadow:    0 14px 36px rgba(0,0,0,.85), 0 2px 6px rgba(0,0,0,.7);
+  --shadow-sm: 0 4px 16px rgba(0,0,0,.6);
+  --overlay:   rgba(0,0,0,.72);
+  --hi:        rgba(255,214,102,.3);
+  --danger:    #ff6b6b;
+  --code-bg:   rgba(255,255,255,.06);
+  --scroll:    rgba(255,255,255,.18);
+}
+
+/* Dim — soft grey, lower contrast than Dark */
+:root[data-theme="dim"] {
+  --bg:        #23252c;
+  --grid-dot:  rgba(255,255,255,.09);
+  --grid-line: rgba(255,255,255,.05);
+  --surface:   #2c2f38;
+  --surface-2: #343843;
+  --surface-3: #3f4450;
+  --text:      #e4e6ee;
+  --dim:       #a4a8b8;
+  --dimmer:    #7b8092;
+  --line:      rgba(255,255,255,.10);
+  --line-2:    rgba(255,255,255,.19);
+  --shadow:    0 12px 30px rgba(0,0,0,.38), 0 2px 6px rgba(0,0,0,.3);
+  --shadow-sm: 0 3px 12px rgba(0,0,0,.28);
+  --overlay:   rgba(16,17,21,.55);
+  --hi:        rgba(255,214,102,.3);
+  --danger:    #ff7b7b;
+  --code-bg:   rgba(255,255,255,.06);
+  --scroll:    rgba(255,255,255,.17);
+}
+
+/* Ocean — deep blue-black */
+:root[data-theme="ocean"] {
+  --bg:        #0a141e;
+  --grid-dot:  rgba(150,200,255,.13);
+  --grid-line: rgba(150,200,255,.06);
+  --surface:   #10202d;
+  --surface-2: #16293a;
+  --surface-3: #1f3648;
+  --text:      #e2edf6;
+  --dim:       #92a8ba;
+  --dimmer:    #647c90;
+  --line:      rgba(150,200,255,.13);
+  --line-2:    rgba(150,200,255,.24);
+  --shadow:    0 14px 34px rgba(0,8,16,.6), 0 2px 6px rgba(0,8,16,.45);
+  --shadow-sm: 0 4px 14px rgba(0,8,16,.4);
+  --overlay:   rgba(4,10,16,.62);
+  --hi:        rgba(120,220,255,.24);
+  --danger:    #ff7b7b;
+  --code-bg:   rgba(150,200,255,.07);
+  --scroll:    rgba(150,200,255,.2);
+}
+
+/* note colours — --nb fill, --nl border, --nc the accent stripe/dot.
+   Keyed on data-mode, not data-theme, so every dark theme shares one set. */
+:root[data-mode="dark"] {
+  --c-default-b: #191b25; --c-default-l: rgba(255,255,255,.11); --c-default-c: #6d7288;
+  --c-red-b:     #2c1a1e; --c-red-l:     rgba(255,120,120,.30); --c-red-c:     #ff7b7b;
+  --c-orange-b:  #2d2118; --c-orange-l:  rgba(255,166,90,.30);  --c-orange-c:  #ffa65a;
+  --c-amber-b:   #2c2716; --c-amber-l:   rgba(240,204,90,.30);  --c-amber-c:   #f0cc5a;
+  --c-green-b:   #17281d; --c-green-l:   rgba(105,222,142,.28); --c-green-c:   #69de8e;
+  --c-teal-b:    #142728; --c-teal-l:    rgba(90,220,214,.28);  --c-teal-c:    #5adcd6;
+  --c-blue-b:    #17212f; --c-blue-l:    rgba(114,175,255,.30); --c-blue-c:    #72afff;
+  --c-violet-b:  #221a2e; --c-violet-l:  rgba(180,140,255,.30); --c-violet-c:  #b48cff;
+  --c-pink-b:    #2b1924; --c-pink-l:  rgba(255,140,205,.30); --c-pink-c:    #ff8ccd;
+}
+:root[data-mode="dark"] { --c-pink-b: #2b1924; }
+/* Midnight wants flatter, darker note fills than the other dark themes */
+:root[data-theme="midnight"] { --c-default-b: #0d0d11; --c-default-l: rgba(255,255,255,.13); }
+:root[data-theme="dim"]      { --c-default-b: #2c2f38; }
+:root[data-theme="ocean"]    { --c-default-b: #10202d; }
+:root[data-theme="sand"]     { --c-default-b: #fffcf5; }
+:root[data-mode="light"] {
+  --c-default-b: #ffffff; --c-default-l: rgba(20,24,40,.13);  --c-default-c: #8a90a5;
+  --c-red-b:     #fff0f0; --c-red-l:     rgba(214,69,69,.34); --c-red-c:     #d64545;
+  --c-orange-b:  #fff3e8; --c-orange-l:  rgba(214,124,45,.34);--c-orange-c:  #d67c2d;
+  --c-amber-b:   #fdf7e0; --c-amber-l:   rgba(190,150,30,.36);--c-amber-c:   #b8901e;
+  --c-green-b:   #ecfaf0; --c-green-l:   rgba(45,150,85,.32); --c-green-c:   #2d9655;
+  --c-teal-b:    #e7f8f7; --c-teal-l:    rgba(24,150,140,.32);--c-teal-c:    #18968c;
+  --c-blue-b:    #eef4ff; --c-blue-l:    rgba(60,120,220,.32);--c-blue-c:    #3c78dc;
+  --c-violet-b:  #f4eeff; --c-violet-l:  rgba(130,80,220,.30);--c-violet-c:  #8250dc;
+  --c-pink-b:    #ffeef7; --c-pink-l:    rgba(214,70,150,.30);--c-pink-c:    #d64696;
+}
+
+[data-color="default"] { --nb: var(--c-default-b); --nl: var(--c-default-l); --nc: var(--c-default-c); }
+[data-color="red"]     { --nb: var(--c-red-b);     --nl: var(--c-red-l);     --nc: var(--c-red-c); }
+[data-color="orange"]  { --nb: var(--c-orange-b);  --nl: var(--c-orange-l);  --nc: var(--c-orange-c); }
+[data-color="amber"]   { --nb: var(--c-amber-b);   --nl: var(--c-amber-l);   --nc: var(--c-amber-c); }
+[data-color="green"]   { --nb: var(--c-green-b);   --nl: var(--c-green-l);   --nc: var(--c-green-c); }
+[data-color="teal"]    { --nb: var(--c-teal-b);    --nl: var(--c-teal-l);    --nc: var(--c-teal-c); }
+[data-color="blue"]    { --nb: var(--c-blue-b);    --nl: var(--c-blue-l);    --nc: var(--c-blue-c); }
+[data-color="violet"]  { --nb: var(--c-violet-b);  --nl: var(--c-violet-l);  --nc: var(--c-violet-c); }
+[data-color="pink"]    { --nb: var(--c-pink-b);    --nl: var(--c-pink-l);    --nc: var(--c-pink-c); }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }

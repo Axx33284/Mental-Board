@@ -1,0 +1,270 @@
+/* Mental Board — lang.css
+   Font stacks, per-paragraph bidi, the RTL mirror, the data-folder box, and icons everywhere.
+
+   Sheet 6 of 8. styles.css was one append-only file and these are
+   its slices in the same order, so **later files still beat earlier ones** —
+   the <link> order in index.html is load-bearing, not decoration. Adding a
+   rule at the end of the last sheet is still how you win an argument with
+   one further up. See MAP.md §5. */
+/* ─────────────── 18. language: scripts, bidi, RTL ───────────────
+   Appended last, so it beats everything above it.
+
+   Two separate things live here and must not be confused:
+     · **Bidi inside a note** — always on, in every language. Each block picks
+       its own side from its own text, so an Arabic paragraph and an English one
+       read correctly side by side in the same note.
+     · **Mirroring the interface** — only when the chosen language is RTL,
+       keyed off html[dir="rtl"]. The canvas is deliberately left out of it. */
+
+/* Arabic is drawn with the bundled Noto face (assets/fonts.css). Its
+   @font-face carries a unicode-range covering only Arabic, so listing it first
+   costs Latin text nothing — Latin characters fall straight through to Segoe.
+   The tail is a system fallback for the scripts we do not bundle. */
+body, button, input, textarea, select, .note-body, .frame-title {
+  font-family: "Noto Sans Arabic", "Segoe UI Variable Text", "Segoe UI",
+               "Nirmala UI", "Yu Gothic UI", "Microsoft YaHei UI", "Malgun Gothic",
+               "Leelawadee UI", "Segoe UI Emoji", Inter, system-ui, -apple-system, sans-serif;
+}
+.note-body code, .note-body pre.mb-code {
+  font-family: "Cascadia Mono", Consolas, "SF Mono", ui-monospace,
+               "Noto Sans Arabic", monospace;
+}
+
+/* ---- bidi inside a note (all languages) ---- */
+/* `plaintext` = resolve this block's direction from its first strong character
+   and align to that side. It is the one CSS value that gives per-paragraph
+   auto-direction; `dir="auto"` on the container alone would pick one side for
+   the whole note. A block the toolbar pinned carries an explicit dir instead,
+   and `isolate` stops that choice bleeding into the blocks around it. */
+.note-body,
+.note-body > p, .note-body > h1, .note-body > h2, .note-body > h3,
+.note-body > blockquote, .note-body > div, .note-body li, .note-body .mb-callout {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+.note-body [dir="ltr"], .note-body [dir="rtl"] { unicode-bidi: isolate; }
+/* code keeps its own direction — a shell line is LTR even in an Arabic note */
+.note-body pre.mb-code { unicode-bidi: isolate; direction: ltr; text-align: left; }
+/* names the user typed, shown outside a note */
+.ft-name, .cp-name, #findInput, #linkText { unicode-bidi: plaintext; }
+
+/* list markers, quote bars and checkboxes follow the paragraph, not the page */
+.note-body ul, .note-body ol { padding-left: 0; padding-inline-start: 1.35em; }
+.note-body blockquote {
+  border-left: 0; border-inline-start: 3px solid var(--nc);
+  padding: .25em 0; padding-inline-start: .85em;
+}
+.note-body ul.mb-todo { padding-left: 0; padding-inline-start: 2px; }
+.note-body ul.mb-todo > li { padding-left: 0; padding-inline-start: 25px; }
+.note-body ul.mb-todo > li::before { left: auto; inset-inline-start: 0; }
+.note-body ul.mb-todo > li.done::after { left: auto; inset-inline-start: 4.4px; }
+
+/* the two note placeholders are ::before content, so they cannot read the
+   catalogue directly — applyStaticText() hands them over as custom properties */
+.note-body:empty::before, .note-body > p:only-child:empty::before {
+  content: var(--ph-note, "");
+}
+.note.editing .note-body:empty::before,
+.note.editing .note-body > p:only-child:empty::before {
+  content: var(--ph-note-edit, "");
+}
+
+/* ---- the language picker ---- */
+.sel {
+  padding: 7px 11px; border-radius: 9px; font-size: 13px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+  outline: none; min-width: 170px;
+}
+.sel:hover { border-color: var(--line-2); }
+.sel:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.sel option { background: var(--surface); color: var(--text); }
+
+/* ---- mirroring, RTL languages only ---- */
+/* The canvas is exempt: notes and frames are placed by world coordinate, and
+   #viewport is pinned to dir="ltr" in index.html so that geometry never moves.
+   Only the chrome around it turns around. */
+/* The two corner controls do **not** turn around, and that is a deliberate
+   exception to the paragraph above.
+
+   They used to. The + moved to the bottom right in Arabic and the zoom bar to
+   the bottom left, which is what mirroring chrome means — and it was wrong for
+   the same reason `#viewport` is pinned to `dir="ltr"`: these are tools *on*
+   the canvas, not text around it. Nothing about a + button reads right to
+   left. What mirroring them actually did was move the two controls you reach
+   for most under a different hand every time the interface language changed,
+   on an app somebody might use in both languages in one afternoon.
+
+   So the fab stays bottom-left and the zoom bar stays bottom-right in every
+   language. Anything else pinned to a canvas corner should join them here
+   rather than being mirrored in the block below.
+
+   Removing the two mirror rules was not enough on its own. `#fabWrap` is a
+   flex column, so `align-items` places its children across the *inline* axis —
+   and `flex-start` follows the writing direction, which in Arabic is the right
+   edge. The wrapper stayed at left:18px and the button inside it slid to the
+   far side of the open menu. Pinning the wrapper to `ltr` makes its own layout
+   physical again; the Arabic labels inside still render right-to-left, because
+   bidi resolves each run of text on its own regardless of the box around it.
+   The zoom bar already carries dir="ltr" in the markup for the same reason. */
+html[dir="rtl"] #fabWrap { direction: ltr; }
+html[dir="rtl"] .set-val { margin-left: 0; margin-right: 6px; }
+html[dir="rtl"] .eh-card { text-align: right; }
+html[dir="rtl"] .eh-card ul { padding-left: 0; padding-right: 17px; }
+html[dir="rtl"] #findBar .ic { margin-left: 0; margin-right: 3px; }
+html[dir="rtl"] .fb-count { text-align: left; }
+html[dir="rtl"] .cm-item .k, html[dir="rtl"] .sm-item { text-align: right; }
+
+/* note and workflow chrome mirrors with the interface; the boxes themselves do
+   not move, because their left/top are world coordinates */
+/* The note's edge buttons deliberately do NOT mirror.
+
+   Everything else here flips with the interface, and for a while these did too:
+   `flex-direction: row-reverse` moved close/more/link/icon to the top-left in
+   Arabic. It is the textbook mirroring rule and it was wrong in practice —
+   these four are not part of the reading order of anything. They are the note's
+   window controls, and having ✕ jump to the other corner when the interface
+   language changes means aiming at where it was and hitting the icon picker.
+   The grip still stretches, so the row stays anchored to the top-right in both
+   directions. */
+html[dir="rtl"] .note-head { flex-direction: row; }
+html[dir="rtl"] .note::before { left: auto; right: 0; }
+html[dir="rtl"] .note-icon { margin-left: 0; margin-right: 12px; }
+/* The workflow title is NOT mirrored. It has a position of its own now —
+   nine of them, chosen per frame — and a language should not move a thing the
+   user placed. Same reasoning as the fab above: this sits on the canvas, and
+   the canvas is placed in world coordinates, not in reading order. Its
+   placement lives in css/later.css §43. */
+
+/* keypad hints and paths are Latin whatever the interface language is */
+kbd, .cm-item .k, .fab-item em, #setPath, #zLevel { unicode-bidi: isolate; }
+
+/* ─────────────── 19. where your files are ───────────────
+   The data folder is the one thing a user has to be able to find without
+   help — for backups, for moving to a new machine, and for the moment they
+   wonder whether an update ate their work. So it is shown as a real path they
+   can read, select and copy, not hidden behind a button. */
+.path-box {
+  display: grid; gap: 7px; padding: 11px 13px; margin-bottom: 10px;
+  border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line);
+}
+.path-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dimmer); font-weight: 700; }
+.path-val {
+  font-family: "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
+  font-size: 11.5px; color: var(--text); word-break: break-all; user-select: text;
+  cursor: text; line-height: 1.5;
+}
+.path-acts { display: flex; gap: 7px; flex-wrap: wrap; }
+.btn.small { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+/* a Windows path reads left to right in every language */
+html[dir="rtl"] .path-val { direction: ltr; text-align: left; }
+
+/* The confirm body may carry a path on its own line. Keep the break, and let
+   that line resolve its own direction so a Windows path stays readable inside
+   an otherwise right-to-left message. */
+#confirmBody { white-space: pre-line; unicode-bidi: plaintext; }
+
+/* ─────────────── 20. icons everywhere ───────────────
+   Every control that used to carry a letter, an emoji or a hand-drawn <svg>
+   now gets a Material Symbol from assets/icons.js, painted by paintStaticIcons()
+   in renderer.js. Three reasons it had to change:
+
+   - The emoji (🖍 🔗 💡 🖼) rendered in the system emoji colour font. They were
+     the only things in the app that ignored the theme, and they changed shape
+     between Windows versions.
+   - The letters (B I U S, H1, A−, ✕, ↑↓↔) inherited the UI font, so they
+     re-drew whenever the language changed — the toolbar came out a different
+     width in Arabic than in English.
+   - The hand-drawn <svg class="ic"> set was stroked at 1.7px while the Material
+     set is filled, so the gear and the magnifier read lighter than the icons
+     beside them.
+
+   `.mi` is sized here per context rather than globally: 1em would tie glyph size
+   to whatever font-size the surrounding control happens to use, and the text
+   size slider in Settings would then resize the toolbars too.
+
+   The Windows caption buttons at the top right are the deliberate exception —
+   they stay hand-drawn. Minimise/maximise/close are Windows chrome, not app
+   chrome, and Segoe's hairline versions are what every other window on the
+   desktop shows; a filled Material `close` next to them reads as a different
+   application. */
+
+/* ---- titlebar, fab, zoom ---- */
+.tb-gear .mi { width: 17px; height: 17px; transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+.tb-gear:hover .mi { transform: rotate(35deg); }
+#fab .mi { width: 25px; height: 25px; transition: transform .22s cubic-bezier(.3,1.5,.5,1); }
+#zoombar .mi { width: 17px; height: 17px; }
+
+/* ---- text toolbar ---- */
+#selBar .mi { width: 16px; height: 16px; }
+/* the "no highlight" swatch is the only icon on a coloured chip */
+.sb-pop button .mi { width: 12px; height: 12px; margin: auto; opacity: .7; }
+
+/* ---- slash menu, context menu ---- */
+.sm-ic .mi { width: 15px; height: 15px; }
+.cm-label { display: flex; align-items: center; gap: 7px; }
+.cm-label .mi { width: 13px; height: 13px; }
+
+/* ---- find bar ---- */
+#findBar .fb-ic { display: flex; color: var(--dimmer); margin-left: 3px; }
+#findBar .fb-ic .mi { width: 15px; height: 15px; }
+#findBar button { display: grid; place-items: center; }
+#findBar button .mi { width: 15px; height: 15px; }
+
+/* ---- sheets: close buttons and labelled buttons ---- */
+.sheet-x .mi { width: 16px; height: 16px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.b-ic { display: flex; }
+.b-ic .mi { width: 15px; height: 15px; opacity: .8; }
+.btn.primary .b-ic .mi, .btn.danger:hover .b-ic .mi { opacity: 1; }
+
+/* ---- settings rows ---- */
+.set-sec h3 { display: flex; align-items: center; gap: 8px; }
+.sec-ic { display: flex; color: var(--accent); }
+.sec-ic .mi { width: 14px; height: 14px; }
+.set-row > label, .set-check { display: flex; align-items: center; gap: 9px; }
+.row-ic { display: flex; color: var(--dimmer); }
+.row-ic .mi { width: 16px; height: 16px; }
+.set-check:hover .row-ic, .set-row:hover .row-ic { color: var(--dim); }
+
+/* The native select arrow cannot be themed — it stays black on a dark sheet in
+   some Windows builds. Ours is an icon sitting on top, with the native one
+   turned off and room reserved for it in the padding. */
+.sel-wrap { position: relative; display: inline-flex; align-items: center; }
+.sel-wrap .sel { appearance: none; -webkit-appearance: none; padding-right: 30px; }
+.sel-chev {
+  position: absolute; right: 9px; display: flex; pointer-events: none; color: var(--dimmer);
+}
+.sel-chev .mi { width: 16px; height: 16px; }
+
+/* ---- theme cards ---- */
+.tc-preview { position: relative; }
+.tc-mode { position: absolute; top: 5px; right: 6px; display: flex; opacity: .45; }
+.tc-mode .mi { width: 11px; height: 11px; }
+.theme-card.on .tc-mode { opacity: .85; }
+
+/* ---- icon picker search ---- */
+.ip-find { position: relative; display: block; }
+.ip-find-ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); display: flex; color: var(--dimmer); pointer-events: none; }
+.ip-find-ic .mi { width: 16px; height: 16px; }
+.ip-find .ip-search { padding-left: 36px; }
+
+/* ---- empty-board hint ---- */
+.eh-card ul { list-style: none; padding-left: 0; }
+.eh-card li { display: flex; align-items: flex-start; gap: 7px; }
+.eh-ic { display: flex; padding-top: 4px; color: var(--accent); opacity: .65; }
+.eh-ic .mi { width: 13px; height: 13px; }
+
+/* ---- compass chips ---- */
+.cp-arrow { display: flex; }
+.cp-arrow .mi { width: 13px; height: 13px; }
+
+/* ---- the RTL mirror, for the pieces added above ---- */
+html[dir="rtl"] #findBar .fb-ic { margin-left: 0; margin-right: 3px; }
+html[dir="rtl"] .sel-wrap .sel { padding-right: 12px; padding-left: 30px; }
+html[dir="rtl"] .sel-chev { right: auto; left: 9px; }
+html[dir="rtl"] .ip-find-ic { left: auto; right: 12px; }
+html[dir="rtl"] .ip-find .ip-search { padding-left: 12px; padding-right: 36px; }
+html[dir="rtl"] .eh-card ul { padding-right: 0; }
+html[dir="rtl"] .tc-mode { right: auto; left: 6px; }
+/* the chevron marking a tip should point into the text, whichever way it runs */
+html[dir="rtl"] .eh-ic .mi { transform: scaleX(-1); }

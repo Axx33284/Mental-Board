@@ -1,0 +1,133 @@
+/* Mental Board — icons.css
+   Icon sizing per context, the theme picker, the icon picker, and image editing.
+
+   Sheet 5 of 8. styles.css was one append-only file and these are
+   its slices in the same order, so **later files still beat earlier ones** —
+   the <link> order in index.html is load-bearing, not decoration. Adding a
+   rule at the end of the last sheet is still how you win an argument with
+   one further up. See MAP.md §5. */
+/* ─────────────── 14. icons ─────────────── */
+/* Material Symbols are filled paths, unlike the hand-drawn stroked .ic set. */
+.mi { width: 1em; height: 1em; fill: currentColor; display: block; flex: 0 0 auto; }
+
+.nh-grip { display: flex; align-items: center; font-size: 15px; }
+.nh-grip .mi { opacity: .55; }
+.nh-btn .mi { width: 15px; height: 15px; }
+.cm-item .mi { width: 16px; height: 16px; color: var(--dim); }
+.cm-item > span:not(.k) { flex: 1; }
+.fi-ic .mi { width: 16px; height: 16px; }
+#imgBar .mi, #stTools .mi { width: 16px; height: 16px; }
+
+/* the note's own icon: a badge above its text */
+.note-icon {
+  display: none; align-items: center; justify-content: center;
+  width: 30px; height: 30px; margin: 2px 0 -2px 12px; border-radius: 9px;
+  font-size: 22px; flex: 0 0 30px; color: var(--nc);
+}
+.note.has-icon .note-icon { display: flex; }
+.note-icon:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
+.note.has-icon .note-body { padding-top: 0; }
+
+.ft-icon {
+  width: 15px; height: 15px; flex: 0 0 15px; display: grid; place-items: center;
+  border-radius: 5px; font-size: 15px; color: var(--nc);
+}
+.ft-icon.is-dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ft-icon:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+.frame-title::before { content: none; }   /* replaced by .ft-icon */
+
+.cp-dot.has-icon { width: 15px; height: 15px; flex: 0 0 15px; border-radius: 0; background: none; font-size: 15px; }
+
+/* ─────────────── 15. theme picker ─────────────── */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 9px; margin-top: 6px; }
+.theme-card { padding: 0; border-radius: 11px; border: 1px solid var(--line); overflow: hidden; background: var(--surface-2); transition: border-color .14s, transform .12s; }
+.theme-card:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.theme-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.theme-card.auto:not(.on) { border-color: color-mix(in srgb, var(--accent) 55%, transparent); border-style: dashed; }
+.tc-preview { display: grid; place-items: center; height: 52px; }
+.tc-note { display: flex; flex-direction: column; justify-content: center; gap: 3px; width: 52px; height: 32px; padding: 0 7px; border-radius: 6px; border: 1px solid; }
+.tc-note i { display: block; height: 3px; border-radius: 2px; opacity: .75; }
+.tc-name { display: block; padding: 5px 0 7px; font-size: 11.5px; color: var(--dim); }
+.theme-card.on .tc-name { color: var(--text); font-weight: 600; }
+
+/* ─────────────── 16. icon picker ─────────────── */
+.ip-search {
+  width: 100%; padding: 9px 12px; margin: 6px 0 12px; border-radius: 9px; user-select: text;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--text); outline: none;
+}
+.ip-search:focus { border-color: var(--accent); }
+.ip-colors { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.ip-col { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; background: var(--nc); }
+.ip-col.auto { background: linear-gradient(135deg, #ff7b7b, #f0cc5a, #69de8e, #72afff, #b48cff); }
+.ip-col.on { border-color: var(--text); }
+.ip-col:hover { transform: scale(1.12); }
+.ip-scroll { max-height: 46vh; overflow: auto; }
+.ip-h { margin: 12px 0 7px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--dimmer); font-weight: 700; }
+.ip-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 5px; }
+.ip-cell {
+  height: 40px; border-radius: 9px; display: grid; place-items: center;
+  font-size: 21px; color: var(--dim); border: 1px solid transparent;
+}
+.ip-cell:hover { background: var(--surface-2); color: var(--text); }
+.ip-cell.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--accent); }
+
+/* ─────────────── 17. image editing ─────────────── */
+.note-body img.mb-img { cursor: pointer; }
+.note-body img.mb-img.img-sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note-body img.mb-img.al-left { margin-right: auto; margin-left: 0; }
+.note-body img.mb-img.al-center { margin-left: auto; margin-right: auto; }
+.note-body img.mb-img.al-right { margin-left: auto; margin-right: 0; }
+
+#imgBar {
+  position: fixed; z-index: 82; display: flex; align-items: center; gap: 1px; padding: 4px;
+  border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line);
+  box-shadow: var(--shadow); animation: pop .13s ease-out;
+}
+#imgBar button { min-width: 28px; height: 27px; padding: 0 6px; border-radius: 7px; color: var(--dim); display: grid; place-items: center; font-size: 13px; }
+#imgBar button:hover { background: var(--surface-3); color: var(--text); }
+.ib-size { font-size: 11.5px; color: var(--dimmer); padding: 0 5px; font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }
+
+#imgGrip {
+  position: fixed; z-index: 81; width: 14px; height: 14px; border-radius: 4px;
+  background: var(--accent); border: 2px solid var(--surface); cursor: nwse-resize;
+  box-shadow: var(--shadow-sm);
+}
+
+/* the crop / annotate studio */
+.studio-shell {
+  width: min(1000px, 94vw); height: min(760px, 92vh); display: flex; flex-direction: column;
+  border-radius: 18px; background: var(--surface); border: 1px solid var(--line);
+  box-shadow: var(--shadow); overflow: hidden; animation: rise .19s cubic-bezier(.2,.9,.3,1);
+}
+.st-tools, .st-colors { display: flex; gap: 3px; }
+.st-tools button {
+  width: 30px; height: 28px; border-radius: 8px; color: var(--dim); display: grid; place-items: center; font-size: 13px;
+}
+.st-tools button:hover { background: var(--surface-3); color: var(--text); }
+.st-tools button.on { background: var(--accent); color: var(--accent-ink); }
+.st-colors button { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; }
+.st-colors button.on { border-color: var(--text); }
+.st-width { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--dimmer); }
+.st-width input { width: 84px; }
+.studio-stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px; background: var(--surface-2); overflow: hidden; }
+.st-wrap { position: relative; line-height: 0; box-shadow: var(--shadow); }
+#stCanvas { display: block; max-width: 100%; cursor: crosshair; }
+.st-crop { position: absolute; pointer-events: none; }
+.stc { position: absolute; width: 14px; height: 14px; border-radius: 4px; background: #fff; border: 2px solid var(--accent); pointer-events: auto; }
+.stc.nw { left: -7px; top: -7px; cursor: nwse-resize; }
+.stc.ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.stc.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.stc.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+#stMarks { position: absolute; inset: 0; pointer-events: none; }
+.st-text-in {
+  position: absolute; pointer-events: auto; min-width: 130px; padding: 5px 9px;
+  border-radius: 8px; border: 2px solid var(--accent); background: rgba(0,0,0,.72);
+  font-size: 15px; font-weight: 600; outline: none; user-select: text; line-height: 1.2;
+}
+.studio-foot { display: flex; align-items: center; gap: 9px; padding: 13px 18px; border-top: 1px solid var(--line); }
+.st-hint { flex: 1; font-size: 12px; color: var(--dimmer); }
+
+body.no-anim *, body.no-anim *::before, body.no-anim *::after { transition: none !important; animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

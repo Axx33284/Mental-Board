@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<!-- lang/dir are placeholders: setLang() in js/helpers.js rewrites both on boot
+     and again whenever the language picker changes. -->
+<html lang="en" dir="ltr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<!-- This page never loads anything from the internet. No remote scripts, no
+     remote images, no remote fonts, no fetch of any kind.
+
+     `frame-src` allows one thing: a page served by the app itself on the
+     loopback interface, which exists only to host a video player. A page loaded
+     from file:// has no web origin and YouTube's player will not run on one
+     (Error 153) — so the player gets a real http origin of its own, on
+     127.0.0.1, and that page carries its own CSP naming the two player sites.
+     Nothing is contacted until the play button on a card is pressed. See
+     js/embeds.js and the player server in main.js. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob: file:; media-src 'self' data: blob: file:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; frame-src http://127.0.0.1:*">
+<title>Mental Board</title>
+<link rel="stylesheet" href="assets/fonts.css">
+<!-- styles.css was one append-only file; these are its slices, and **the order
+     below is the cascade**. A rule in later.css beats the same rule in
+     tokens.css because it is further down this list, not because of anything in
+     the files themselves — so moving a line here changes how the app looks.
+     Add new rules to the end of the last sheet. See MAP.md §5. -->
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/chrome.css">
+<link rel="stylesheet" href="css/notes.css">
+<link rel="stylesheet" href="css/menus.css">
+<link rel="stylesheet" href="css/icons.css">
+<link rel="stylesheet" href="css/lang.css">
+<link rel="stylesheet" href="css/boards.css">
+<link rel="stylesheet" href="css/later.css">
+</head>
+<body>
+
+<!-- Strings are never written into this file. Anything the user reads carries
+     data-t (text), data-t-title, data-t-ph (placeholder) or data-t-aria, and
+     applyStaticText() in js/helpers.js fills it from assets/lang/<id>.js. -->
+
+<!-- ───────────────────────── titlebar ───────────────────────── -->
+<header class="titlebar" id="titlebar">
+  <div class="tb-left">
+    <button class="tb-btn tb-gear" id="btnSettings" data-t-title="tb.settings" data-t-aria="set.title"></button>
+    <span class="tb-title" dir="ltr" data-t="app.name">Mental Board</span>
+    <!-- The build number, always on screen. It is the only thing that answers
+         "is this the new one?" without opening anything, and not being able to
+         answer that turned a shipped change into an argument. Filled by
+         paintVersion(); no data-t, it is a number in every language. -->
+    <span class="tb-ver" id="tbVer" dir="ltr"></span>
+    <span class="tb-hint" id="tbHint"></span>
+  </div>
+  <div class="tb-drag"></div>
+  <div class="tb-right">
+    <button class="tb-btn win-btn" id="btnMin" data-t-title="tb.min" data-t-aria="tb.min"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+    <button class="tb-btn win-btn" id="btnMax" data-t-title="tb.max" data-t-aria="tb.max"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
+    <button class="tb-btn win-btn danger" id="btnClose" data-t-title="tb.close" data-t-aria="tb.close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
+  </div>
+</header>
+
+<!-- ───────────────────────── board rail ─────────────────────────
+     One tile per board, down the left edge. Filled by renderBoardRail(); the
+     body gets .has-rail so #stage can make room for it. -->
+<nav id="boardRail" class="hidden" aria-label="Boards"></nav>
+
+<!-- right-click menu for a rail tile; separate from #ctxMenu because none of the
+     canvas actions apply to a board -->
+<div id="boardMenu" class="hidden" role="menu"></div>
+
+<!-- ───────────────────────── the canvas ───────────────────────── -->
+<main id="stage">
+  <!-- dir stays ltr here on purpose: notes and frames are positioned in world
+       coordinates, and mirroring the layer would move every one of them. -->
+  <div id="viewport" tabindex="0" dir="ltr">
+    <!-- The paper. Its own layer rather than a background on #viewport, so the
+         pattern can be faded without touching the page colour and so a style
+         made of several layers can carry several background-sizes. paintGrid()
+         in js/view.js writes all of them; nothing here is styled per theme. -->
+    <div id="grid" aria-hidden="true"></div>
+    <div id="world">
+      <div id="framesLayer"></div>
+      <svg id="linksSvg" xmlns="http://www.w3.org/2000/svg"><g id="linksInner"></g></svg>
+      <div id="notesLayer"></div>
+    </div>
+    <div id="marquee" class="hidden"></div>
+    <svg id="linkGhost" class="hidden" xmlns="http://www.w3.org/2000/svg"><path id="linkGhostPath"/></svg>
+  </div>
+
+  <!-- off-screen workflow signposts live here -->
+  <div id="compass" aria-live="polite" dir="ltr"></div>
+
+  <!-- Empty-board hint. It is also the onboarding: rather than telling a new
+       user what the app can do, it hands them a filled-in board to poke at.
+       #ehStarts is built by renderEmptyStarts(). -->
+  <div id="emptyHint" class="empty-hint hidden">
+    <div class="eh-card">
+      <h2 data-t="empty.title"></h2>
+      <p data-t="empty.lead"></p>
+      <div class="eh-starts" id="ehStarts"></div>
+      <!-- the marker is a chevron icon, not a list bullet — see .eh-card li -->
+      <ul class="eh-tips">
+        <li><span class="eh-ic"></span><span data-t="empty.tip1"></span></li>
+        <li><span class="eh-ic"></span><span data-t="empty.tip2"></span></li>
+        <li><span class="eh-ic"></span><span data-t="empty.tip3"></span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- bottom-left creation dial -->
+  <div id="fabWrap">
+    <div class="fab-menu" id="fabMenu">
+      <button class="fab-item" data-new="note" data-icon="sticky_note_2"><span class="fi-ic"></span><span><span data-t="fab.note"></span><em>N</em></span></button>
+      <button class="fab-item" data-new="frame" data-icon="select_all"><span class="fi-ic"></span><span><span data-t="fab.frame"></span><em>G</em></span></button>
+      <button class="fab-item" data-new="link" data-icon="link"><span class="fi-ic"></span><span><span data-t="fab.link"></span><em>L</em></span></button>
+    </div>
+    <button id="fab" data-t-title="fab.add" data-t-aria="fab.add"></button>
+  </div>
+
+  <!-- bottom-right zoom controls -->
+  <div id="zoombar" dir="ltr">
+    <button id="zOut" data-t-title="zoom.out"></button>
+    <button id="zLevel" data-t-title="zoom.reset">100%</button>
+    <button id="zIn" data-t-title="zoom.in"></button>
+    <span class="zb-sep"></span>
+    <button id="zFit" data-t-title="zoom.fit"></button>
+  </div>
+
+  <!-- shown while one colour is focused; click to drop back to all of them -->
+  <button id="focusChip" class="hidden">
+    <span class="fc-dot"></span><span id="focusLabel"></span><span class="fc-x"></span>
+  </button>
+
+  <div id="toast" class="hidden"></div>
+</main>
+
+<!-- ───────────────────────── floating text toolbar ───────────────────────── -->
+<!-- Every button here is an icon slot; the glyph names live in STATIC_ICONS in
+     js/init.js so there is one place to look when an icon is wrong. -->
+<div id="selBar" class="hidden" role="toolbar">
+  <button data-cmd="bold" data-t-title="fmt.bold"></button>
+  <button data-cmd="italic" data-t-title="fmt.italic"></button>
+  <button data-cmd="underline" data-t-title="fmt.underline"></button>
+  <button data-cmd="strikeThrough" data-t-title="fmt.strike"></button>
+  <button data-act="code" data-t-title="fmt.code"></button>
+  <span class="sb-sep"></span>
+  <button data-block="h1" data-t-title="fmt.h1"></button>
+  <button data-block="h2" data-t-title="fmt.h2"></button>
+  <button data-block="h3" data-t-title="fmt.h3"></button>
+  <span class="sb-sep"></span>
+  <button data-size="down" data-t-title="fmt.smaller"></button>
+  <input type="number" id="fontPx" min="8" max="96" step="1" dir="ltr" data-t-title="fmt.size" data-t-aria="fmt.size">
+  <button data-size="up" data-t-title="fmt.bigger"></button>
+  <span class="sb-sep"></span>
+  <!-- alignment, per block. Pressing the active one again clears it. -->
+  <button data-align="left" data-t-title="fmt.alignLeft"></button>
+  <button data-align="center" data-t-title="fmt.alignCenter"></button>
+  <button data-align="right" data-t-title="fmt.alignRight"></button>
+  <span class="sb-sep"></span>
+  <!-- per-paragraph direction; the note itself decides automatically until one
+       of these is pressed -->
+  <button data-dir="ltr" data-t-title="fmt.ltr"></button>
+  <button data-dir="rtl" data-t-title="fmt.rtl"></button>
+  <span class="sb-sep"></span>
+  <div class="sb-pop-wrap">
+    <button data-act="hilite" data-t-title="fmt.highlight"></button>
+    <div class="sb-pop" id="hilitePop"></div>
+  </div>
+  <button data-act="link" data-t-title="fmt.link"></button>
+  <button data-act="clear" data-t-title="fmt.clear"></button>
+</div>
+
+<!-- ───────────────────────── table toolbar ─────────────────────────
+     Shown while the caret is inside a table. Icon-only, so every button's glyph
+     has to carry the meaning on its own — see STATIC_ICONS. -->
+<div id="tableBar" class="hidden" role="toolbar">
+  <button data-tb="rowAdd" data-t-title="table.rowAdd"></button>
+  <!-- no delete-row glyph exists in the set, so it is composed: the row icon
+       with a small × badge. Same for the column one. -->
+  <button data-tb="rowDel" data-t-title="table.rowDel"><span class="tb-stack"><span class="tb-base"></span><span class="tb-badge"></span></span></button>
+  <span class="sb-sep"></span>
+  <button data-tb="colAdd" data-t-title="table.colAdd"></button>
+  <button data-tb="colDel" data-t-title="table.colDel"><span class="tb-stack"><span class="tb-base"></span><span class="tb-badge"></span></span></button>
+  <span class="sb-sep"></span>
+  <button data-tb="sortAsc" data-t-title="table.sortAsc"></button>
+  <button data-tb="sortDesc" data-t-title="table.sortDesc"></button>
+  <span class="sb-sep"></span>
+  <button data-tb="del" class="danger" data-t-title="table.del"></button>
+</div>
+
+<!-- the columns toolbar: same lifecycle as the table one, shown while the
+     caret is inside a .mb-cols. The count between + and − is the only place
+     the number of columns is ever displayed; it is read off the DOM, never
+     stored. -->
+<div id="colsBar" class="hidden" role="toolbar">
+  <button data-cb="add" data-t-title="cols.add"></button>
+  <span class="cb-count" id="colsCount">2</span>
+  <button data-cb="del" data-t-title="cols.del"></button>
+  <span class="sb-sep"></span>
+  <button data-cb="unwrap" class="danger" data-t-title="cols.unwrap"></button>
+</div>
+
+<!-- ───────────────────────── slash / block menu ───────────────────────── -->
+<div id="slashMenu" class="hidden" role="listbox">
+  <div class="sm-head" data-t="blocks.title"></div>
+  <div class="sm-list" id="slashList"></div>
+</div>
+
+<!-- ───────────────────────── right-click menu ───────────────────────── -->
+<div id="ctxMenu" class="hidden" role="menu"></div>
+
+<!-- "Paste as" — shown at the caret when a bare URL is pasted, because a URL
+     is ambiguous and guessing is worse than asking. Filled by openPasteMenu(). -->
+<div id="pasteMenu" class="hidden" role="menu"></div>
+
+<!-- ───────────────────────── settings ─────────────────────────
+     Nine panes behind a nav column rather than one nine-section scroll. The
+     scroll was the problem: every group looked like the one above it, nothing
+     said how much was left, and finding "note density" meant reading past
+     everything else. A tab is a place — you learn where a setting lives once.
+
+     The nav is a plain list of buttons, and every pane is in the DOM at all
+     times; switching only toggles a class. That keeps syncSettingsUI() a
+     single pass over controls that always exist, rather than something that
+     has to know which pane is showing. -->
+<div id="settings" class="overlay hidden">
+  <div class="sheet set-sheet" role="dialog" data-t-aria="set.title">
+    <header class="sheet-head">
+      <h2 data-t="set.title"></h2>
+      <button class="sheet-x" id="settingsClose" data-t-aria="tb.close"></button>
+    </header>
+
+    <div class="set-shell">
+      <nav class="set-nav" id="setNav" role="tablist">
+        <button class="set-tab on" data-tab="appearance" role="tab"><span class="tab-ic"></span><span data-t="set.appearance"></span></button>
+        <button class="set-tab" data-tab="canvas" role="tab"><span class="tab-ic"></span><span data-t="set.canvas"></span></button>
+        <button class="set-tab" data-tab="notes" role="tab"><span class="tab-ic"></span><span data-t="set.notes"></span></button>
+        <button class="set-tab" data-tab="links" role="tab"><span class="tab-ic"></span><span data-t="set.links"></span></button>
+        <button class="set-tab" data-tab="statuses" role="tab"><span class="tab-ic"></span><span data-t="set.statuses"></span></button>
+        <button class="set-tab" data-tab="templates" role="tab"><span class="tab-ic"></span><span data-t="set.templates"></span></button>
+        <button class="set-tab" data-tab="habits" role="tab"><span class="tab-ic"></span><span data-t="set.habits"></span></button>
+        <button class="set-tab" data-tab="board" role="tab"><span class="tab-ic"></span><span data-t="set.board"></span></button>
+        <button class="set-tab" data-tab="shortcuts" role="tab"><span class="tab-ic"></span><span data-t="set.shortcuts"></span></button>
+      </nav>
+
+      <div class="sheet-body set-panes" id="setPanes">
+
+        <section class="set-sec" data-pane="appearance">
+          <h3><span class="sec-ic"></span><span data-t="set.appearance"></span></h3>
+
+          <div class="set-row">
+            <label for="setLang"><span class="row-ic"></span><span data-t="set.language"></span></label>
+            <!-- the chevron is our own icon; the native one cannot be themed -->
+            <span class="sel-wrap"><select id="setLang" class="sel"></select><span class="sel-chev"></span></span>
+          </div>
+
+          <!-- What decides the theme. Three named states rather than a checkbox,
+               because "follow the clock" is not the opposite of anything. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.themeMode"></span></label>
+            <div class="seg" id="themeModeSeg">
+              <button data-mode="fixed" data-t="set.themeFixed"></button>
+              <button data-mode="system" data-t="set.themeSystem"></button>
+              <button data-mode="clock" data-t="set.themeClock"></button>
+            </div>
+          </div>
+          <!-- Which two themes the pair is made of. Shown for BOTH `system` and
+               `clock`, because they differ only in what asks the question — the
+               answer is the same pair either way.
+
+               Deliberately every theme in both lists, not the light ones on the
+               left and the dark ones on the right. "Light" and "dark" here mean
+               *your* day one and *your* night one; somebody who wants Dim by day
+               and Midnight by night is not making a mistake. See buildPairPickers(). -->
+          <div class="set-row sub" id="pairRow">
+            <label><span class="row-ic"></span><span data-t="set.themePair"></span></label>
+            <div class="pair-pick">
+              <span class="pair-fld">
+                <span class="pf-ic"></span>
+                <span class="pf-sw" id="pfSwLight"></span>
+                <span class="sel-wrap"><select id="setLightTheme" class="sel" data-t-aria="set.dayTheme"></select><span class="sel-chev"></span></span>
+              </span>
+              <span class="pair-fld">
+                <span class="pf-ic"></span>
+                <span class="pf-sw" id="pfSwDark"></span>
+                <span class="sel-wrap"><select id="setDarkTheme" class="sel" data-t-aria="set.nightTheme"></select><span class="sel-chev"></span></span>
+              </span>
+            </div>
+          </div>
+          <p class="set-note dim sub" id="pairHint" data-t="set.pairHint"></p>
+
+          <!-- shown only in clock mode; hidden by syncSettingsUI otherwise -->
+          <div class="set-row sub" id="clockRow">
+            <label><span class="row-ic"></span><span data-t="set.themeTimes"></span></label>
+            <div class="time-pair">
+              <span class="time-fld"><span class="tf-ic"></span><input type="time" id="setDayAt" data-t-aria="set.dayAt"></span>
+              <span class="time-fld"><span class="tf-ic"></span><input type="time" id="setNightAt" data-t-aria="set.nightAt"></span>
+            </div>
+          </div>
+          <p class="set-note dim sub" id="clockHint"></p>
+
+          <div class="theme-grid" id="themeGrid"></div>
+
+          <!-- The custom palette. Three colours and a mode; every other token a
+               theme needs is derived from them in customVars(). Shown only when
+               Custom is the theme actually in use. -->
+          <div class="ct-box" id="customBox">
+            <div class="ct-head"><span class="ct-ic"></span><span data-t="set.customTheme"></span></div>
+            <div class="ct-fields">
+              <label class="ct-fld"><span data-t="set.ctBg"></span><input type="color" id="ctBg" class="ct-color"></label>
+              <label class="ct-fld"><span data-t="set.ctSurface"></span><input type="color" id="ctSurface" class="ct-color"></label>
+              <label class="ct-fld"><span data-t="set.ctText"></span><input type="color" id="ctText" class="ct-color"></label>
+              <div class="ct-fld">
+                <span data-t="set.ctMode"></span>
+                <div class="seg small" id="ctModeSeg">
+                  <button data-ctmode="light" data-t="set.ctLight"></button>
+                  <button data-ctmode="dark" data-t="set.ctDark"></button>
+                </div>
+              </div>
+            </div>
+            <div class="set-btns"><button class="btn small" id="ctFromTheme"><span class="b-ic"></span><span data-t="set.ctFromTheme"></span></button></div>
+            <p class="set-note dim" data-t="set.ctHint"></p>
+          </div>
+
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.accent"></span></label>
+            <div class="swatches" id="accentSwatches"></div>
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.textSize"></span> <span class="set-val" id="fontScaleVal">100%</span></label>
+            <input type="range" id="fontScale" min="85" max="130" step="5" data-t-aria="set.textSize">
+          </div>
+        </section>
+
+        <section class="set-sec" data-pane="canvas">
+          <h3><span class="sec-ic"></span><span data-t="set.canvas"></span></h3>
+          <div class="set-row stack">
+            <label><span class="row-ic"></span><span data-t="set.canvasBg"></span></label>
+            <!-- A row of drawn samples rather than a segmented control of
+                 words: "graph" and "cross" mean nothing until you have seen
+                 them, and the swatch *is* the pattern at the pitch it will
+                 draw at. Filled by buildGridPicker(). -->
+            <div class="paper-row" id="gridPicker"></div>
+          </div>
+          <div class="set-row sub">
+            <label><span class="row-ic"></span><span data-t="set.gridSize"></span> <span class="set-val" id="gridSizeVal">26</span></label>
+            <input type="range" id="gridSize" min="12" max="96" step="2" data-t-aria="set.gridSize">
+          </div>
+          <div class="set-row sub">
+            <label><span class="row-ic"></span><span data-t="set.gridFade"></span> <span class="set-val" id="gridFadeVal">100%</span></label>
+            <input type="range" id="gridFade" min="20" max="160" step="10" data-t-aria="set.gridFade">
+          </div>
+          <p class="set-note dim sub" data-t="set.gridHint"></p>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.wheel"></span></label>
+            <div class="seg" id="wheelSeg">
+              <button data-wheel="zoom" data-t="set.zooms"></button>
+              <button data-wheel="pan" data-t="set.pans"></button>
+            </div>
+          </div>
+          <!-- How much the canvas is allowed to spend on looking good. See
+               resolvedPerf() in js/theme.js and body[data-perf] in later.css. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.perf"></span></label>
+            <div class="seg" id="perfSeg">
+              <button data-perf="auto" data-t="set.perfAuto"></button>
+              <button data-perf="full" data-t="set.perfFull"></button>
+              <button data-perf="lite" data-t="set.perfLite"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" id="perfHint"></p>
+          <label class="set-check"><input type="checkbox" id="setSnap"><span class="row-ic"></span><span data-t="set.snap"></span></label>
+          <label class="set-check"><input type="checkbox" id="setCompass"><span class="row-ic"></span><span data-t="set.compass"></span></label>
+          <label class="set-check"><input type="checkbox" id="setSpell"><span class="row-ic"></span><span data-t="set.spell"></span></label>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.rail"></span></label>
+            <div class="seg" id="railSeg">
+              <button data-rail="pinned" data-t="set.railPinned"></button>
+              <button data-rail="hover" data-t="set.railHover"></button>
+              <button data-rail="off" data-t="set.railOff"></button>
+            </div>
+          </div>
+          <label class="set-check"><input type="checkbox" id="setShowArchived"><span class="row-ic"></span><span data-t="set.showArchived"></span></label>
+        </section>
+
+        <!-- How a note looks. Presentation only — nothing here moves or resizes
+             anything already on the board; see §29 in css/later.css. -->
+        <section class="set-sec" data-pane="notes">
+          <h3><span class="sec-ic"></span><span data-t="set.notes"></span></h3>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.shape"></span></label>
+            <div class="seg" id="shapeSeg">
+              <button data-shape="round" data-t="set.shapeRound"></button>
+              <button data-shape="soft" data-t="set.shapeSoft"></button>
+              <button data-shape="square" data-t="set.shapeSquare"></button>
+            </div>
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.density"></span></label>
+            <div class="seg" id="densitySeg">
+              <button data-density="thin" data-t="set.densityThin"></button>
+              <button data-density="cosy" data-t="set.densityCosy"></button>
+              <button data-density="roomy" data-t="set.densityRoomy"></button>
+            </div>
+          </div>
+          <label class="set-check"><input type="checkbox" id="setNoteChrome"><span class="row-ic"></span><span data-t="set.noteChrome"></span></label>
+          <p class="set-note" data-t="set.noteChromeHint"></p>
+        </section>
+
+        <!-- The ropes between notes, and what a pasted link turns into. Both are
+             about connections, and both are pure presentation — no rope stores
+             a colour of its own, so changing any of this restyles every board at
+             once and cannot move anything. -->
+        <section class="set-sec" data-pane="links">
+          <h3><span class="sec-ic"></span><span data-t="set.links"></span></h3>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.linkColor"></span></label>
+            <div class="swatches" id="linkSwatches"></div>
+          </div>
+          <div class="set-row sub">
+            <label for="linkColorPick"><span class="row-ic"></span><span data-t="set.linkOwn"></span></label>
+            <input type="color" id="linkColorPick" class="ct-color">
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.linkStyle"></span></label>
+            <div class="seg" id="linkStyleSeg">
+              <button data-lks="curve" data-t="set.linkCurve"></button>
+              <button data-lks="straight" data-t="set.linkStraight"></button>
+              <button data-lks="thread" data-t="set.linkThread"></button>
+            </div>
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.linkAnchor"></span></label>
+            <div class="seg" id="linkAnchorSeg">
+              <button data-lka="top" data-t="set.linkTop"></button>
+              <button data-lka="edge" data-t="set.linkEdge"></button>
+            </div>
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.linkWidth"></span> <span class="set-val" id="linkWidthVal">2</span></label>
+            <input type="range" id="linkWidth" min="1" max="5" step="1" data-t-aria="set.linkWidth">
+          </div>
+          <label class="set-check"><input type="checkbox" id="setEmbeds"><span class="row-ic"></span><span data-t="set.embeds"></span></label>
+          <p class="set-note dim" data-t="set.embedsHint"></p>
+        </section>
+
+        <!-- The status list. Owned by the user: every row can be renamed,
+             recoloured, marked as meaning "finished", moved or deleted, and the
+             list may be emptied completely. -->
+        <section class="set-sec" data-pane="statuses">
+          <h3><span class="sec-ic"></span><span data-t="set.statuses"></span></h3>
+          <div id="statusList" class="st-list"></div>
+          <div class="set-btns"><button class="btn" id="statusAdd"><span class="b-ic"></span><span data-t="status.add"></span></button></div>
+          <p class="set-note" data-t="set.statusesHint"></p>
+        </section>
+
+        <!-- The user's own templates. There are no built-in ones, so this list is
+             empty until they save a note as one; the hint below it is how they
+             find out that they can. -->
+        <section class="set-sec" data-pane="templates">
+          <h3><span class="sec-ic"></span><span data-t="set.templates"></span></h3>
+          <div id="tplList" class="tpl-list"></div>
+        </section>
+
+        <section class="set-sec" data-pane="habits">
+          <h3><span class="sec-ic"></span><span data-t="set.habits"></span></h3>
+          <label class="set-check"><input type="checkbox" id="setBackground"><span class="row-ic"></span><span data-t="set.background"></span></label>
+          <p class="set-note dim sub" data-t="set.backgroundHint"></p>
+          <label class="set-check"><input type="checkbox" id="setCapture"><span class="row-ic"></span><span data-t="set.capture"></span></label>
+          <p class="set-note dim" data-t="set.captureHint"></p>
+          <label class="set-check"><input type="checkbox" id="setDaily"><span class="row-ic"></span><span data-t="set.daily"></span></label>
+          <div class="set-row" id="dailyBoardRow">
+            <label for="setDailyBoard"><span class="row-ic"></span><span data-t="set.dailyBoard"></span></label>
+            <span class="sel-wrap"><select id="setDailyBoard" class="sel"></select><span class="sel-chev"></span></span>
+          </div>
+        </section>
+
+        <section class="set-sec" data-pane="board">
+          <h3><span class="sec-ic"></span><span data-t="set.board"></span></h3>
+          <p class="set-note" id="setStats">—</p>
+
+          <!-- where the files are. Shown as a path the user can select and copy,
+               not buried behind a button they have to guess at. -->
+          <div class="path-box">
+            <span class="path-label" data-t="set.savedIn"></span>
+            <code class="path-val" id="setPath" dir="ltr">—</code>
+            <div class="path-acts">
+              <button class="btn small" id="btnDataFolder"><span class="b-ic"></span><span data-t="set.openFolder"></span></button>
+              <button class="btn small" id="btnCopyPath"><span class="b-ic"></span><span data-t="set.copyPath"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim" id="setSafety"></p>
+
+          <!-- A copy somewhere that is not this disk. Everything above protects
+               a board from you; this protects it from the drive. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.backup"></span></label>
+            <div class="set-btns end">
+              <button class="btn small" id="btnBackupNow"><span class="b-ic"></span><span data-t="set.backupNow"></span></button>
+              <button class="btn small" id="btnBackupFolder"><span class="b-ic"></span><span data-t="set.backupFolder"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" id="backupWhere"></p>
+          <label class="set-check sub"><input type="checkbox" id="setBackupAuto"><span class="row-ic"></span><span data-t="set.backupAuto"></span></label>
+
+          <!-- What a picture of the board is drawn in. Separate from the theme
+               you work in, because a picture is for somewhere else. -->
+          <div class="set-row">
+            <label for="setExportTheme"><span class="row-ic"></span><span data-t="set.pictureTheme"></span></label>
+            <span class="sel-wrap"><select id="setExportTheme" class="sel"></select><span class="sel-chev"></span></span>
+          </div>
+
+          <div class="set-btns">
+            <button class="btn" id="btnExport"><span class="b-ic"></span><span data-t="set.export"></span></button>
+            <button class="btn" id="btnImport"><span class="b-ic"></span><span data-t="set.import"></span></button>
+            <button class="btn" id="btnImportBoard"><span class="b-ic"></span><span data-t="set.importBoard"></span></button>
+            <button class="btn" id="btnExportImage"><span class="b-ic"></span><span data-t="set.exportImage"></span></button>
+            <button class="btn danger" id="btnWipe"><span class="b-ic"></span><span data-t="set.wipe"></span></button>
+          </div>
+          <!-- no dir here: the label is translated, only the number is Latin and
+               bidi already places that correctly -->
+          <p class="set-note dim" id="setVersion"></p>
+
+          <!-- The bin. Listed here as well as on the rail because Settings is
+               where you go when you are looking for something you lost, and a
+               tile that only appears when the bin is not empty is no help to
+               anyone wondering whether a delete was recoverable. -->
+          <div class="set-row" id="trashRow">
+            <label><span class="row-ic"></span><span data-t="set.trash"></span> <span class="set-val" id="trashCount"></span></label>
+            <div class="set-btns">
+              <button class="btn small" id="btnOpenTrash"><span class="b-ic"></span><span data-t="set.openTrash"></span></button>
+              <button class="btn small danger" id="btnEmptyTrash"><span class="b-ic"></span><span data-t="menu.emptyTrash"></span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="set-sec" data-pane="shortcuts">
+          <h3><span class="sec-ic"></span><span data-t="set.shortcuts"></span></h3>
+          <div class="keys" id="keyList"></div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── icon picker ───────────────────────── -->
+<div id="iconPicker" class="overlay hidden">
+  <div class="sheet" role="dialog" data-t-aria="icon.title">
+    <header class="sheet-head">
+      <h2 data-t="icon.title"></h2>
+      <button class="btn" id="iconRemove"><span class="b-ic"></span><span data-t="icon.remove"></span></button>
+      <button class="sheet-x" id="iconClose" data-t-aria="tb.close"></button>
+    </header>
+    <div class="sheet-body">
+      <div class="ip-find"><span class="ip-find-ic"></span><input type="text" id="iconSearch" class="ip-search" data-t-ph="icon.search" spellcheck="false"></div>
+      <div class="ip-colors" id="ipColors"></div>
+      <div class="ip-scroll"><div id="ipGrid"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── image toolbar (inline) ───────────────────────── -->
+<div id="imgBar" class="hidden" role="toolbar">
+  <button data-img="wider" data-t-title="img.wider"></button>
+  <button data-img="narrower" data-t-title="img.narrower"></button>
+  <span class="ib-size" id="imgSize" dir="ltr">—</span>
+  <span class="sb-sep"></span>
+  <button data-align="left" data-t-title="img.alignLeft"></button>
+  <button data-align="center" data-t-title="img.alignCenter"></button>
+  <button data-align="right" data-t-title="img.alignRight"></button>
+  <span class="sb-sep"></span>
+  <button data-img="studio" data-t-title="img.studio"></button>
+  <button data-img="full" data-t-title="img.full"></button>
+  <button data-img="delete" data-t-title="img.delete"></button>
+</div>
+
+<!-- ───────────────────────── image studio ───────────────────────── -->
+<div id="studio" class="overlay hidden">
+  <div class="studio-shell" role="dialog" data-t-aria="img.studio">
+    <header class="sheet-head">
+      <h2 data-t="studio.title"></h2>
+      <div class="st-tools" id="stTools">
+        <button data-tool="crop" class="on" data-t-title="studio.crop"></button>
+        <button data-tool="pen" data-t-title="studio.pen"></button>
+        <button data-tool="box" data-t-title="studio.box"></button>
+        <button data-tool="arrow" data-t-title="studio.arrow"></button>
+        <button data-tool="text" data-t-title="studio.text"></button>
+      </div>
+      <div class="st-colors" id="stColors"></div>
+      <label class="st-width"><span data-t="studio.size"></span> <input type="range" id="stWeight" min="1" max="14" step="1" value="4"></label>
+      <button class="sheet-x" id="studioClose" data-t-aria="tb.close"></button>
+    </header>
+    <div class="studio-stage" id="studioStage">
+      <div class="st-wrap" id="stWrap">
+        <canvas id="stCanvas"></canvas>
+        <div class="st-crop hidden" id="stCrop">
+          <span class="stc h nw"></span><span class="stc h ne"></span>
+          <span class="stc h sw"></span><span class="stc h se"></span>
+        </div>
+        <div id="stMarks"></div>
+      </div>
+    </div>
+    <footer class="studio-foot">
+      <span class="st-hint" id="stHint"></span>
+      <button class="btn" id="stRotate"><span class="b-ic"></span><span data-t="studio.rotate"></span></button>
+      <button class="btn" id="stReset"><span class="b-ic"></span><span data-t="studio.reset"></span></button>
+      <button class="btn" id="stCancel"><span class="b-ic"></span><span data-t="studio.cancel"></span></button>
+      <button class="btn primary" id="stApply"><span class="b-ic"></span><span data-t="studio.apply"></span></button>
+    </footer>
+  </div>
+</div>
+
+<!-- ───────────────────────── board picker (for /board) ───────────────────────── -->
+<div id="boardPick" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="bp.title">
+    <header class="sheet-head"><h2 data-t="bp.title"></h2><button class="sheet-x" id="bpClose" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body"><div id="bpList" class="bp-list"></div></div>
+  </div>
+</div>
+
+<!-- ───────────────────────── reminder ───────────────────────── -->
+<div id="remindDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="remind.title">
+    <header class="sheet-head"><h2 data-t="remind.title"></h2><button class="sheet-x" id="remindClose" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <p class="set-note dim" id="remindNow"></p>
+      <div class="rm-quick" id="rmQuick"></div>
+      <label class="fld"><span data-t="remind.custom"></span><input type="datetime-local" id="rmWhen" dir="ltr"></label>
+      <!-- How often it comes back. '' is once and is the default, so nothing
+           about an existing reminder changes until somebody picks otherwise.
+           See nextOccurrence() in js/boards.js. -->
+      <div class="fld">
+        <span data-t="remind.repeat"></span>
+        <div class="seg" id="rmRepeat">
+          <button data-rep="" data-t="remind.once"></button>
+          <button data-rep="daily" data-t="remind.daily"></button>
+          <button data-rep="weekdays" data-t="remind.weekdays"></button>
+          <button data-rep="weekly" data-t="remind.weekly"></button>
+          <button data-rep="monthly" data-t="remind.monthly"></button>
+        </div>
+      </div>
+      <div class="set-btns end">
+        <button class="btn" id="rmClear"><span class="b-ic"></span><span data-t="remind.clear"></span></button>
+        <button class="btn primary" id="rmSet"><span class="b-ic"></span><span data-t="remind.set"></span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── link dialog ───────────────────────── -->
+<div id="linkDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="link.title">
+    <header class="sheet-head"><h2 data-t="link.title"></h2><button class="sheet-x" id="linkCancel" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <label class="fld"><span data-t="link.text"></span><input type="text" id="linkText" data-t-ph="link.textPh" dir="auto"></label>
+      <label class="fld"><span data-t="link.url"></span><input type="text" id="linkUrl" placeholder="https://…" dir="ltr"></label>
+      <div class="set-btns end"><button class="btn" id="linkRemove"><span class="b-ic"></span><span data-t="link.remove"></span></button><button class="btn primary" id="linkOk"><span class="b-ic"></span><span data-t="link.apply"></span></button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── embed a video ─────────────────────────
+     One field, because a video card has exactly one input. The /video route to
+     the same card the paste-as menu builds. -->
+<div id="embedDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="embed.title">
+    <header class="sheet-head"><h2 data-t="embed.title"></h2><button class="sheet-x" id="embedCancel" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <label class="fld"><span data-t="embed.url"></span><input type="text" id="embedUrl" placeholder="https://youtube.com/watch?v=…" dir="ltr"></label>
+      <p class="set-note dim" data-t="embed.hint"></p>
+      <p class="fld-err" id="embedErr"></p>
+      <div class="set-btns end"><button class="btn primary" id="embedOk"><span class="b-ic"></span><span data-t="embed.insert"></span></button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── save as template ─────────────────────────
+     The only thing the app asks for is a name; the content is whatever the note
+     already said. Same name as an existing template replaces it. -->
+<div id="tplDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="tpl.saveTitle">
+    <header class="sheet-head"><h2 data-t="tpl.saveTitle"></h2><button class="sheet-x" id="tplCancel" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <label class="fld"><span data-t="tpl.nameLabel"></span><input type="text" id="tplName" data-t-ph="tpl.namePh" dir="auto"></label>
+      <div class="set-btns end"><button class="btn primary" id="tplOk"><span class="b-ic"></span><span data-t="tpl.saveBtn"></span></button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── confirm dialog ───────────────────────── -->
+<div id="confirmDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="confirm.title">
+    <header class="sheet-head"><h2 id="confirmTitle" data-t="confirm.title"></h2></header>
+    <div class="sheet-body">
+      <p id="confirmBody" class="set-note"></p>
+      <div class="set-btns end"><button class="btn" id="confirmNo"><span class="b-ic"></span><span data-t="confirm.cancel"></span></button><button class="btn danger" id="confirmYes"><span class="b-ic"></span><span data-t="confirm.do"></span></button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── jump palette (Ctrl+P) ─────────────────────────
+     Notes across every board, the boards themselves, and a few commands. -->
+<div id="palette" class="overlay top hidden">
+  <div class="pal-shell" role="dialog" data-t-aria="pal.title">
+    <div class="pal-head">
+      <span class="pal-head-ic"></span>
+      <input type="text" id="palInput" data-t-ph="pal.placeholder" spellcheck="false" autocomplete="off" dir="auto">
+    </div>
+    <div class="pal-list" id="palList" role="listbox"></div>
+    <div class="pal-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> <span data-t="pal.move"></span></span>
+      <span><kbd>Enter</kbd> <span data-t="pal.open"></span></span>
+      <span><kbd>Esc</kbd> <span data-t="pal.close"></span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── note history ───────────────────────── -->
+<div id="histDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="hist.title">
+    <header class="sheet-head">
+      <h2 data-t="hist.title"></h2>
+      <button class="sheet-x" id="histClose" data-t-aria="tb.close"></button>
+    </header>
+    <div class="sheet-body">
+      <p class="set-note dim" data-t="hist.lead"></p>
+      <div id="histList" class="hist-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── passphrase ─────────────────────────
+     Used both to lock a board and to open one. -->
+<div id="passDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="pass.title">
+    <header class="sheet-head"><h2 id="passTitle"></h2><button class="sheet-x" id="passCancel" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <p class="set-note" id="passBody"></p>
+      <label class="fld"><span data-t="pass.phrase"></span><input type="password" id="passOne" autocomplete="off" dir="ltr"></label>
+      <label class="fld" id="passTwoWrap"><span data-t="pass.again"></span><input type="password" id="passTwo" autocomplete="off" dir="ltr"></label>
+      <p class="set-note danger-note hidden" id="passErr"></p>
+      <div class="set-btns end">
+        <button class="btn" id="passNo"><span class="b-ic"></span><span data-t="confirm.cancel"></span></button>
+        <button class="btn primary" id="passYes"><span class="b-ic"></span><span id="passOk"></span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── quick capture ─────────────────────────
+     Opened by the global hotkey. One line, straight onto a board. -->
+<div id="capture" class="overlay top hidden">
+  <div class="cap-shell" role="dialog" data-t-aria="cap.title">
+    <div class="cap-head"><span class="cap-ic"></span><span class="cap-to" id="capTo"></span></div>
+    <textarea id="capInput" rows="3" data-t-ph="cap.placeholder" spellcheck="false" dir="auto"></textarea>
+    <div class="cap-foot">
+      <span class="cap-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> <span data-t="cap.save"></span> · <kbd>Esc</kbd> <span data-t="pal.close"></span></span>
+      <button class="btn primary" id="capSave"><span class="b-ic"></span><span data-t="cap.add"></span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ───────────────────────── find bar ───────────────────────── -->
+<div id="findBar" class="hidden">
+  <span class="fb-ic"></span>
+  <input type="text" id="findInput" data-t-ph="find.placeholder" dir="auto" spellcheck="false">
+  <span id="findCount" class="fb-count"></span>
+  <button id="findPrev" data-t-title="find.prev"></button>
+  <button id="findNext" data-t-title="find.next"></button>
+  <button id="findClose" data-t-title="find.close"></button>
+</div>
+
+<script src="assets/icons.js"></script>
+<!-- Every language ships as one file that registers itself on window.MB_LANG.
+     Add a script tag here and the picker in Settings grows an entry by itself. -->
+<script src="assets/lang/en.js"></script>
+<script src="assets/lang/ar.js"></script>
+
+<!-- The app, in load order. These are plain scripts, not modules: they share a
+     single global scope exactly as the one renderer.js did, so nothing is
+     imported or exported and every function stays callable from everywhere.
+
+     What the order buys is the *evaluation* window. A file may only read a
+     const or let from a file above it while it is being evaluated; after
+     init() runs, everything can reach everything. Move a file up this list and
+     a top-level line in it can land in the temporal dead zone of a const it
+     used to be able to see — which throws on boot rather than failing quietly,
+     but only once the file that needs it is reached. See MAP.md §4. -->
+<script src="js/helpers.js"></script>
+<script src="js/state.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/view.js"></script>
+<script src="js/items.js"></script>
+<script src="js/links.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/embeds.js"></script>
+<script src="js/toolbars.js"></script>
+<script src="js/media.js"></script>
+<script src="js/menus.js"></script>
+<script src="js/edit-ops.js"></script>
+<script src="js/boards.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/init.js"></script>
+</body>
+</html>

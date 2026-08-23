@@ -1,0 +1,13 @@
+node_modules/
+package-lock.json
+
+# the runnable app, written by admin\Build App.cmd — always rebuilt, never edited
+App/
+# where the build stages before it replaces App\
+.build/
+
+# the throwaway profile `npm run sandbox` writes to, and the copies the
+# admin pack's backup script drops next to itself
+.sandbox*/
+.sandbox.log
+admin/backups/

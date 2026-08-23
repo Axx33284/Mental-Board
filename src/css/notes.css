@@ -1,0 +1,209 @@
+/* Mental Board — notes.css
+   Notes, their eight handles, workflow frames, ropes, and rich text inside a note.
+
+   Sheet 3 of 8. styles.css was one append-only file and these are
+   its slices in the same order, so **later files still beat earlier ones** —
+   the <link> order in index.html is load-bearing, not decoration. Adding a
+   rule at the end of the last sheet is still how you win an argument with
+   one further up. See MAP.md §5. */
+/* ─────────────── 4. notes ─────────────── */
+.note {
+  position: absolute; display: flex; flex-direction: column;
+  background: var(--nb); border: 1px solid var(--nl);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  transition: box-shadow .16s, border-color .16s;
+}
+/* Only hint the compositor while the view is actually moving. Leaving
+   will-change on permanently pins one rasterisation and makes zoomed-in text
+   look soft; see markMoving() in renderer.js. */
+body.view-moving #world { will-change: transform; }
+#world { backface-visibility: hidden; }
+.note-body, .frame-title { text-rendering: optimizeLegibility; }
+.note::before {   /* colour stripe down the left */
+  content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
+  border-radius: 3px; background: var(--nc); opacity: .0; transition: opacity .18s;
+}
+.note[data-color]:not([data-color="default"])::before { opacity: .85; }
+.note:hover { box-shadow: var(--shadow); border-color: var(--line-2); }
+.note.selected { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.note.editing { box-shadow: 0 0 0 2px var(--accent), var(--shadow); cursor: text; }
+.note.dragging { box-shadow: 0 22px 46px rgba(0,0,0,.45); z-index: 999 !important; }
+.note.link-target { box-shadow: 0 0 0 2px var(--accent); animation: pulse 1.1s infinite; }
+.note.find-hit { box-shadow: 0 0 0 2px #f0cc5a, var(--shadow); }
+
+.note-head {
+  height: 24px; flex: 0 0 24px; display: flex; align-items: center; gap: 2px;
+  padding: 0 4px 0 8px; cursor: grab;
+  opacity: 0; transition: opacity .15s;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.note:hover .note-head, .note.selected .note-head, .note.editing .note-head { opacity: 1; }
+.note-head:active { cursor: grabbing; }
+.nh-grip { color: var(--dimmer); font-size: 11px; letter-spacing: 2px; line-height: 1; flex: 1; }
+
+/* The note's own edge controls.
+
+   These used to be `color: var(--dimmer)` — a grey picked to sit on the app's
+   chrome, not on a note. A note carries its own fill (`--nb`), which on a dark
+   theme is only a shade or two off that grey, so the row read as four barely
+   visible smudges. They are now mixed from `--text`, the one colour guaranteed
+   to contrast with the surface they are actually drawn on, in both themes and
+   on all nine note colours.
+
+   Square, not 20x18. The hover highlight on a rectangle that is wider than it
+   is tall makes a square glyph look off-centre even though it is centred, which
+   is what made these feel misaligned next to the round + button. */
+.nh-btn {
+  width: 22px; height: 22px; border-radius: 7px;
+  display: grid; place-items: center;
+  color: color-mix(in srgb, var(--text) 62%, transparent);
+  font-size: 12px; line-height: 1;
+  transition: background .14s, color .14s, transform .14s;
+}
+.nh-btn:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+  transform: translateY(-1px);          /* the same lift the + button uses */
+}
+.nh-btn:active { transform: scale(.92); }
+.nh-btn.del:hover { background: var(--danger); color: #fff; transform: translateY(-1px); }
+
+/* There used to be a `.nh-btn svg { fill: none; stroke: currentColor }` here.
+
+   That is the right treatment for the hand-drawn `.ic` set, which is what these
+   buttons held when the rule was written. They hold Material Symbols now —
+   solid, filled shapes — and `.nh-btn svg` outranks `.mi { fill: currentColor }`,
+   so every glyph in the row was being drawn as a hairline outline of itself: a
+   smiley reduced to a thin circle, ✕ to two thin strokes. Combined with a grey
+   picked for the app chrome rather than for a note, the whole row was all but
+   invisible, which is exactly how it was reported.
+
+   Nothing here touches `fill` or `stroke` any more; the glyphs are left to
+   render the way `.mi` draws them everywhere else in the app. */
+.nh-btn .mi { width: 15px; height: 15px; }
+
+/* Hidden by choice — Settings ▸ Notes ▸ "Show the buttons on each note".
+   The grip stays: it is what the note is dragged by, and it carries no glyph
+   of its own. */
+body.no-note-chrome .nh-btn { display: none; }
+
+.note-body {
+  flex: 1; min-height: 0; overflow: auto; overflow-wrap: anywhere;
+  padding: 2px 14px 12px; outline: none; user-select: none;
+  line-height: 1.55; font-size: calc(14px * var(--fs, 1));
+}
+.note.editing .note-body { user-select: text; }
+.note-body:empty::before, .note-body > p:only-child:empty::before {
+  content: "Type here — “/” for blocks"; color: var(--dimmer); pointer-events: none;
+}
+
+/* ─────────────── 5. resize handles ─────────────── */
+.rz { position: absolute; z-index: 5; }
+.rz-n  { top: -4px; left: 10px; right: 10px; height: 9px; cursor: ns-resize; }
+.rz-s  { bottom: -4px; left: 10px; right: 10px; height: 9px; cursor: ns-resize; }
+.rz-w  { left: -4px; top: 10px; bottom: 10px; width: 9px; cursor: ew-resize; }
+.rz-e  { right: -4px; top: 10px; bottom: 10px; width: 9px; cursor: ew-resize; }
+.rz-nw { top: -5px; left: -5px; width: 15px; height: 15px; cursor: nwse-resize; }
+.rz-ne { top: -5px; right: -5px; width: 15px; height: 15px; cursor: nesw-resize; }
+.rz-sw { bottom: -5px; left: -5px; width: 15px; height: 15px; cursor: nesw-resize; }
+.rz-se { bottom: -5px; right: -5px; width: 15px; height: 15px; cursor: nwse-resize; }
+/* the little corner pips, only while hovered or selected */
+.rz-nw::after, .rz-ne::after, .rz-sw::after, .rz-se::after {
+  content: ""; position: absolute; width: 8px; height: 8px; border-radius: 3px;
+  background: var(--surface); border: 1.5px solid var(--accent);
+  opacity: 0; transition: opacity .15s;
+}
+.rz-nw::after { top: 3px; left: 3px; } .rz-ne::after { top: 3px; right: 3px; }
+.rz-sw::after { bottom: 3px; left: 3px; } .rz-se::after { bottom: 3px; right: 3px; }
+.note.selected .rz::after, .note:hover .rz::after,
+.frame.selected .rz::after, .frame:hover .rz::after { opacity: 1; }
+
+/* ─────────────── 6. workflow frames ─────────────── */
+.frame {
+  position: absolute; border-radius: 20px;
+  border: 1.5px solid var(--nl);
+  background: color-mix(in srgb, var(--nc) 7%, transparent);
+  transition: border-color .16s, background .16s;
+}
+.frame::after {   /* soft inner wash so it reads as a surface, not an outline */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--nc) 4%, transparent);
+}
+.frame.selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.frame.dragging { background: color-mix(in srgb, var(--nc) 12%, transparent); }
+.frame-title {
+  position: absolute; left: 10px; top: -30px; max-width: calc(100% - 20px);
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 12px 4px; border-radius: 9px;
+  background: var(--surface); border: 1px solid var(--nl);
+  color: var(--text); font-size: 12.5px; font-weight: 650; letter-spacing: .01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: grab; box-shadow: var(--shadow-sm);
+}
+.frame-title:active { cursor: grabbing; }
+.frame-title::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--nc); flex: 0 0 8px; }
+.frame-title.renaming { cursor: text; outline: 2px solid var(--accent); }
+.frame-title .ft-name[contenteditable="true"] { outline: none; user-select: text; min-width: 18px; cursor: text; }
+.frame-count { color: var(--dimmer); font-weight: 500; font-size: 11px; }
+
+/* ─────────────── 7. links ─────────────── */
+.lk-line { fill: none; stroke: var(--accent); stroke-width: 2; opacity: .55; stroke-linecap: round; }
+.lk-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+.lk-hit:hover + .lk-line, .lk-line.hot { opacity: 1; stroke-width: 3; }
+.lk-dot { fill: var(--accent); opacity: .75; }
+
+/* ─────────────── 8. rich text inside notes ─────────────── */
+.note-body > :first-child { margin-top: 6px; }
+.note-body h1, .note-body h2, .note-body h3 { margin: .7em 0 .35em; line-height: 1.25; font-weight: 700; }
+.note-body h1 { font-size: 1.62em; letter-spacing: -.012em; }
+.note-body h2 { font-size: 1.32em; letter-spacing: -.008em; }
+.note-body h3 { font-size: 1.12em; }
+.note-body p { margin: .38em 0; }
+.note-body ul, .note-body ol { margin: .35em 0; padding-left: 1.35em; }
+.note-body li { margin: .18em 0; }
+.note-body blockquote {
+  margin: .5em 0; padding: .25em 0 .25em .85em;
+  border-left: 3px solid var(--nc); color: var(--dim); font-style: italic;
+}
+.note-body hr { border: 0; border-top: 1px solid var(--line-2); margin: .85em 0; }
+.note-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.note-body code {
+  font-family: "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
+  font-size: .9em; background: var(--code-bg); padding: .1em .38em; border-radius: 5px;
+  border: 1px solid var(--line);
+}
+.note-body pre.mb-code {
+  margin: .55em 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--code-bg); border: 1px solid var(--line);
+  font-family: "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
+  font-size: .875em; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+  tab-size: 2;
+}
+.note-body pre.mb-code code { background: none; border: 0; padding: 0; font-size: 1em; }
+.note-body img.mb-img { max-width: 100%; border-radius: 10px; display: block; margin: .5em 0; }
+.note-body mark, .note-body .mb-hl { background: var(--hi); border-radius: 4px; padding: .05em .15em; color: inherit; }
+.note-body .mb-callout {
+  margin: .55em 0; padding: 9px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--nc) 12%, transparent);
+  border: 1px solid var(--nl);
+}
+.note-body .fs-xs { font-size: .8em; } .note-body .fs-sm { font-size: .9em; }
+.note-body .fs-md { font-size: 1em; } .note-body .fs-lg { font-size: 1.2em; }
+.note-body .fs-xl { font-size: 1.45em; } .note-body .fs-xxl { font-size: 1.8em; }
+
+/* to-do lists */
+.note-body ul.mb-todo { list-style: none; padding-left: 2px; }
+.note-body ul.mb-todo > li { position: relative; padding-left: 25px; }
+.note-body ul.mb-todo > li::before {
+  content: ""; position: absolute; left: 0; top: .28em;
+  width: 15px; height: 15px; border-radius: 4.5px;
+  border: 1.6px solid var(--line-2); background: transparent;
+  cursor: pointer; transition: background .14s, border-color .14s;
+}
+.note-body ul.mb-todo > li.done::before { background: var(--accent); border-color: var(--accent); }
+.note-body ul.mb-todo > li.done::after {
+  content: ""; position: absolute; left: 4.4px; top: .5em;
+  width: 4px; height: 8px; border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0; transform: rotate(43deg); pointer-events: none;
+}
+.note-body ul.mb-todo > li.done { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--dimmer); }

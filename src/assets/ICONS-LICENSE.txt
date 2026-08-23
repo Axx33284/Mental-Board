@@ -1,0 +1,4 @@
+The icon path data in icons.js is from Google Material Symbols,
+licensed under the Apache License, Version 2.0.
+https://github.com/google/material-design-icons
+http://www.apache.org/licenses/LICENSE-2.0

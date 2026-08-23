@@ -1,0 +1,20 @@
+# Normalise line endings so a clone on any OS produces working files.
+#
+# The .cmd launchers in admin/ are the reason this file exists. Batch files must
+# have CRLF endings — a .cmd checked out with LF fails in ways that look nothing
+# like a line-ending problem (a `for /f` loop silently reads nothing, a label
+# jump lands in the wrong place). Forcing eol=crlf means they survive a clone on
+# Linux or macOS and still work when copied back to Windows.
+* text=auto
+*.cmd text eol=crlf
+
+# Binary — never touch, never diff.
+*.woff2 binary
+*.ico binary
+*.png binary
+*.exe binary
+
+# Generated. Marking them keeps `git diff` and PR reviews readable: nobody needs
+# to scroll 200 icon path strings to find the one line that changed by hand.
+assets/icons.js linguist-generated=true
+package-lock.json linguist-generated=true
