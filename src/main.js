@@ -518,7 +518,10 @@ ipcMain.handle('file:import', async (e) => {
     filters: [{ name: 'JSON', extensions: ['json'] }]
   });
   if (canceled || !filePaths.length) return null;
-  try { return { json: fs.readFileSync(filePaths[0], 'utf8') }; } catch (err) { return { error: String(err) }; }
+  /* The path comes back as well as the bytes. A board's attachments live in a
+     `files/` folder beside it, so "where was this file?" is what lets an
+     imported board bring its pictures with it — see importBoardsFrom(). */
+  try { return { json: fs.readFileSync(filePaths[0], 'utf8'), path: filePaths[0] }; } catch (err) { return { error: String(err) }; }
 });
 
 /* Save a board picture. Separate from file:export rather than folded into it,
@@ -562,7 +565,35 @@ ipcMain.handle('file:backup-dir', async (e) => {
 });
 
 const BACKUP_KEEP = 10;
-ipcMain.handle('file:backup', async (_e, dir, json, name) => {
+
+/* Copy a directory. Node has no recursive copy that predates 16.7 by enough to
+   rely on across every Electron this app may be built with, and cpSync's
+   options have moved around, so it is nine lines here and no surprises. */
+function copyDir(from, to) {
+  let n = 0;
+  fs.mkdirSync(to, { recursive: true });
+  for (const e of fs.readdirSync(from, { withFileTypes: true })) {
+    const a = path.join(from, e.name), b = path.join(to, e.name);
+    if (e.isDirectory()) n += copyDir(a, b);
+    else if (e.isFile()) { fs.copyFileSync(a, b); n++; }
+  }
+  return n;
+}
+
+/* The board, and the files the board carries.
+
+   A backup that is only the JSON is a backup of half a board now that notes
+   hold videos and pictures: restoring it on another machine gives you every
+   word and none of the images. So the attachments come too, in a `files/`
+   folder beside the JSON — which is the same shape the app's own data folder
+   uses, and the shape adoptAttachments() looks for on the way back in. The
+   consequence worth stating plainly: **a backup folder is a portable board.**
+   Copy it to a stick, drop the .json on another machine, and the pictures
+   arrive with it.
+
+   `boardIds` is what the renderer says to bring. Locked boards are not in that
+   list — their notes are ciphertext and there is nothing to show a file for. */
+ipcMain.handle('file:backup', async (_e, dir, json, name, boardIds, filesRoot) => {
   try {
     if (!dir || typeof dir !== 'string') return { error: 'no folder' };
     fs.mkdirSync(dir, { recursive: true });
@@ -574,19 +605,71 @@ ipcMain.handle('file:backup', async (_e, dir, json, name) => {
     const tmp = file + '.tmp';
     fs.writeFileSync(tmp, json, 'utf8');
     fs.renameSync(tmp, file);
+
+    /* The files, after the JSON. That order matters on a stick that gets pulled
+       out halfway: a board with some of its pictures missing is a board you can
+       still read, and the JSON is the half that cannot be reconstructed. A
+       failure here is reported but does not undo the JSON that already landed. */
+    let files = 0, filesError = '';
+    try {
+      const src = String(filesRoot || '');
+      const ids = Array.isArray(boardIds) ? boardIds : [];
+      if (src && ids.length && fs.existsSync(src)) {
+        const dest = path.join(dir, 'files');
+        for (const id of ids) {
+          const seg = String(id || '').replace(/[^\w-]/g, '_').slice(0, 48);
+          const from = path.join(src, seg);
+          try { if (seg && fs.existsSync(from)) files += copyDir(from, path.join(dest, seg)); } catch (_) {}
+        }
+      }
+    } catch (err) { filesError = String((err && err.message) || err); }
+
     // keep the newest few and no more, so a synced folder does not grow forever
     try {
       const old = fs.readdirSync(dir)
         .filter((f) => /^mental-board-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort();
       while (old.length > BACKUP_KEEP) fs.unlinkSync(path.join(dir, old.shift()));
     } catch (_) {}
-    return { path: file };
+    return { path: file, files, filesError };
   } catch (err) {
     return { error: String((err && err.message) || err) };
   }
 });
 
-ipcMain.on('shell:reveal', (_e, p) => { try { if (p) shell.openPath(String(p)); } catch (_) {} });
+/* ---------- where is this, actually? ----------
+   `shell:reveal` used to live here as a bare `shell.openPath(String(p))` with
+   no scheme check, no extension check and — despite the name — no revealing:
+   openPath on a .exe runs it. It had no callers, and `script-src 'self'` kept
+   anything in the page from reaching it, so it was a door built to the old
+   standard standing next to the new one rather than a live hole. It is gone.
+
+   These two replace it, and neither can start a program:
+
+   - `shell:reveal-local` takes a file: URL and only ever calls
+     showItemInFolder, which opens Explorer with the file selected. That is
+     the whole of "show me where this is", and it is safe by construction
+     rather than by an allow-list that has to keep up with Windows.
+   - `shell:open-path` opens a **directory**, and checks that it is one. A
+     folder handed to openPath opens Explorer; a file handed to it does not,
+     which is exactly the distinction that matters here. The path also has to
+     sit inside the app's own data folder — the renderer only ever asks for a
+     board's files folder, so anything else is a bug or worse. */
+ipcMain.on('shell:reveal-local', (_e, url) => {
+  try {
+    const raw = String(url || '');
+    if (!/^file:/i.test(raw)) return;
+    shell.showItemInFolder(require('url').fileURLToPath(raw));
+  } catch (_) {}
+});
+ipcMain.on('shell:open-path', (_e, dir) => {
+  try {
+    const p = path.resolve(String(dir || ''));
+    const root = path.resolve(dataDir()) + path.sep;
+    if (!p.toLowerCase().startsWith(root.toLowerCase())) return;
+    fs.mkdirSync(p, { recursive: true });          // a board with no files yet
+    if (fs.statSync(p).isDirectory()) shell.openPath(p);
+  } catch (_) {}
+});
 
 // image picker for the note editor — returns a file:// url, no copying involved
 ipcMain.handle('file:pick-image', async (e) => {
@@ -602,6 +685,45 @@ ipcMain.handle('file:pick-image', async (e) => {
 
 ipcMain.on('shell:open-external', (_e, url) => {
   try { if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) shell.openExternal(url); } catch (_) {}
+});
+/* ---------- a document on this machine ----------
+   The renderer has two doors and this is the strict one. shell:open-external
+   above vets a *scheme*; this vets an extension as well, because opening a
+   local path is the only route in the app that can *run* a program —
+   shell.openPath on a .exe, .bat, .cmd, .lnk, .ps1 or .msi executes it.
+
+   That matters because a board is a document. It gets exported, imported and
+   mailed around, and the paste sanitiser deliberately lets `file:` hrefs
+   through so a link survives being copied from one note into another. So the
+   sanitiser cannot be the thing that stops this: markup is precisely what a
+   crafted board controls. The guard has to live here, in main, where nothing
+   in the page can reach around it.
+
+   An allow-list, not a block-list, and the direction is the whole point. A
+   shape nobody thought of — .scf, .hta, .jar, .url, whatever Windows learns to
+   execute next — is refused by default instead of being discovered later.
+   Anything not on the list is *revealed* in Explorer rather than opened, which
+   still puts the user in front of their file and cannot run a thing. */
+const OPENABLE = new Set([
+  '.txt', '.md', '.rtf', '.pdf', '.csv', '.tsv', '.json', '.xml', '.log', '.ini', '.yml', '.yaml',
+  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif', '.svg', '.tif', '.tiff', '.heic',
+  '.mp3', '.wav', '.flac', '.m4a', '.ogg', '.opus',
+  '.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v'
+]);
+ipcMain.on('shell:open-local', (_e, url) => {
+  try {
+    const raw = String(url || '');
+    if (!/^file:/i.test(raw)) return;          // this door is for file: and nothing else
+    const p = require('url').fileURLToPath(raw);
+    /* A folder is safe to hand straight to openPath — it opens Explorer, it
+       does not run anything — and linking a note to one is an ordinary thing
+       to want. */
+    let isDir = false;
+    try { isDir = fs.statSync(p).isDirectory(); } catch (_) {}
+    if (isDir || OPENABLE.has(path.extname(p).toLowerCase())) shell.openPath(p);
+    else shell.showItemInFolder(p);
+  } catch (_) {}
 });
 ipcMain.on('shell:open-data-folder', () => { try { shell.openPath(dataDir()); } catch (_) {} });
 

@@ -1,270 +1,161 @@
-/* Generates assets/icon.png and assets/icon.ico from scratch — no image
-   dependencies, just Node's zlib. Run it with `npm run icon` after changing
-   the artwork below; the packaged exe picks up the .ico, the window and
-   taskbar pick up the .png.
+/* Generates assets/icon.png and assets/icon.ico from tools/icon-source.png —
+   no image dependencies, just Node's zlib. Run it with `npm run icon` after
+   changing the source artwork; the packaged exe picks up the .ico, the window
+   and the taskbar pick up the .png.
 
-   The drawing is done 4x oversampled and box-filtered down, which is where the
-   anti-aliasing comes from. */
+   The artwork used to be *drawn* here, out of rounded rects and lines: white
+   line-art on an indigo tile. It is now a picture. `icon-source.png` beside
+   this script is the single source of truth and this file only recolours and
+   resizes it, so changing the icon means replacing that one file and re-running
+   this. The old rasteriser went with the change; it is in git history if drawn
+   artwork is ever wanted back.
+
+   **Black on white.** The source is composited onto white, converted to
+   luminance, and stretched so its darkest ink lands on true black. Greyscale
+   rather than a flat black/white threshold on purpose: artwork carrying more
+   than one tone would otherwise collapse to a silhouette and lose every
+   internal line.
+
+   The artwork is a brain: a lumpy dome with a central fissure and three folds
+   a side, black on white. It is drawn rather than taken from the icon set,
+   because the set has no brain in it — `psychology` and `psychology_alt` are
+   both *heads*, one with a cog and one with a question mark, and neither reads
+   as the thing this app is named after.
+
+   One consequence worth knowing, because it reverses the older design's
+   reasoning: an opaque white background is a white square on a dark taskbar.
+   The icon before last was white-on-indigo precisely so its outline never
+   vanished against dark chrome. White is what was asked for; if it ever looks
+   wrong there, this comment is the place to start.
+
+   At 16px the folds blur into the fill and what is left is a lumpy dark disc.
+   That is expected and is why the outline is bumpy rather than round: at the
+   size where the detail goes, the silhouette is the whole icon. */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const SS = 4;                 // supersampling factor
 const OUT = path.join(__dirname, '..', 'src', 'assets');
+const SRC = path.join(__dirname, 'icon-source.png');
 
-/* ---------- a tiny RGBA raster ---------- */
-function surface(size) {
-  return { w: size, h: size, px: new Float64Array(size * size * 4) };
-}
-function blend(s, x, y, r, g, b, a) {
-  if (x < 0 || y < 0 || x >= s.w || y >= s.h || a <= 0) return;
-  const i = (y * s.w + x) * 4;
-  const ia = s.px[i + 3], na = a + ia * (1 - a);
-  if (na <= 0) return;
-  s.px[i]     = (r * a + s.px[i]     * ia * (1 - a)) / na;
-  s.px[i + 1] = (g * a + s.px[i + 1] * ia * (1 - a)) / na;
-  s.px[i + 2] = (b * a + s.px[i + 2] * ia * (1 - a)) / na;
-  s.px[i + 3] = na;
-}
-// signed distance to a rounded rectangle, negative inside
-function sdRoundRect(px, py, x, y, w, h, r) {
-  const cx = Math.abs(px - (x + w / 2)) - (w / 2 - r);
-  const cy = Math.abs(py - (y + h / 2)) - (h / 2 - r);
-  const ax = Math.max(cx, 0), ay = Math.max(cy, 0);
-  return Math.hypot(ax, ay) + Math.min(Math.max(cx, cy), 0) - r;
-}
-function fillRoundRect(s, x, y, w, h, r, colorAt, alpha) {
-  const x0 = Math.max(0, Math.floor(x - 2)), x1 = Math.min(s.w, Math.ceil(x + w + 2));
-  const y0 = Math.max(0, Math.floor(y - 2)), y1 = Math.min(s.h, Math.ceil(y + h + 2));
-  for (let py = y0; py < y1; py++) {
-    for (let px = x0; px < x1; px++) {
-      const d = sdRoundRect(px + 0.5, py + 0.5, x, y, w, h, r);
-      if (d > 0.9) continue;
-      const cov = Math.min(1, Math.max(0, 0.5 - d));
-      const c = colorAt(px, py);
-      blend(s, px, py, c[0], c[1], c[2], cov * (alpha == null ? 1 : alpha));
-    }
+/* ---------- reading the source ----------
+   An 8-bit, non-interlaced PNG — what every ordinary export produces. Anything
+   else throws with a message that says what to do about it, rather than a stack
+   trace from somewhere inside zlib. Palette, greyscale, RGB and RGBA all
+   decode; 16-bit and interlaced do not, and say so. */
+function readPng(buf) {
+  const SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) if (buf[i] !== SIG[i]) throw new Error('not a PNG file');
+  let p = 8, ihdr = null, plte = null, trns = null;
+  const idat = [];
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p);
+    const type = buf.toString('ascii', p + 4, p + 8);
+    const data = buf.subarray(p + 8, p + 8 + len);
+    if (type === 'IHDR') ihdr = { w: data.readUInt32BE(0), h: data.readUInt32BE(4), depth: data[8], color: data[9], interlace: data[12] };
+    else if (type === 'PLTE') plte = Buffer.from(data);
+    else if (type === 'tRNS') trns = Buffer.from(data);
+    else if (type === 'IDAT') idat.push(Buffer.from(data));
+    else if (type === 'IEND') break;
+    p += 12 + len;
   }
-}
-function strokeRoundRect(s, x, y, w, h, r, width, color, alpha) {
-  const x0 = Math.max(0, Math.floor(x - width - 2)), x1 = Math.min(s.w, Math.ceil(x + w + width + 2));
-  const y0 = Math.max(0, Math.floor(y - width - 2)), y1 = Math.min(s.h, Math.ceil(y + h + width + 2));
-  for (let py = y0; py < y1; py++) {
-    for (let px = x0; px < x1; px++) {
-      const d = Math.abs(sdRoundRect(px + 0.5, py + 0.5, x, y, w, h, r)) - width / 2;
-      if (d > 0.9) continue;
-      blend(s, px, py, color[0], color[1], color[2], Math.min(1, Math.max(0, 0.5 - d)) * (alpha == null ? 1 : alpha));
-    }
-  }
-}
-function line(s, x1, y1, x2, y2, width, color, alpha) {
-  const minx = Math.max(0, Math.floor(Math.min(x1, x2) - width - 2));
-  const maxx = Math.min(s.w, Math.ceil(Math.max(x1, x2) + width + 2));
-  const miny = Math.max(0, Math.floor(Math.min(y1, y2) - width - 2));
-  const maxy = Math.min(s.h, Math.ceil(Math.max(y1, y2) + width + 2));
-  const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy || 1;
-  for (let py = miny; py < maxy; py++) {
-    for (let px = minx; px < maxx; px++) {
-      const t = Math.max(0, Math.min(1, ((px + 0.5 - x1) * dx + (py + 0.5 - y1) * dy) / len2));
-      const d = Math.hypot(px + 0.5 - (x1 + dx * t), py + 0.5 - (y1 + dy * t)) - width / 2;
-      if (d > 0.9) continue;
-      blend(s, px, py, color[0], color[1], color[2], Math.min(1, Math.max(0, 0.5 - d)) * (alpha == null ? 1 : alpha));
-    }
-  }
-}
+  if (!ihdr) throw new Error('PNG has no IHDR chunk');
+  if (ihdr.depth !== 8) throw new Error('only 8-bit PNGs are supported (this one is ' + ihdr.depth + '-bit) — re-export it as 8-bit');
+  if (ihdr.interlace !== 0) throw new Error('interlaced PNGs are not supported — re-export it without interlacing');
+  const CH = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[ihdr.color];
+  if (!CH) throw new Error('unsupported PNG colour type ' + ihdr.color);
 
-/* Like line(), but the colour comes from a function of position — used to cut
-   the inside out of a stroked shape by painting the tile's own gradient back
-   over it. That is how an *outlined* glyph is drawn with only fill and line
-   primitives: lay the white shape down, then paint the interior in the
-   background it is sitting on. */
-function lineWith(s, x1, y1, x2, y2, width, colorAt, alpha) {
-  const minx = Math.max(0, Math.floor(Math.min(x1, x2) - width - 2));
-  const maxx = Math.min(s.w, Math.ceil(Math.max(x1, x2) + width + 2));
-  const miny = Math.max(0, Math.floor(Math.min(y1, y2) - width - 2));
-  const maxy = Math.min(s.h, Math.ceil(Math.max(y1, y2) + width + 2));
-  const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy || 1;
-  for (let py = miny; py < maxy; py++) {
-    for (let px = minx; px < maxx; px++) {
-      const t = Math.max(0, Math.min(1, ((px + 0.5 - x1) * dx + (py + 0.5 - y1) * dy) / len2));
-      const d = Math.hypot(px + 0.5 - (x1 + dx * t), py + 0.5 - (y1 + dy * t)) - width / 2;
-      if (d > 0.9) continue;
-      const c = colorAt(px, py);
-      blend(s, px, py, c[0], c[1], c[2], Math.min(1, Math.max(0, 0.5 - d)) * (alpha == null ? 1 : alpha));
-    }
-  }
-}
-/* Fill a triangle. Used to take the corner off a card before the fold is drawn
-   over it — the outline is a rounded rect, and a page fold is a rounded rect
-   with one corner removed, so the corner has to go somewhere. */
-function fillTri(s, a, b, c, colorAt, alpha) {
-  const x0 = Math.max(0, Math.floor(Math.min(a[0], b[0], c[0]) - 1));
-  const x1 = Math.min(s.w, Math.ceil(Math.max(a[0], b[0], c[0]) + 1));
-  const y0 = Math.max(0, Math.floor(Math.min(a[1], b[1], c[1]) - 1));
-  const y1 = Math.min(s.h, Math.ceil(Math.max(a[1], b[1], c[1]) + 1));
-  const side = (p, q, x, y) => (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0]);
-  for (let py = y0; py < y1; py++) {
-    for (let px = x0; px < x1; px++) {
-      const x = px + 0.5, y = py + 0.5;
-      const d1 = side(a, b, x, y), d2 = side(b, c, x, y), d3 = side(c, a, x, y);
-      const neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
-      if (neg && pos) continue;
-      const col = colorAt(px, py);
-      blend(s, px, py, col[0], col[1], col[2], alpha == null ? 1 : alpha);
-    }
-  }
-}
-function polyline(s, pts, width, color, alpha) {
-  for (let i = 0; i < pts.length - 1; i++) {
-    line(s, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], width, color, alpha);
-  }
-}
-
-/* ---------- the artwork ----------
-   Line-art, white on the indigo tile: connected note cards, a link chip and an
-   image chip — the things a board actually holds, drawn as outlines rather
-   than as filled blocks.
-
-   Outlines, not fills, because the reference this was drawn from is a line
-   icon — and because at 16px a filled card is a white blob while an outlined
-   one still shows its own shape. White on the tile rather than black on white:
-   a black outline is invisible against a dark taskbar, and the taskbar is the
-   one place this icon is guaranteed to appear.
-
-   Everything is a rounded rect, a line, or a rounded rect with the tile's own
-   gradient painted back inside it. There is no path renderer here and there
-   does not need to be. */
-function draw(S) {
-  const s = surface(S * SS);
-  const u = (v) => v * S * SS / 256;          // design units: 256-pt grid
-
-  const g1 = [0x5b, 0x74, 0xf0], g2 = [0x9a, 0x63, 0xf2];
-  const grad = (px, py) => {
-    const t = Math.min(1, Math.max(0, (px / s.w * 0.55 + py / s.h * 0.65)));
-    return [g1[0] + (g2[0] - g1[0]) * t, g1[1] + (g2[1] - g1[1]) * t, g1[2] + (g2[2] - g1[2]) * t];
-  };
-  fillRoundRect(s, u(10), u(10), u(236), u(236), u(56), grad);
-
-  const white = [255, 255, 255];
-  /* One weight for the whole drawing. A line icon reads as one object only if
-     every stroke in it is the same width — vary them and the thin parts drop
-     out first as the icon shrinks, which is what makes a 16px icon look like a
-     smudge with a few dark spots rather than a smaller version of itself. */
-  const W = u(7.5);
-
-  /* A note card: an outlined rounded rect with the corner turned down. The
-     fold is the whole reason a rectangle reads as "a page" — without it this
-     is a box, and a box is any object at all. */
-  function card(x, y, w, h, rules) {
-    const f = Math.min(w, h) * 0.42;                 // how much corner is turned
-    strokeRoundRect(s, x, y, w, h, u(9), W, white, 1);
-    /* Cut the bottom-right corner off, then draw the fold back in. Painting the
-       tile's own gradient over the corner is the erase — there is no clipping
-       here, only compositing, so "remove" means "paint what was underneath".
-       The pad takes the cut past the rounded corner so no stub of the original
-       outline is left hanging outside the diagonal. */
-    /* The cut has to run *through* A and C, not parallel to them.
-
-       Offset it outwards and a band of the original rounded corner survives, so
-       the fold reads as a tab stuck on the card. Offset it inwards and the
-       bottom and right edges are cut back short of the chamfer, so the fold
-       floats free of the outline with a gap either side. Both of those were
-       drawn before this comment was. Put P1 and P3 exactly on the A–C line and
-       push them *along* it, past both ends, so the extension covers the rounded
-       corner without moving the line itself. */
-    const A = [x + w - f, y + h], C = [x + w, y + h - f], D = [x + w - f, y + h - f];
-    const k = W * 1.6 * Math.SQRT1_2;                // step along the diagonal
-    /* Outward by half a stroke, then along the diagonal past both ends.
-
-       The half-stroke matters. A and C sit on the *centrelines* of the bottom
-       and right edges, so a cut exactly through them takes the outer half of
-       each edge with it — the edges end short, the chamfer's round caps stick
-       out past them into open gradient, and the fold reads as a loose flap
-       pinned to a broken outline. Offsetting the cut out by W/2 leaves both
-       edges full width right up to where the chamfer lands on them. f is large
-       enough that the rounded corner is still entirely inside the cut. */
-    const n = (W / 2) * Math.SQRT1_2;
-    fillTri(s,
-      [A[0] + n - k, A[1] + n + k],
-      [x + w + W, y + h + W],
-      [C[0] + n + k, C[1] + n - k], grad, 1);
-    line(s, A[0], A[1], C[0], C[1], W, white, 1);    // the chamfer
-    line(s, A[0], A[1], D[0], D[1], W, white, 1);    // and the flap under it
-    line(s, D[0], D[1], C[0], C[1], W, white, 1);
-    // text ruling, so a card with room for it reads as a written note
-    (rules || []).forEach(([ry, rw]) => {
-      line(s, x + u(11), y + ry, x + u(11) + rw, y + ry, W * 0.78, white, 0.95);
-    });
-  }
-
-  /* Connectors, drawn first so the cards sit on top and hide the joins. Right
-     angles rather than curves: this is the diagram of a board, not the board,
-     and an elbow says "these are joined" at a size where a curve is three grey
-     pixels. */
-  polyline(s, [[u(74), u(104)], [u(74), u(126)], [u(112), u(126)]], W, white, 1);
-  polyline(s, [[u(176), u(126)], [u(196), u(126)], [u(196), u(112)]], W, white, 1);
-  polyline(s, [[u(112), u(160)], [u(84), u(160)], [u(84), u(178)]], W, white, 1);
-  polyline(s, [[u(150), u(164)], [u(150), u(184)], [u(168), u(184)]], W, white, 1);
-
-  // top-left note, the centre note, and the small one bottom-left
-  card(u(46), u(52), u(56), u(52));
-  card(u(110), u(96), u(66), u(70), [[u(19), u(38)], [u(33), u(30)], [u(47), u(24)]]);
-  card(u(48), u(172), u(48), u(46), [[u(15), u(22)]]);
-
-  /* The link chip. A chain link is two capsules on a diagonal, and a capsule is
-     a fat white line with a thinner gradient line painted back down the middle
-     of it — an outline, drawn with the two primitives that exist. */
-  strokeRoundRect(s, u(174), u(58), u(52), u(52), u(9), W, white, 1);
-  const chain = (x1, y1, x2, y2) => {
-    line(s, x1, y1, x2, y2, u(15), white, 1);
-    lineWith(s, x1, y1, x2, y2, u(7), grad, 1);
-  };
-  chain(u(185), u(99), u(195), u(89));
-  chain(u(205), u(79), u(215), u(69));
-  line(s, u(193), u(91), u(207), u(77), W * 0.85, white, 1);   // the link between them
-
-  /* The image chip: a frame with a horizon and a sun. Same two marks every
-     image placeholder ever drawn uses, because they are the two that survive
-     being shrunk to nothing. */
-  strokeRoundRect(s, u(166), u(160), u(58), u(48), u(9), W, white, 1);
-  polyline(s, [[u(172), u(200)], [u(190), u(180)], [u(202), u(192)], [u(210), u(184)], [u(218), u(192)]], W * 0.9, white, 1);
-  fillRoundRect(s, u(203), u(168), u(9), u(9), u(4.5), () => white, 1);
-
-  // a soft inner rim
-  strokeRoundRect(s, u(10), u(10), u(236), u(236), u(56), u(3), white, 0.16);
-
-  return downsample(s, S);
-}
-function downsample(s, S) {
-  const out = surface(S);
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      let r = 0, g = 0, b = 0, a = 0;
-      for (let j = 0; j < SS; j++) {
-        for (let i = 0; i < SS; i++) {
-          const k = ((y * SS + j) * s.w + (x * SS + i)) * 4;
-          const pa = s.px[k + 3];
-          r += s.px[k] * pa; g += s.px[k + 1] * pa; b += s.px[k + 2] * pa; a += pa;
-        }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const w = ihdr.w, h = ihdr.h, stride = w * CH;
+  const out = Buffer.alloc(h * stride);
+  let off = 0;
+  /* Undo the per-scanline filters. Each line names its own filter and is
+     predicted from the pixel to its left and the line above it, so this has to
+     run in order — there is no shortcut past it. */
+  for (let y = 0; y < h; y++) {
+    const ft = raw[off++];
+    const line = raw.subarray(off, off + stride); off += stride;
+    const cur = out.subarray(y * stride, (y + 1) * stride);
+    const prev = y ? out.subarray((y - 1) * stride, y * stride) : null;
+    for (let x = 0; x < stride; x++) {
+      const a = x >= CH ? cur[x - CH] : 0;
+      const b = prev ? prev[x] : 0;
+      const c = (prev && x >= CH) ? prev[x - CH] : 0;
+      let v = line[x];
+      if (ft === 1) v += a;
+      else if (ft === 2) v += b;
+      else if (ft === 3) v += (a + b) >> 1;
+      else if (ft === 4) {
+        const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c);
+        v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
       }
-      const n = SS * SS, o = (y * S + x) * 4;
-      out.px[o]     = a ? r / a : 0;
-      out.px[o + 1] = a ? g / a : 0;
-      out.px[o + 2] = a ? b / a : 0;
-      out.px[o + 3] = a / n;
+      cur[x] = v & 255;
+    }
+  }
+
+  const rgba = Buffer.alloc(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    let r, g, b, a = 255;
+    if (ihdr.color === 0) { r = g = b = out[i]; }
+    else if (ihdr.color === 2) { r = out[i * 3]; g = out[i * 3 + 1]; b = out[i * 3 + 2]; }
+    else if (ihdr.color === 3) {
+      const ix = out[i];
+      r = plte[ix * 3]; g = plte[ix * 3 + 1]; b = plte[ix * 3 + 2];
+      if (trns && ix < trns.length) a = trns[ix];
+    } else if (ihdr.color === 4) { r = g = b = out[i * 2]; a = out[i * 2 + 1]; }
+    else { r = out[i * 4]; g = out[i * 4 + 1]; b = out[i * 4 + 2]; a = out[i * 4 + 3]; }
+    rgba[i * 4] = r; rgba[i * 4 + 1] = g; rgba[i * 4 + 2] = b; rgba[i * 4 + 3] = a;
+  }
+  return { w, h, rgba };
+}
+
+/* ---------- black on white ----------
+   Composite over white first, so a transparent background becomes white rather
+   than black. Then luminance, then a stretch that puts the darkest pixel in the
+   picture at 0 — which is what makes this independent of how dark the source
+   blue happens to be, and what stops navy line-art coming out muddy grey. */
+function toBlackOnWhite(img) {
+  const n = img.w * img.h;
+  const lum = new Float64Array(n);
+  let lo = 1;
+  for (let i = 0; i < n; i++) {
+    const a = img.rgba[i * 4 + 3] / 255;
+    const r = (img.rgba[i * 4]     * a + 255 * (1 - a)) / 255;
+    const g = (img.rgba[i * 4 + 1] * a + 255 * (1 - a)) / 255;
+    const b = (img.rgba[i * 4 + 2] * a + 255 * (1 - a)) / 255;
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    lum[i] = L;
+    if (L < lo) lo = L;
+  }
+  const span = 1 - lo;
+  const grey = new Float64Array(n);
+  for (let i = 0; i < n; i++) grey[i] = span > 0.001 ? (lum[i] - lo) / span : lum[i];
+  return { w: img.w, h: img.h, grey };
+}
+
+/* ---------- resizing ----------
+   A box average over exactly the source pixels each target pixel covers. For
+   512 -> 256 that is a 2x2; for 512 -> 16 it is 32x32, which is the whole
+   reason the small sizes stay readable instead of aliasing into speckle. The
+   result is opaque — alpha 255 everywhere, white wherever there is no ink. */
+function resample(src, size) {
+  const out = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    const y0 = Math.floor(y * src.h / size);
+    const y1 = Math.max(y0 + 1, Math.floor((y + 1) * src.h / size));
+    for (let x = 0; x < size; x++) {
+      const x0 = Math.floor(x * src.w / size);
+      const x1 = Math.max(x0 + 1, Math.floor((x + 1) * src.w / size));
+      let sum = 0, count = 0;
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) { sum += src.grey[sy * src.w + sx]; count++; }
+      }
+      const v = Math.round(Math.min(1, Math.max(0, sum / count)) * 255);
+      const o = (y * size + x) * 4;
+      out[o] = v; out[o + 1] = v; out[o + 2] = v; out[o + 3] = 255;
     }
   }
   return out;
-}
-function toRGBA(s) {
-  const buf = Buffer.alloc(s.w * s.h * 4);
-  for (let i = 0; i < s.w * s.h; i++) {
-    buf[i * 4]     = Math.round(Math.min(255, Math.max(0, s.px[i * 4])));
-    buf[i * 4 + 1] = Math.round(Math.min(255, Math.max(0, s.px[i * 4 + 1])));
-    buf[i * 4 + 2] = Math.round(Math.min(255, Math.max(0, s.px[i * 4 + 2])));
-    buf[i * 4 + 3] = Math.round(Math.min(255, Math.max(0, s.px[i * 4 + 3] * 255)));
-  }
-  return buf;
 }
 
 /* ---------- PNG ---------- */
@@ -352,15 +243,21 @@ function ico(images) {
 }
 
 /* ---------- go ---------- */
+if (!fs.existsSync(SRC)) {
+  console.error('missing ' + path.relative(path.join(__dirname, '..'), SRC) + '\n' +
+                'Put the icon artwork there as an 8-bit PNG and run `npm run icon` again.');
+  process.exit(1);
+}
 fs.mkdirSync(OUT, { recursive: true });
 
-const big = draw(256);
-fs.writeFileSync(path.join(OUT, 'icon.png'), png(toRGBA(big), 256, 256));
+const source = toBlackOnWhite(readPng(fs.readFileSync(SRC)));
+fs.writeFileSync(path.join(OUT, 'icon.png'), png(resample(source, 256), 256, 256));
 
 const entries = [16, 24, 32, 48, 64, 128, 256].map((size) => {
-  const rgba = toRGBA(draw(size));
+  const rgba = resample(source, size);
   return { size, data: size >= 128 ? png(rgba, size, size) : dibEntry(rgba, size) };
 });
 fs.writeFileSync(path.join(OUT, 'icon.ico'), ico(entries));
 
-console.log('wrote assets/icon.png (256) and assets/icon.ico (' + entries.map((e) => e.size).join(', ') + ')');
+console.log('wrote assets/icon.png (256) and assets/icon.ico (' + entries.map((e) => e.size).join(', ') +
+            ') from ' + source.w + 'x' + source.h + ' ' + path.basename(SRC));

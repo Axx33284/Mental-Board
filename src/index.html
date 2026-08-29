@@ -502,6 +502,17 @@
           <p class="set-note dim sub" id="backupWhere"></p>
           <label class="set-check sub"><input type="checkbox" id="setBackupAuto"><span class="row-ic"></span><span data-t="set.backupAuto"></span></label>
 
+          <!-- The files boards carry, and the one thing that clears the ones
+               nothing points at any more. Here rather than on a board's own
+               menu because it is a decision about the folder on disk, which is
+               what this whole tab is about. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.files"></span> <span class="set-val" id="filesCount"></span></label>
+            <div class="set-btns end">
+              <button class="btn small" id="btnCleanFiles"><span class="b-ic"></span><span data-t="set.cleanFiles"></span></button>
+            </div>
+          </div>
+
           <!-- What a picture of the board is drawn in. Separate from the theme
                you work in, because a picture is for somewhere else. -->
           <div class="set-row">

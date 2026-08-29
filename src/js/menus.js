@@ -55,6 +55,10 @@ function openCtxMenu(clientX, clientY, id) {
       html += item('tpl', 'bookmarks', te('tpl.save'));
       const n0 = state.notes.find((x) => x.id === targets[0]);
       if (n0 && n0.hist && n0.hist.length) html += item('hist', 'history', te('menu.history', { n: n0.hist.length }));
+      /* Where the app has actually put this. Only on a note that carries a file,
+         because on any other note it would be a row that does nothing — and it
+         is the honest answer to "you copied my video somewhere, where?". */
+      if (n0 && firstFileUrl(n0)) html += item('whereFile', 'folder_open', te('menu.whereFile'));
     }
     if (targets.length === 1 && isFrame(targets[0])) {
       /* Where the title sits. A little map of the frame rather than nine named
@@ -105,6 +109,8 @@ function openCtxMenu(clientX, clientY, id) {
     html += `<div class="cm-sep"></div>`;
     html += item('undo', 'undo', te('menu.undo'), 'Ctrl Z');
     html += item('redo', 'redo', te('menu.redo'), 'Ctrl Shift Z');
+    html += `<div class="cm-sep"></div>`;
+    html += item('boardFiles', 'folder', te('menu.boardFiles'));
     if (onTrashBoard()) {
       html += `<div class="cm-sep"></div>`;
       html += item('emptyTrash', 'delete_forever', te('menu.emptyTrash'));
@@ -166,6 +172,7 @@ function openCtxMenu(clientX, clientY, id) {
       case 'remind': openRemindDialog(targets[0]); break;
       case 'tpl': openTemplateDialog(targets[0]); break;
       case 'hist': openHistory(targets[0]); break;
+      case 'whereFile': revealFile(firstFileUrl(state.notes.find((x) => x.id === targets[0]))); break;
       case 'front': pushUndo(); targets.forEach(bringToFront); saveSoon(); break;
       case 'back': pushUndo(); targets.forEach(sendToBack); saveSoon(); break;
       case 'del': pushUndo(); deleteItems(targets); break;
@@ -174,6 +181,7 @@ function openCtxMenu(clientX, clientY, id) {
       case 'arrCol': arrangeSelection('column'); break;
       case 'putBack': putBack(targets); break;
       case 'emptyTrash': emptyTrash(); break;
+      case 'boardFiles': openBoardFiles(); break;
       case 'newNote': addNote(worldPt); break;
       case 'newFrame': addFrame(worldPt); break;
       case 'paste': pasteClipboard(worldPt); break;

@@ -1184,3 +1184,53 @@ body.focusing .note.focus-hit { opacity: 1; filter: none; }
 #focusChip[data-color="blue"] .fc-dot { background: var(--c-blue-c); }
 #focusChip[data-color="violet"] .fc-dot { background: var(--c-violet-c); }
 #focusChip[data-color="pink"] .fc-dot { background: var(--c-pink-c); }
+
+/* ─────────── §43. a file a note carries ───────────
+   A video, a sound or a document dropped into a note. The player is an ordinary
+   <video>, so Chromium's own controls do the work — there is no custom transport
+   to keep in step with a theme, and none of the accessibility that comes free
+   with the native one has to be rebuilt.
+
+   `contenteditable="false"` is on the wrapper in the markup, not here: the caret
+   would otherwise land inside the element and the next keystroke would insert a
+   node in the middle of it. Same reason the embed card and an inline icon need
+   it.
+
+   The name bar underneath is what makes a clip identifiable once it is one of
+   six on a board — and it is the only part that is *ours*, so it is the only
+   part that needs styling. */
+.note-body .mb-file {
+  display: block;
+  margin: .55em 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2, var(--surface));
+}
+.note-body .mb-video-el {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+}
+.note-body .mb-audio-el { display: block; width: 100%; }
+.note-body .mb-file-bar {
+  display: flex;
+  align-items: center;
+  gap: .4em;
+  padding: .3em .5em;
+  font-size: .82em;
+  color: var(--dim);
+  border-top: 1px solid var(--line);
+}
+.note-body .mb-file-bar svg { width: 1.05em; height: 1.05em; flex: none; }
+.note-body .mb-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Far out, a note is a coloured rectangle and its contents are not read — the
+   same rule the rest of the body follows. A <video> is the most expensive thing
+   that can be in a note, so it is the one that most needs taking out of the
+   layout. */
+body.far-zoom .note-body .mb-file { display: none; }

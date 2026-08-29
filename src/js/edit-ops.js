@@ -206,25 +206,52 @@ function deleteItems(ids) {
 }
 
 /* Put something back where it came from. The board it came from may have been
-   deleted since, so an unknown origin lands on whatever board is showing —
-   which is always somewhere you can see it, and never nowhere. */
+   deleted, archived away or locked since, so every item also needs a fallback.
+
+   The fallback may not be "the board in front of us", which is what it used to
+   be. Put back is only ever offered while you are standing in the bin — see the
+   onTrashBoard() guard in §12 — so `state.notes` *is* `tb.notes`, the same array
+   object, and pushing onto it put the item straight back into the bin. The
+   filter below then removed it along with the copy it was meant to replace: the
+   item landed on no board at all, the toast said it had been put back, and only
+   Ctrl+Z could tell you otherwise. Same trap syncActiveBoard() exists for, one
+   more time: the live mirror and the stored board are one array, not two.
+
+   So an item with no usable origin goes to the first live board instead. A
+   locked board is never a candidate in either position — it holds no plaintext,
+   and syncActiveBoard() would refuse to store whatever we pushed into it, which
+   is the same disappearance by a longer route. When there is no candidate at
+   all, the item stays in the bin and we say so; the bin is the one place it is
+   still safe. */
 function putBack(ids) {
   const tb = trashOf();
   if (!tb) return;
   const set = new Set(ids);
   const items = [...tb.notes.filter((n) => set.has(n.id)), ...tb.frames.filter((f) => set.has(f.id))];
   if (!items.length) return;
+
+  const spare = liveBoards().find((b) => !isLocked(b)) || null;
+  const homeOf = (it) => {
+    const b = boardById(it.trashedFrom);
+    return (b && !b.trash && !isLocked(b)) ? b : spare;
+  };
+  const going = items.filter(homeOf);
+  if (!going.length) { toast(t('msg.putBackNowhere'), 4200); return; }
+
   pushUndo();
   let restored = 0, elsewhere = 0;
-  items.forEach((it) => {
-    const home = boardById(it.trashedFrom);
-    const target = (home && !home.trash && !isLocked(home)) ? home : null;
+  going.forEach((it) => {
+    const target = homeOf(it);
+    // only a return to its *own* board earns the "on its own board" message
+    const ownBoard = boardById(it.trashedFrom) === target;
     delete it.trashedFrom; delete it.trashedAt;
-    if (target && target.id !== state.activeBoard) {
+    if (target.id !== state.activeBoard) {
       if (isFrame(it.id)) target.frames.push(it); else { it.z = ++target.nextZ; target.notes.push(it); }
-      elsewhere++;
+      if (ownBoard) elsewhere++;
     } else {
-      // onto the board in front of us, in the middle of what we are looking at
+      /* Onto the board in front of us, in the middle of what we are looking at.
+         Unreachable from the bin — `target` is never the bin — and kept for a
+         caller that puts something back while standing somewhere else. */
       const c = viewCenterWorld();
       it.x = Math.round(c.x - it.w / 2 + restored * 24);
       it.y = Math.round(c.y - it.h / 2 + restored * 24);
@@ -232,8 +259,11 @@ function putBack(ids) {
       restored++;
     }
   });
-  tb.notes = tb.notes.filter((n) => !set.has(n.id));
-  tb.frames = tb.frames.filter((f) => !set.has(f.id));
+  /* What actually moved, not what was asked for. Anything left behind is still
+     in the bin and must not be filtered out of it. */
+  const moved = new Set(going.map((it) => it.id));
+  tb.notes = tb.notes.filter((n) => !moved.has(n.id));
+  tb.frames = tb.frames.filter((f) => !moved.has(f.id));
   /* Rebind when the bin is what is on screen. `state.notes` is the *live
      mirror* of the open board — the same array object, not a copy — and the
      two filters above replaced `tb.notes` with new arrays rather than mutating
@@ -242,9 +272,9 @@ function putBack(ids) {
      its own board *and* still in the bin. Same trap `syncActiveBoard()` was
      written for, from the other side. */
   if (state.activeBoard === tb.id) bindBoard(tb);
-  ids.forEach((id) => { els.get(id)?.remove(); els.delete(id); selection.delete(id); });
+  moved.forEach((id) => { els.get(id)?.remove(); els.delete(id); selection.delete(id); });
   render(); drawCompass(); renderBoardRail(); save();
-  toast(elsewhere ? t('msg.putBackBoards', { n: items.length }) : t('msg.putBack', { n: items.length }));
+  toast(elsewhere ? t('msg.putBackBoards', { n: going.length }) : t('msg.putBack', { n: going.length }));
 }
 
 /* The only irreversible delete in the app, and the only one that asks. */
@@ -313,39 +343,52 @@ function trackCanvasPoint(e) {
 }
 
 const PASTED_IMG_MAX = 620;
-function noteFromImage(file, worldPt) {
-  if (!canEditHere()) return;
-  if (!file || !/^image\//.test(file.type)) return;
-  if (file.size > 6 * 1024 * 1024) { toast(t('msg.imageTooBig')); return; }
-  const r = new FileReader();
-  r.onload = () => {
-    const src = r.result;
-    /* Measure first, then make the note. Creating it at a default size and
-       resizing after the image decodes makes it jump, and a note that resizes
-       itself a beat after it appears reads as a glitch rather than as fitting. */
+
+/* A picture, as a note of its own — from a drop, a paste, or a screenshot.
+
+   `taken` is the already-filed copy when the caller has one (the canvas drop
+   files the whole batch before it starts making notes). Without it the file is
+   taken in here, so a pasted screenshot lands in the board's folder like
+   everything else instead of being inlined as a six-megabyte data URL in the
+   board file — which is what this used to do, and what made every keystroke
+   re-serialise those six megabytes. */
+async function noteFromImage(file, worldPt, taken) {
+  if (!canEditHere()) return null;
+  if (!file) return null;
+  const got = taken || await takeFileIn(file);
+  if (!got) return null;
+
+  /* Measure first, then make the note. Creating it at a default size and
+     resizing after the image decodes makes it jump, and a note that resizes
+     itself a beat after it appears reads as a glitch rather than as fitting. */
+  const size = await new Promise((res) => {
     const probe = new Image();
-    const make = (w, h) => {
-      const n = addNote(worldPt, {
-        body: `<img class="mb-img" src="${esc(src)}"><p><br></p>`,
-        w, h, edit: false
-      });
-      if (n) toast(t('msg.imagePasted'));
-    };
     probe.onload = () => {
       const scale = Math.min(1, PASTED_IMG_MAX / Math.max(probe.width, 1));
-      const w = Math.max(NOTE_MIN_W, Math.round(probe.width * scale) + 34);
-      const h = Math.max(NOTE_MIN_H, Math.round(probe.height * scale) + 54);
-      make(w, Math.min(h, 900));
+      res({
+        w: Math.max(NOTE_MIN_W, Math.round(probe.width * scale) + 34),
+        h: Math.min(Math.max(NOTE_MIN_H, Math.round(probe.height * scale) + 54), 900)
+      });
     };
-    probe.onerror = () => make(320, 260);   // not a picture we can measure
-    probe.src = src;
-  };
-  r.readAsDataURL(file);
+    probe.onerror = () => res({ w: 320, h: 260 });     // not a picture we can measure
+    probe.src = got.url;
+  });
+
+  const n = addNote(worldPt, {
+    body: `<img class="mb-img" src="${esc(got.url)}"><p><br></p>`,
+    w: size.w, h: size.h, edit: false
+  });
+  if (n) toast(t('msg.imagePasted'));
+  return n;
 }
 
 /* The clipboard, whatever is on it. An image wins over the internal clipboard
    because if you have just taken a screenshot, that is plainly what you meant
-   — the notes you copied twenty minutes ago are still there afterwards. */
+   — the notes you copied twenty minutes ago are still there afterwards.
+
+   Everything goes through the same filing as a drop, so a screenshot pasted on
+   the canvas and a clip dragged onto it end up in the same place and are backed
+   up by the same rule. */
 function pasteAnything(e, worldPt) {
   const dt = e && (e.clipboardData || e.originalEvent?.clipboardData);
   const item = dt ? [...(dt.items || [])].find((i) => i.kind === 'file' && i.type && i.type.startsWith('image/')) : null;
@@ -353,17 +396,19 @@ function pasteAnything(e, worldPt) {
     const f = item.getAsFile();
     if (f) { e.preventDefault(); noteFromImage(f, worldPt); return true; }
   }
-  /* A file:// path on the clipboard — copying an image in Explorer puts the
-     file itself there, not its pixels. Same result, without inlining it. */
+  /* Files on the clipboard — copying something in Explorer puts the file
+     itself there, not its pixels. Not only images any more: a copied video or
+     document pastes onto the canvas exactly as it drops onto it. */
   const files = dt && dt.files ? [...dt.files] : [];
-  const img = files.find((f) => /^image\//.test(f.type));
-  if (img) {
+  if (files.length) {
     e.preventDefault();
-    const url = FILES && FILES.toUrl ? FILES.toUrl(img) : null;
-    if (url) {
-      const n = addNote(worldPt, { body: `<img class="mb-img" src="${esc(url)}"><p><br></p>`, w: 420, h: 340, edit: false });
-      if (n) toast(t('msg.imagePasted'));
-    } else noteFromImage(img, worldPt);
+    (async () => {
+      let i = 0;
+      for (const f of files) {
+        await noteFromDroppedFile(f, { x: worldPt.x + i * 40, y: worldPt.y + i * 40 });
+        i++;
+      }
+    })();
     return true;
   }
   return false;
@@ -430,6 +475,11 @@ function noteToText(html) {
       if (tag === 'DIV' && node.classList.contains('mb-embed')) {
         const a = node.querySelector('a');
         lines.push(pad + (node.dataset.title ? node.dataset.title + ' — ' : '') + ((a && a.getAttribute('href')) || ''));
+        continue;
+      }
+      // copied out of the app, a video is its name: the file is not going with it
+      if (tag === 'DIV' && node.classList.contains('mb-file')) {
+        lines.push(pad + (node.dataset.name || ''));
         continue;
       }
       const body = inlineText(node);
@@ -580,6 +630,14 @@ function exportBlocks(html, max) {
       if (tag === 'DIV' && node.classList.contains('mb-col')) { walk(node, depth); continue; }
       if (tag === 'DIV' && node.classList.contains('mb-embed')) {
         out.push({ text: '▶ ' + hostOf((node.querySelector('a') || {}).href || ''), size: 1, bold: false, dim: true, indent: depth });
+        continue;
+      }
+      /* A video is drawn as its name with a play mark, for the same reason a
+         table is drawn as "(table)": the picture is drawn from the model, and
+         there is no frame of the video in the model to draw. */
+      if (tag === 'DIV' && node.classList.contains('mb-file')) {
+        const mark = node.classList.contains('mb-video') ? '▶ ' : '♪ ';
+        out.push({ text: mark + (node.dataset.name || ''), size: 1, bold: false, dim: true, indent: depth });
         continue;
       }
       if (tag === 'TABLE') { out.push({ text: t('export.table'), size: 1, bold: false, dim: true, indent: depth }); continue; }
@@ -738,7 +796,12 @@ async function exportBoardImage(id) {
   closeBoardMenu();
   if (isLocked(board) && !(await unlockBoard(board))) return;
   if (board.id === state.activeBoard) syncActiveBoard();
-  const cv = paintBoardCanvas(board, 2);
+  /* Drawn in the picture's own theme, not the one on screen. exportPalette()
+     reads the live stylesheet, so the swap has to be in force for the whole of
+     paintBoardCanvas() — which is why withTheme() takes a callback rather than
+     handing back a colour set. Everything inside is synchronous, so no frame is
+     ever painted in the swapped theme. */
+  const cv = withTheme(pictureTheme(), () => paintBoardCanvas(board, 2));
   if (!cv) { toast(t('msg.exportEmpty')); return; }
   const name = (boardLabel(board).replace(/[^\w؀-ۿ -]+/g, '').trim() || 'board').slice(0, 40);
   const dataUrl = cv.toDataURL('image/png');

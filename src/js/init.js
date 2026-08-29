@@ -6,6 +6,37 @@
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
 /* ─────────────── 16. pointer routing, keyboard, init ─────────────── */
+/* Leaving by the app's own close button.
+
+   This is the one exit the renderer gets to wait on, and that is the whole
+   reason it exists as a function rather than three statements on a listener.
+   Everything else — Alt+F4, Quit from the tray, the machine shutting down —
+   arrives at `beforeunload`, where nothing may be awaited and flushSave()'s
+   blocking write is the backstop.
+
+   What the waiting buys is a locked board's last few seconds. Its ciphertext is
+   rebuilt by reencryptOpenBoards(), WebCrypto is async, and save(true) very
+   deliberately refuses to wait for it on the way out — so without this the
+   envelope written at close is the one the last debounce left, and anything
+   typed since is only in memory. Here there is time: re-encrypt first, then let
+   flushSave() do the single blocking write with the envelope already current.
+
+   A failure is logged and not put in a dialog. The debounced path already
+   reports it once a session through reportEncryptFailure(), and a dialog raised
+   on the way out either vanishes with the window or — with Run in background on,
+   where close only hides — is still sitting there the next time the window is
+   shown, attached to a session the user has finished with. The write still
+   happens either way, with the last good envelope. */
+async function closeAndQuit() {
+  if (editing && editNote) editNote.body = bodyHtml(editing);
+  if (state.boards.some((b) => b.enc && unlocked.has(b.id))) {
+    try { await reencryptOpenBoards(); }
+    catch (err) { console.error('re-encryption threw on the way out:', err); }
+  }
+  flushSave();
+  if (WIN) WIN.close();
+}
+
 function onPointerDown(e) {
   closeCtxMenu();
   // clicking away from the paste menu means "plain text, thanks"
@@ -239,43 +270,88 @@ function onKeyUp(e) {
 }
 
 /* --- canvas-level image drop ------------------------------------------- */
-function onCanvasDrop(e) {
-  const f = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (!f) return;
+/* Something dropped on the canvas.
+
+   Every drop ends the same way: the file is taken into the open board's folder
+   (see §11b) and a note is made for it, wherever the pointer was. There is no
+   "drop onto an existing note" case here — the note body has its own handler —
+   so **a drop with no note under it makes the note**, which is what dropping a
+   file on a blank canvas obviously means.
+
+   Two things come first, because they are not attachments:
+
+   - **A board somebody else made.** A .json that turns out to be one of ours is
+     imported rather than filed away as a document. This is the whole of "send
+     me your board": drop the file, and if its pictures are sitting in a
+     `files/` folder beside it — which is exactly what a backup folder looks
+     like — they come across too.
+   - **Several files at once.** Dropping a folder's worth of clips should make a
+     row of notes, not one note about the first of them. */
+async function onCanvasDrop(e) {
+  const files = e.dataTransfer && e.dataTransfer.files ? [...e.dataTransfer.files] : [];
+  if (!files.length) return;
   e.preventDefault();
-  if (/^image\//.test(f.type)) {
-    const pt = toWorld(e.clientX, e.clientY);
-    const url = FILES && FILES.toUrl ? FILES.toUrl(f) : null;
-    if (url) { addNote(pt, { body: `<img class="mb-img" src="${esc(url)}"><p><br></p>`, edit: false }); return; }
-    const r = new FileReader();
-    r.onload = () => addNote(pt, { body: `<img class="mb-img" src="${r.result}"><p><br></p>`, edit: false });
-    r.readAsDataURL(f);
-    return;
-  }
-  if (/^text\//.test(f.type) || /\.(txt|md)$/i.test(f.name)) {
-    const pt = toWorld(e.clientX, e.clientY);
-    const r = new FileReader();
-    r.onload = () => addNote(pt, { body: `<p>${esc(String(r.result)).replace(/\n/g, '<br>')}</p>`, edit: false });
-    r.readAsText(f);
-    return;
+  if (!canEditHere()) return;
+
+  const pt = toWorld(e.clientX, e.clientY);
+
+  /* A board file is offered as an import before anything else looks at it. Only
+     when it really is one of ours: an ordinary .json dropped on the canvas is
+     still a document, and silently swallowing it would be worse than useless to
+     anybody whose work involves JSON. */
+  if (files.length === 1 && isBoardFile(files[0])) {
+    if (await tryImportDroppedBoard(files[0])) return;
   }
 
-  /* Anything else — a spreadsheet, a PDF, a deck — becomes a note that links to
-     it where it already lives. It used to be dropped silently, which for anyone
-     whose work is *about* documents made the canvas look like it did not want
-     them. Deliberately a link and not a copy: the file stays where the rest of
-     your filing expects it, the board file stays small, and a note about a
-     model that quietly held a stale copy of the model would be worse than no
-     note at all. */
-  const pt2 = toWorld(e.clientX, e.clientY);
-  const p = FILES && FILES.pathOf ? FILES.pathOf(f) : '';
-  if (!p) { toast(t('msg.dropNeedsDesktop')); return; }
-  const href = toLinkHref(p);
-  const n = addNote(pt2, {
-    body: `<p>${icon('description')}<a href="${esc(href)}">${esc(f.name)}</a></p>`,
-    icon: 'description', w: 320, h: 150, edit: false
+  /* Spread several drops along a row from where the pointer was, so they do not
+     land on top of each other. */
+  let i = 0;
+  for (const f of files) {
+    const at = { x: pt.x + i * 40, y: pt.y + i * 40 };
+    await noteFromDroppedFile(f, at);
+    i++;
+  }
+}
+
+/* One dropped file → one note. Shared by the canvas drop and by the paste
+   handler, so a screenshot and a dropped clip travel the same road. */
+async function noteFromDroppedFile(f, at) {
+  const taken = await takeFileIn(f);
+  if (!taken) return null;
+  const html = fileHtml(taken.url, taken.name);
+  if (!html) return null;
+
+  /* Sized to what it is. A video gets a box you can actually watch in, a
+     document gets a card, and an image is measured before the note is made —
+     see noteFromImage(), which this defers to so the two cannot drift. */
+  if (isImageFile(f)) return noteFromImage(f, at, taken);
+  const video = isVideoFile(f), audio = isAudioFile(f);
+  const n = addNote(at, {
+    body: html + '<p><br></p>',
+    icon: video ? 'movie' : audio ? 'headphones' : 'description',
+    w: video ? 480 : audio ? 340 : 320,
+    h: video ? 360 : audio ? 170 : 150,
+    edit: false
   });
-  if (n) toast(t('msg.fileLinked', { name: f.name }));
+  // two literal t() calls, so check-lang.js can see both keys
+  if (n && video) toast(t('msg.videoAdded', { name: taken.name }));
+  else if (n) toast(t('msg.fileAdded', { name: taken.name }));
+  return n;
+}
+
+/* A board file dropped on the canvas. Returns true when it was one of ours and
+   has been dealt with, false when it is just a .json and should become a note
+   like any other document. */
+async function tryImportDroppedBoard(f) {
+  let parsed;
+  try { parsed = JSON.parse(await f.text()); } catch (_) { return false; }
+  if (!parsed || typeof parsed !== 'object') return false;
+  const one = parsed.mbBoard && parsed.board;
+  const many = Array.isArray(parsed.boards) && parsed.boards.length;
+  if (!one && !many) return false;
+  const path = FILES && FILES.pathOf ? FILES.pathOf(f) : '';
+  await importBoardsFrom(parsed, path, f.name);
+  return true;
 }
 
 /* --- link ghost while roping ------------------------------------------- */
@@ -372,7 +448,16 @@ function init() {
     if (!e.target.closest('#selBar') && !e.target.closest('.note-body')) hideSelBar();
     if (!e.target.closest('#fabWrap')) document.body.classList.remove('fab-open');
   }, true);
-  window.addEventListener('beforeunload', () => { if (editing && editNote) editNote.body = bodyHtml(editing); flushSave(); save(); });
+  /* The last chance, and it has to be a blocking one: a promise handed back
+     here never settles, because the window does not wait for it. flushSave()
+     now writes synchronously even with a locked board open, which it did not
+     use to — see save(). The second save() that used to follow this one is
+     gone: after the flush there is nothing left to write, and with a locked
+     board open it started a PBKDF2 during teardown that could never land. */
+  window.addEventListener('beforeunload', () => {
+    if (editing && editNote) editNote.body = bodyHtml(editing);
+    flushSave();
+  });
 
   /* Ctrl+V anywhere that is not a text field. Screenshot, click the board,
      paste — a note with the picture in it, sized to the picture.
@@ -393,7 +478,7 @@ function init() {
   // titlebar
   $('btnMin').addEventListener('click', () => WIN && WIN.minimize());
   $('btnMax').addEventListener('click', () => WIN && WIN.toggleMaximize());
-  $('btnClose').addEventListener('click', () => { flushSave(); save(); WIN && WIN.close(); });
+  $('btnClose').addEventListener('click', closeAndQuit);
   $('btnSettings').addEventListener('click', openSettings);
 
   // The + button makes a note straight away; hovering it fans out the rest of
@@ -577,6 +662,7 @@ function init() {
   $('btnEmptyTrash').addEventListener('click', () => emptyTrash());
   $('btnImport').addEventListener('click', importBoard);
   $('btnBackupNow').addEventListener('click', () => backupNow());
+  $('btnCleanFiles').addEventListener('click', cleanUpFiles);
   $('btnBackupFolder').addEventListener('click', chooseBackupFolder);
   $('setBackupAuto').addEventListener('change', () => {
     state.settings.backupAuto = $('setBackupAuto').checked;
@@ -920,6 +1006,7 @@ const STATIC_ICONS = [
   ['#btnImportBoard .b-ic', 'archive'],
   ['#btnExportImage .b-ic', 'image'],
   ['label:has([data-t="set.trash"]) .row-ic', 'delete'],
+  ['label:has([data-t="set.files"]) .row-ic', 'folder'],
   ['#btnOpenTrash .b-ic', 'open_in_full'],
   ['#btnEmptyTrash .b-ic', 'delete_forever'],
   ['label:has([data-t="set.showArchived"]) .row-ic', 'archive'],
@@ -928,6 +1015,7 @@ const STATIC_ICONS = [
   ['#setBackground + .row-ic', 'restart_alt'],
   ['label:has([data-t="set.backup"]) .row-ic', 'shield'],
   ['#btnBackupNow .b-ic', 'cloud'],
+  ['#btnCleanFiles .b-ic', 'cleaning_services'],
   ['#btnBackupFolder .b-ic', 'folder_open'],
   ['#setBackupAuto + .row-ic', 'schedule'],
   ['label:has([data-t="set.pictureTheme"]) .row-ic', 'image'],

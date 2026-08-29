@@ -268,6 +268,20 @@ function syncSettingsUI() {
     ? t('set.backupWhere', { dir: s.backupDir }) +
       (s.lastBackup ? ' · ' + t('set.backupLast', { when: fmtWhen(s.lastBackup) }) : ' · ' + t('set.backupNever'))
     : t('set.backupNone');
+  /* What the boards are actually carrying. Counted from the folder, not from
+     the notes — the whole point of the row next to it is the gap between the
+     two, and a figure derived from the notes could never show one. */
+  const files = $('filesCount');
+  if (files) {
+    let n = 0, bytes = 0;
+    if (FILES && FILES.listAttachments) {
+      state.boards.forEach((b) => {
+        (FILES.listAttachments(b.id) || []).forEach((f) => { n++; bytes += f.size || 0; });
+      });
+    }
+    files.textContent = n ? t('set.filesCount', { n, size: fmtBytes(bytes) }) : t('set.filesNone');
+    $('btnCleanFiles').disabled = !n || !canCleanFiles();
+  }
   // a picture of the board is for somewhere else, so it gets its own theme
   $('setExportTheme').innerHTML =
     `<option value="app"${s.exportTheme === 'app' ? ' selected' : ''}>${te('set.pictureApp')}</option>` +
@@ -1007,7 +1021,11 @@ async function backupNow(quiet) {
   const dir = state.settings.backupDir;
   if (!dir) { chooseBackupFolder(); return; }
   if (!DATA || !DATA.backupTo) { toast(t('msg.needDesktop')); return; }
-  const r = await DATA.backupTo(dir, serialise(true), backupName());
+  /* The board *and* the files it carries. Only the boards whose plaintext we
+     actually hold: a locked board is ciphertext, so there is no file list to
+     read out of it and nothing to copy. */
+  const ids = state.boards.filter((b) => !isLocked(b)).map((b) => b.id);
+  const r = await DATA.backupTo(dir, serialise(true), backupName(), ids);
   if (!r || r.error) {
     toast(t('msg.backupFailed', { err: (r && r.error) || '?' }), 7000);
     return;
@@ -1015,7 +1033,12 @@ async function backupNow(quiet) {
   state.settings.lastBackup = Date.now();
   save();
   syncSettingsUI();
-  if (!quiet) toast(t('msg.backedUp'));
+  /* A failure copying the files does not undo the JSON that already landed, so
+     it is said separately rather than turning the whole backup into a failure —
+     and it is said even on the automatic one, for the same reason a failed
+     backup is: a backup you have stopped checking is worse than none. */
+  if (r.filesError) { toast(t('msg.backupFilesFailed', { err: r.filesError }), 7000); return; }
+  if (!quiet) toast(r.files ? t('msg.backedUpFiles', { n: r.files }) : t('msg.backedUp'));
 }
 
 /* Once a day, on launch, if a folder has been chosen. Deliberately not on a
@@ -1029,6 +1052,105 @@ function maybeAutoBackup() {
   if (s.lastBackup && Date.now() - s.lastBackup < day) return;
   // after the board has settled, so a first launch is not competing with render
   setTimeout(() => backupNow(true), 4000);
+}
+
+/* --- files nothing points at any more -----------------------------------
+   Attachments are never deleted on their own: a board's folder outlives the
+   board, because deleting a board puts its notes in the bin and the bin has to
+   stay reversible (§4n). So a folder slowly fills with files no note mentions —
+   an emptied bin, a deleted note, a video dropped by mistake — and this is the
+   one thing that clears them. It runs only because somebody asked it to.
+
+   The whole of the safety is in what counts as *still referenced*, and it is
+   deliberately generous. Four places hold a file: URL, and every one of them is
+   somewhere the user can still get the file back:
+
+     · a note body, on any board — including the bin, which is a board;
+     · a note's `hist`, because restoring an old version has to restore its
+       picture with it, and history is the one reference that is invisible on
+       screen and so the easiest to forget;
+     · the undo and redo stacks, whose full steps are whole boards as JSON —
+       delete a file and one Ctrl+Z later the note is back with a hole in it;
+     · a template, which is note markup the user saved on purpose.
+
+   Anything missed here is a file deleted out from under something that could
+   still ask for it. Anything over-counted is a file kept that need not be,
+   which costs disk and nothing else. That asymmetry is the design: when in
+   doubt, keep. */
+const canCleanFiles = () => !!(FILES && FILES.unusedFiles && FILES.removeUnusedFiles);
+
+function referencedFileUrls() {
+  const out = new Set();
+  const scan = (html) => {
+    if (!html || html.indexOf('file:') < 0) return;
+    const d = document.createElement('div');
+    d.innerHTML = html;
+    d.querySelectorAll('[src], [href]').forEach((el) => {
+      const v = el.getAttribute('src') || el.getAttribute('href') || '';
+      if (/^file:/i.test(v)) out.add(v);
+    });
+  };
+  syncActiveBoard();
+  state.boards.forEach((b) => {
+    (b.notes || []).forEach((n) => {
+      scan(n.body);
+      (n.hist || []).forEach((h) => scan(h.body));
+    });
+  });
+  (state.templates || []).forEach((tpl) => scan(tpl && tpl.body));
+  /* The undo steps are raw JSON, not markup, so they are read with a regex
+     rather than parsed into a document. A geom step holds only numbers and has
+     no `json` at all, hence the filter. `&amp;` comes back to `&` because the
+     URL was written through esc() on its way into the markup. */
+  [...undoStack, ...redoStack].forEach((step) => {
+    [step.json, step.other && step.other.json].filter(Boolean).forEach((json) => {
+      (json.match(/file:[^"\\]+/g) || []).forEach((u) => out.add(u.replace(/&amp;/g, '&')));
+    });
+  });
+  return [...out];
+}
+
+// bytes in the shortest honest unit — a sweep is judged on what it frees
+function fmtBytes(n) {
+  if (n < 1024) return t('size.b', { n: num(n) });
+  if (n < 1024 * 1024) return t('size.kb', { n: num(Math.round(n / 1024)) });
+  if (n < 1024 * 1024 * 1024) return t('size.mb', { n: num(Math.round(n / 104857.6) / 10) });
+  return t('size.gb', { n: num(Math.round(n / 107374182.4) / 10) });
+}
+
+/* Count, ask, delete — and refuse outright when the count cannot be trusted.
+
+   A locked board that has not been opened this session holds ciphertext, so
+   there is no way to know which files it points at. Sweeping while one is shut
+   would delete every picture on it and the user would find out the next time
+   they unlocked it — which is exactly the shape of loss this app was rebuilt
+   over. Refusing is the only honest answer, and the message names the board to
+   open. Same rule as syncActiveBoard(), one layer out. */
+async function cleanUpFiles() {
+  if (!canCleanFiles()) { toast(t('msg.needDesktop')); return; }
+  const shut = state.boards.filter(isLocked);
+  if (shut.length) { toast(t('msg.cleanLocked', { name: shut.map(boardLabel).join(', ') }), 6000); return; }
+
+  const found = await FILES.unusedFiles(referencedFileUrls());
+  if (!found || found.error) { toast(t('msg.cleanFailed', { err: (found && found.error) || '?' }), 6000); return; }
+  if (!found.files) { toast(t('msg.cleanNone')); return; }
+
+  const list = found.names.length
+    ? '\n\n' + found.names.join('\n') + (found.files > found.names.length ? '\n…' : '')
+    : '';
+  const ok = await confirmDlg(
+    t('confirm.cleanTitle'),
+    t('confirm.cleanBody', { n: found.files, size: fmtBytes(found.bytes) }) + list,
+    t('confirm.cleanOk'));
+  if (!ok) return;
+
+  /* Scanned again rather than trusting the first pass. The dialog was open for
+     as long as somebody took to read it, and a reminder firing or a daily note
+     landing in that time could have written a file the first scan never saw. */
+  const done = await FILES.removeUnusedFiles(referencedFileUrls());
+  if (!done || done.error) { toast(t('msg.cleanFailed', { err: (done && done.error) || '?' }), 6000); return; }
+  toast(t('msg.cleaned', { n: done.files, size: fmtBytes(done.bytes) }), 4500);
+  syncSettingsUI();
 }
 
 /* --- export / import --------------------------------------------------- */
@@ -1063,6 +1185,20 @@ async function importBoard() {
   if (loadFailed) { loadFailed = false; hint(''); lastWritten = ''; }
   const keepSettings = state.settings;
   adopt(parsed, keepSettings);      // heal the imported shape, keep my settings
+  /* The pictures and clips, if they came with it. `r.path` is where the file
+     was; its attachments are in a `files/` folder beside it, which is the shape
+     backupNow() writes — so restoring a backup folder restores the media too,
+     not just the words. Board ids survive an import of a whole export, so the
+     copy lands in the folder the notes already point at. */
+  if (r.path && FILES && FILES.adoptAttachments) {
+    for (const b of state.boards) {
+      if (b.enc) continue;
+      const urls = attachmentUrls(b);
+      if (!urls.length) continue;
+      const got = await FILES.adoptAttachments(r.path, urls, b.id);
+      if (got && got.map) relinkAttachments(b, got.map);
+    }
+  }
   /* Undo cannot reach across an import any more: the stack holds notes and
      frames, and after this the board they belonged to may not exist. Clearing
      it is honest — offering an undo that would restore one board's contents on

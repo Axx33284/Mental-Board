@@ -519,15 +519,25 @@ function adoptBoard(raw) {
   return b;
 }
 
-/* Take an arbitrary saved or imported shape and make it a valid state. */
+/* Take an arbitrary saved or imported shape and make it a valid state.
+
+   `keepSettings` is passed by Import and by nothing else, and it means what it
+   says: these settings survive the import. The order below is the whole of it —
+   defaults, then the file, then mine — and it used to be the other way round,
+   so importing a board file quietly took the *file's* theme, language, perf mode
+   and `backupDir`. That last one is the one that mattered: it repointed the
+   automatic off-disk backup at a folder from whichever machine wrote the file.
+   The confirm dialog offers to replace every board, and says so in those words;
+   it does not offer to replace how the app is set up. */
 function adopt(raw, keepSettings) {
   if (!raw || typeof raw !== 'object') return;
   const d = defaults();
-  if (keepSettings) d.settings = Object.assign(d.settings, keepSettings);
+  const rawSet = raw.settings || {};
+  const kept = keepSettings || {};
   state = {
     v: 2,
     appVersion: typeof raw.appVersion === 'string' ? raw.appVersion : '',
-    settings: Object.assign(d.settings, raw.settings || {}),
+    settings: Object.assign(d.settings, rawSet, kept),
     boards: [], activeBoard: '',
     // anything malformed is a missing template, never a broken one
     templates: (Array.isArray(raw.templates) ? raw.templates : []).map(adoptTemplate).filter(Boolean),
@@ -582,14 +592,19 @@ function adopt(raw, keepSettings) {
      rail"; nobody chose a full-height column over a flyout, because there was
      nothing to choose between. Mapping it to the new default is honouring the
      choice that was actually made. */
-  /* Read the *raw* settings, not the merged ones. Object.assign has already
-     put the default ('hover') into st.railMode by the time we get here, so a
-     guard on the merged value is never true and the boolean was silently
-     dropped — someone who turned the rail off got it back on the next launch,
-     which is exactly what the paragraph above says must not happen. */
-  const rawSet = raw.settings || {};
-  if (!RAIL_MODES.includes(rawSet.railMode)) {
-    st.railMode = ('rail' in rawSet) ? (rawSet.rail ? 'hover' : 'off') : 'hover';
+  /* Read the *unmerged* settings, not `st`. Object.assign has already put the
+     default ('hover') into st.railMode by the time we get here, so a guard on
+     the merged value is never true and the boolean was silently dropped —
+     someone who turned the rail off got it back on the next launch, which is
+     exactly what the paragraph above says must not happen.
+
+     `said` is the file overlaid with anything Import is keeping, in the same
+     order as the merge above. Reading `rawSet` alone would let a file with no
+     valid railMode force 'hover' over the setting the user is keeping — which
+     is the betrayal this block exists to prevent, arriving by the other door. */
+  const said = Object.assign({}, rawSet, kept);
+  if (!RAIL_MODES.includes(said.railMode)) {
+    st.railMode = ('rail' in said) ? (said.rail ? 'hover' : 'off') : 'hover';
   }
   delete st.rail;
   if (!PERF_MODES.includes(st.perf)) st.perf = 'auto';
@@ -822,27 +837,59 @@ function reportSaveFailure(err) {
   }
 }
 /* `sync` is passed only by flushSave(), i.e. on the way out of the app. Every
-   other caller wants the off-thread write — see writeNow(). */
+   other caller wants the off-thread write — see writeNow().
+
+   Returns a promise **only** on the async branch, and only so a caller that can
+   still wait — closeAndQuit(), which owns the close button — is able to. Nothing
+   else looks at the return value. */
 function save(sync) {
   if (loadFailed) return;        // never write over a board we could not read
   /* The common path is entirely synchronous, which matters: flushSave() runs on
      beforeunload, and an await there would not finish before the window went.
-     Only a session with an open locked board takes the async branch, and that
-     branch accepts the same worst case the save debounce always had — the last
-     few seconds may not make it if you kill the process. */
+     Only a session with an open locked board takes the async branch. */
   if (state.boards.some((b) => b.enc && unlocked.has(b.id))) {
-    if (encWriting) return;
+    /* ...and on the way out it must not take it either.
+
+       WebCrypto is async and PBKDF2 at ENC_ITER is not fast, so the .finally
+       below does not run before the window goes. Taking this branch from
+       flushSave() therefore wrote **nothing at all** — not the locked board,
+       and not the other four boards either, whose work has nothing whatever to
+       do with the encryption. Every close threw away everything since the last
+       debounce, for every board, and said nothing: writeNow() never ran, so
+       neither did the one place that reports a failed write.
+
+       So the way out writes now, synchronously, with the envelope the last
+       debounced save left on the board. serialise() writes `enc` and never the
+       plaintext, so this cannot leak a locked board — the cost is at most the
+       last few seconds of typing *into a locked board*, which is the worst case
+       the debounce has always had. closeAndQuit() closes even that gap for the
+       close button, which is the one exit the renderer gets to wait on. */
+    if (sync) { writeNow(true); return; }
+    /* A re-encryption is already in flight — and it has already snapshotted the
+       plaintext it is going to write, because encryptBoard() builds its payload
+       only after awaiting deriveKey(). An edit made from here on is therefore
+       *not* in that ciphertext, and re-arming the debounce is what gets it to
+       the disk. Dropping the save instead means the edit lands only if some
+       later change happens to trigger another one — and if the user stops
+       typing at this moment, nothing ever does. writeNow() then stamps
+       lastWritten with the stale envelope, so every check the app has says the
+       board is saved when it is not. The edit is gone, and nothing said so.
+
+       Same reasoning as the asyncWriting guard in writeNow(), and the same
+       one-line fix. Only the debounce reaches here now — the way out returned
+       above. */
+    if (encWriting) { saveSoon(); return; }
     encWriting = true;
     /* .finally, not .then: if this ever rejected, encWriting would stay true
-       and every later save would return at the guard above — saving off for
-       the rest of the session with nothing said. Same shape as the 1.3 bug.
+       and every later save would re-arm the debounce without ever writing — a
+       board that looks saved and is not. Same shape as the 1.3 bug.
 
        The write still happens when a board failed to re-encrypt: the other
        boards' work has to reach the disk either way, and refusing the whole
        write would turn one board's problem into everybody's. What must not
        happen is the write going ahead *quietly*. */
     let encFailed = [];
-    reencryptOpenBoards()
+    return reencryptOpenBoards()
       .then((failed) => { encFailed = failed || []; })
       .catch((err) => { console.error('re-encryption threw:', err); encFailed = [boardLabel(activeBoard())]; })
       .finally(() => {
@@ -850,7 +897,6 @@ function save(sync) {
         writeNow(sync);
         if (encFailed.length) reportEncryptFailure(encFailed);
       });
-    return;
   }
   writeNow(sync);
 }

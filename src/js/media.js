@@ -487,3 +487,196 @@ function applyStudio() {
   setTimeout(placeImgChrome, 60);
   toast(t('msg.imageUpdated'));
 }
+
+/* ─────────────── 11b. the files a board carries ───────────────
+   Drop a video, a picture or a document on a board and the file becomes part of
+   the board: preload copies it into `files/<boardId>/` and the note stores the
+   URL of *that* copy. See the block at the top of preload.js for why, and for
+   what it reverses.
+
+   Everything below is the renderer's half — deciding what a dropped file is,
+   asking preload to take it in, and building the markup that goes in the note.
+   None of it touches the original file. */
+
+/* What plays in a note, and what merely sits in one.
+
+   Kept as extensions rather than MIME types because a drop from Explorer often
+   arrives with an empty `type` — Chromium guesses from the registry and the
+   registry is not always helpful — while the name is always there. `mkv` and
+   `avi` are on the list even though Chromium usually cannot decode them: the
+   card still shows, the file is still kept with the board, and the player says
+   it cannot play it, which is a better answer than refusing the drop. */
+const IMG_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg'];
+const VIDEO_EXT = ['mp4', 'webm', 'ogv', 'ogg', 'm4v', 'mov', 'mkv', 'avi'];
+const AUDIO_EXT = ['mp3', 'wav', 'flac', 'm4a', 'opus', 'aac'];
+const extOf = (name) => (/\.([a-z0-9]+)\s*$/i.exec(String(name || '')) || ['', ''])[1].toLowerCase();
+const isVideoFile = (f) => !!f && (/^video\//i.test(f.type || '') || VIDEO_EXT.includes(extOf(f.name)));
+const isAudioFile = (f) => !!f && (/^audio\//i.test(f.type || '') || AUDIO_EXT.includes(extOf(f.name)));
+const isImageFile = (f) => !!f && /^image\//i.test(f.type || '');
+/* A board somebody else made. Both shapes count: `mbBoard` is one board,
+   `boards` is a whole export. The name is checked as well as the type because
+   a .mentalboard.json is still application/json to the browser. */
+const isBoardFile = (f) => !!f && (/\.(mentalboard\.)?json$/i.test(f.name || '') || /json/i.test(f.type || ''));
+
+/* The markup a video is stored as.
+
+   `preload="metadata"` so a board of ten clips does not pull ten videos off the
+   disk to draw a canvas — the poster frame and the duration are all that is
+   read until somebody presses play. No `autoplay`, for the same reason embeds
+   are click-to-play: a board that starts making noise when you open it is a
+   board you close.
+
+   `contenteditable="false"` for the reason the embed card needs it too — the
+   caret can otherwise land inside the element and the next keystroke inserts a
+   node in the middle of it. */
+function videoHtml(url, name) {
+  return `<div class="mb-file mb-video" data-name="${esc(name || '')}" contenteditable="false">` +
+         `<video class="mb-video-el" src="${esc(url)}" controls preload="metadata"></video>` +
+         `<div class="mb-file-bar">${icon('movie')}<span class="mb-file-name">${esc(name || '')}</span></div>` +
+         `</div>`;
+}
+function audioHtml(url, name) {
+  return `<div class="mb-file mb-audio" data-name="${esc(name || '')}" contenteditable="false">` +
+         `<audio class="mb-audio-el" src="${esc(url)}" controls preload="metadata"></audio>` +
+         `<div class="mb-file-bar">${icon('headphones')}<span class="mb-file-name">${esc(name || '')}</span></div>` +
+         `</div>`;
+}
+const imageHtml = (url) => `<img class="mb-img" src="${esc(url)}">`;
+/* A document. Still a link and still opened by the same guarded door in main —
+   what changed is only *which* copy it points at. */
+const docHtml = (url, name) =>
+  `<p>${icon('description')}<a href="${esc(url)}">${esc(name || '')}</a></p>`;
+
+/* Whatever this file is, as note markup. Returns '' for something we have no
+   idea how to show, which callers treat as "do not make a note". */
+function fileHtml(url, name) {
+  const e = extOf(name);
+  if (VIDEO_EXT.includes(e)) return videoHtml(url, name);
+  if (AUDIO_EXT.includes(e)) return audioHtml(url, name);
+  if (IMG_EXT.includes(e)) return imageHtml(url) + '<p><br></p>';
+  return docHtml(url, name);
+}
+
+/* Take a dropped or pasted File into the open board's folder.
+
+   Returns `{ url, name }`, or null after saying why. Three routes in, and the
+   order is deliberate:
+
+   - a real file on disk → copied by path, which never reads the bytes into the
+     renderer and so costs nothing for a two-gigabyte video;
+   - a clipboard File with no path — a pasted screenshot has never been a file —
+     → read here and written by preload;
+   - no bridge at all, i.e. the page open in a plain browser → a data URL, the
+     old behaviour, so the UI stays debuggable outside Electron. */
+async function takeFileIn(file, boardId) {
+  if (!file) return null;
+  if (!FILES || !FILES.attach) {
+    // no desktop bridge: inline it, as this always did in a browser
+    if (file.size > 6 * 1024 * 1024) { toast(t('msg.imageTooBig')); return null; }
+    const data = await new Promise((res) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => res(null);
+      r.readAsDataURL(file);
+    });
+    return data ? { url: data, name: file.name || '' } : null;
+  }
+  const id = boardId || state.activeBoard;
+  const p = FILES.pathOf ? FILES.pathOf(file) : '';
+  let r;
+  if (p) r = await FILES.attach(p, id, file.name);
+  else {
+    const data = await new Promise((res) => {
+      const rd = new FileReader();
+      rd.onload = () => res(rd.result);
+      rd.onerror = () => res(null);
+      rd.readAsDataURL(file);
+    });
+    if (!data) { toast(t('msg.fileFailed', { name: file.name || '?' })); return null; }
+    r = await FILES.attachBytes(data, id, file.name || 'pasted.png');
+  }
+  if (!r || r.error) {
+    /* Written out as two literal t() calls rather than one with the key chosen
+       by a ternary: check-lang.js reads the source for literal keys, and a key
+       it cannot see is a translation nobody is told is missing. Same reason the
+       reminder labels next door are spelled out. */
+    const name = file.name || '?';
+    if (r && r.error === 'too big') toast(t('msg.fileTooBig', { name }), 5000);
+    else toast(t('msg.fileFailed', { name }), 5000);
+    return null;
+  }
+  return { url: r.url, name: r.name };
+}
+
+/* Every file: URL a board points at. Used to work out what a backup has to
+   carry and what an incoming board is asking for. Reads the markup rather than
+   keeping a list beside it: a list is a second copy of the truth and would go
+   stale the first time somebody deleted a note. */
+function attachmentUrls(board) {
+  const out = new Set();
+  const scan = (html) => {
+    const d = document.createElement('div');
+    d.innerHTML = html || '';
+    d.querySelectorAll('[src], [href]').forEach((el) => {
+      const v = el.getAttribute('src') || el.getAttribute('href') || '';
+      if (/^file:/i.test(v)) out.add(v);
+    });
+  };
+  (board && board.notes ? board.notes : []).forEach((n) => scan(n.body));
+  return [...out];
+}
+
+/* Rewrite the file: URLs in a board's notes, for a board that has just arrived
+   from somewhere else and had its attachments copied in. Straight string
+   replacement on the stored markup: the URLs were written by esc() and are
+   matched exactly, so there is nothing to parse and nothing to get wrong. */
+function relinkAttachments(board, map) {
+  const pairs = Object.entries(map || {});
+  if (!pairs.length) return 0;
+  let n = 0;
+  const swap = (html) => {
+    let body = html || '';
+    pairs.forEach(([from, to]) => {
+      const needle = esc(from);
+      if (body.includes(needle)) { body = body.split(needle).join(esc(to)); n++; }
+    });
+    return body;
+  };
+  (board.notes || []).forEach((note) => {
+    note.body = swap(note.body);
+    /* The note's own history as well. A version in `hist` points at the same
+       file the current body does — it is the same picture, one edit ago — so
+       leaving it addressed to the machine the board came from means Put back
+       hands you a version with a dead image in it. */
+    (note.hist || []).forEach((h) => { h.body = swap(h.body); });
+  });
+  return n;
+}
+
+/* Show me where this is. The one place the app answers "what has the app done
+   with my file", and it can never run anything: main replies to it with
+   showItemInFolder and nothing else. */
+function revealFile(url) {
+  if (!FILES || !FILES.revealLocal) { toast(t('msg.needDesktop')); return; }
+  if (!/^file:/i.test(String(url || ''))) { toast(t('msg.notALocalFile')); return; }
+  FILES.revealLocal(url);
+}
+
+// the first file a note points at, for the context menu's "show file location"
+function firstFileUrl(n) {
+  if (!n) return '';
+  const d = document.createElement('div');
+  d.innerHTML = n.body || '';
+  for (const el of d.querySelectorAll('[src], [href]')) {
+    const v = el.getAttribute('src') || el.getAttribute('href') || '';
+    if (/^file:/i.test(v)) return v;
+  }
+  return '';
+}
+
+/* The open board's own folder, in Explorer. The other half of "show me where
+   this is": one file, or everything this board carries. */
+function openBoardFiles() {
+  if (!FILES || !FILES.openFilesDir) { toast(t('msg.needDesktop')); return; }
+  FILES.openFilesDir(state.activeBoard);
+}

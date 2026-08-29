@@ -54,6 +54,8 @@ The things that make it more than a note wall:
 | **Video cards that look like the video, and play** | js/embeds.js §4e + main.js |
 | **Paste a screenshot straight onto the board** | js/edit-ops.js §4h |
 | **Ropes you can colour, shape and pin** | js/links.js §4d |
+| **Video, sound and documents kept with the board** | js/media.js §4n |
+| **A backup folder you can carry to another machine** | js/settings.js §4m + §4n |
 
 ---
 
@@ -79,23 +81,24 @@ App/          the built app (generated; deleted and rewritten by every build)
 
 | File | Lines | What it is |
 |------|-------|------------|
-| `src/main.js` | 325 | Electron main. Window, data folder, native theme, export/import dialogs. Small — read it whole. |
-| `src/preload.js` | 168 | The only bridge to disk. Atomic board writes + 4 `contextBridge` globals. Small — read it whole. |
-| `src/index.html` | 683 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | 7862 | All app logic, in 15 plain scripts sharing one global scope. See §4. |
-| `src/css/*.css` | 2312 | All styling, in 8 sheets whose link order is the cascade. See §5. |
-| `src/assets/lang/en.js` | 527 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
-| `src/assets/lang/ar.js` | 571 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
+| `src/main.js` | 813 | Electron main. Window, data folder, native theme, the tray and the quick-capture hotkey, the loopback player origin, export/import/backup dialogs, and the `shell:open-local` guard (§4m). |
+| `src/preload.js` | 543 | The only bridge to disk. Atomic board writes, the per-board attachments store (§4n), and 4 `contextBridge` globals. |
+| `src/index.html` | 817 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
+| `src/js/*.js` | 10290 | All app logic, in 15 plain scripts sharing one global scope. See §4. |
+| `src/css/*.css` | 2956 | All styling, in 8 sheets whose link order is the cascade. See §5. |
+| `src/assets/lang/en.js` | 640 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
+| `src/assets/lang/ar.js` | 739 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
 | `src/assets/fonts.css` + `src/assets/fonts/` | — | **Generated.** Noto Sans Arabic (one variable woff2, 162 KB, OFL). Run via `npm run fonts`. |
 | `src/assets/icons.js` | — | **Generated.** 425 Material Symbols path strings + the picker's 21 groups. Do not hand-edit. |
-| `tools/make-icon.js` | 239 | Draws `assets/icon.png` + `.ico` from scratch with zlib. Run via `npm run icon`. Excluded from the package. |
+| `tools/make-icon.js` | 264 | Turns `tools/icon-source.png` into `assets/icon.png` + `.ico` — decodes it, recolours it black-on-white, box-filters it down to every size. Run via `npm run icon`. Excluded from the package. |
+| `tools/icon-source.png` | — | **The app icon, as artwork** — a brain, black on white, 512×512. The only source of truth for the icon: replace this file and re-run `npm run icon`. Drawn rather than taken from the icon set, because the set has no brain in it: `psychology` and `psychology_alt` are both *heads*. Excluded from the package — what ships is the generated `src/assets/icon.png` and `.ico`. |
 | `tools/fetch-icons.js` | 203 | Downloads the icon set into `assets/icons.js`. Run via `npm run icons`. Needs network; excluded from the package. |
 | `tools/fetch-fonts.js` | 87 | Downloads the Arabic face into `assets/fonts/`. Run via `npm run fonts`. Needs network; excluded from the package. |
-| `tools/app-source.js` | 58 | The app's scripts as one string, in `index.html`'s order. Both checkers read it, so neither keeps its own copy of the load order — the copy is what drifts. |
-| `tools/check-lang.js` | 105 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Run via `npm run check:lang`. |
-| `tools/check-icons.js` | 91 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
-| `tools/check-crlf.js` | 57 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
-| `tools/build-app.js` | 220 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
+| `tools/app-source.js` | 57 | The app's scripts as one string, in `index.html`'s order. Both checkers read it, so neither keeps its own copy of the load order — the copy is what drifts. |
+| `tools/check-lang.js` | 110 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Run via `npm run check:lang`. |
+| `tools/check-icons.js` | 95 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
+| `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
+| `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
 | `admin/` | — | Six `.cmd` launchers: run, sandbox, check, back up, open the data folder, and **Build App**, which is how the app gets updated. |
 | `.gitattributes` | — | Line endings. `*.cmd` is pinned to CRLF — a batch file checked out with LF fails in ways that look like anything but that. |
 | `LICENSE` | — | MIT, plus the two bundled asset licences (Material Symbols, Noto). |
@@ -129,8 +132,8 @@ never touch individual elements.
 
 | Global | Gives you |
 |--------|-----------|
-| `window.mbData` | `load()` `save(json)` `saveAsync(json)` `snapshot(json)` `versionSnapshot(json,label)` `paths()` `exportTo(json,name)` `importFrom()` `openDataFolder()` `pickBackupDir()` `backupTo(dir,json,name)` `reveal(p)` |
-| `window.mbFiles` | `toUrl(file)` `pathOf(file)` `pickImage()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `readImage(url)` |
+| `window.mbData` | `load()` `save(json)` `saveAsync(json)` `snapshot(json)` `versionSnapshot(json,label)` `paths()` `exportTo(json,name)` `importFrom()` `openDataFolder()` `pickBackupDir()` `backupTo(dir,json,name,boardIds)` |
+| `window.mbFiles` | `toUrl(file)` `pathOf(file)` `pickImage()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the attachments: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `adoptAttachments(beside,urls,boardId)` `listAttachments(boardId)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
 | `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
 
@@ -254,9 +257,22 @@ Four rules that keep it honest:
   encrypts, decrypts what it just encrypted, checks the note count matches, and
   only then clears the plaintext. A bug in this code cannot silently turn a
   board into an envelope that will not open.
-- **`save()` stays synchronous unless a locked board is open.** `flushSave()`
-  runs on `beforeunload` and an `await` there would not finish before the window
-  went, so only the locked path is async.
+- **`save()` stays synchronous unless a locked board is open — and always on
+  the way out.** Re-encryption is WebCrypto, so the debounced save for a locked
+  board is async. `save(true)` is not: `flushSave()` runs on `beforeunload`,
+  where an `await` does not finish before the window goes, so taking the async
+  branch there wrote **nothing at all** — not the locked board and not the other
+  boards either, whose work has nothing to do with the encryption. Every close
+  silently dropped everything since the last debounce, and `writeNow()` never
+  ran so nothing reported it. `save(true)` now writes immediately with whatever
+  envelope the last debounce left; `serialise()` writes `enc` and never the
+  plaintext, so this cannot leak a locked board.
+- **The close button waits; nothing else can.** `closeAndQuit()` in §16 is the
+  one exit the renderer owns, so it re-encrypts *first* and then lets
+  `flushSave()` do the single blocking write. That recovers the last few seconds
+  of typing into a locked board, which the paragraph above gives up. Alt+F4,
+  Quit from the tray and a shutdown all arrive at `beforeunload` instead, where
+  the synchronous write with the last good envelope is the backstop.
 
 What it does **not** protect: an open board is plaintext in memory like any
 other. This is protection from someone reading the disk or a backup, not from
@@ -399,21 +415,21 @@ no bundler and no build step — the only thing joining them is the order
 
 | File | Lines | What is in it |
 |------|------:|---------------|
-| `helpers.js` | 209 | `$()` `clamp` `uid` `esc` `stripHtml`, `THEMES` (12), `ACCENTS` (14), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
-| `state.js` | 669 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
-| `theme.js` | 181 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, `applyLang`, `applySettings`. See §3d. |
-| `view.js` | 307 | `applyView` `toWorld` `toScreen`, `render()`, and viewport culling: `syncMounted` `ensureMounted` `applyFarMode`. See §4c. |
-| `items.js` | 410 | `makeNote` `makeFrame`, the status pill, the one drag/resize gesture engine, the selection set, and the camera (`zoomAt` `flyTo` `fitTo`). |
-| `links.js` | 189 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, `wireLinkClicks`. See §4d. |
-| `editor.js` | 1069 | The note editor — markdown shortcuts, `normalizeBody`, code colouring, tables, columns, user templates, the paste sanitiser. |
-| `embeds.js` | 220 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
-| `toolbars.js` | 584 | The floating selection toolbar, `BLOCKS` and the slash menu — the chrome that sits over the editor. |
-| `media.js` | 483 | The icon picker, and images: select, resize, align, and the crop/annotate studio. |
-| `menus.js` | 399 | The right-click menu, and the compass that signposts off-screen workflows. See §7. |
-| `edit-ops.js` | 516 | Create, delete, **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export**. See §4f and §4g. |
-| `boards.js` | 930 | Several boards, one rail: switching, the flyout, locking, drag-to-board, and the JSON export/import. |
-| `settings.js` | 756 | The settings panel and every dialog behind it. See §5b. |
-| `init.js` | 940 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS` — every event listener in one place. **Start here when a click does nothing.** |
+| `helpers.js` | 310 | `$()` `clamp` `uid` `esc` `stripHtml`, `THEMES` (12), `ACCENTS` (14), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
+| `state.js` | 923 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
+| `theme.js` | 230 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, `applyLang`, `applySettings`. See §3d. |
+| `view.js` | 386 | `applyView` `toWorld` `toScreen`, `render()`, and viewport culling: `syncMounted` `ensureMounted` `applyFarMode`. See §4c. |
+| `items.js` | 450 | `makeNote` `makeFrame`, the status pill, the one drag/resize gesture engine, the selection set, and the camera (`zoomAt` `flyTo` `fitTo`). |
+| `links.js` | 274 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, `wireLinkClicks`. See §4d. |
+| `editor.js` | 1185 | The note editor — markdown shortcuts, `normalizeBody`, code colouring, tables, columns, user templates, the paste sanitiser. |
+| `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
+| `toolbars.js` | 590 | The floating selection toolbar, `BLOCKS` and the slash menu — the chrome that sits over the editor. |
+| `media.js` | 683 | The icon picker; images (select, resize, align, the crop/annotate studio); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `relinkAttachments`, `revealFile`. See §4n. |
+| `menus.js` | 437 | The right-click menu, and the compass that signposts off-screen workflows. See §7. |
+| `edit-ops.js` | 820 | Create, delete, **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export**. See §4f and §4g. |
+| `boards.js` | 1295 | Several boards, one rail: switching, the flyout, locking, drag-to-board, and the JSON export/import. |
+| `settings.js` | 1212 | The settings panel and every dialog behind it. See §5b. |
+| `init.js` | 1170 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS` — every event listener in one place. **Start here when a click does nothing.** |
 
 ### The load order is the only contract
 
@@ -508,11 +524,11 @@ matters.
 
 Deleting moves an item there with `trashedFrom` and `trashedAt` on it.
 `putBack()` reads the first and returns the item to its own board, falling back
-to the board in front of you when that board is gone — somewhere you can see it
-beats refusing. Deleting a board moves its contents to the bin first, so
-"I deleted the wrong board" costs its name and nothing else.
+to the first live, unlocked board when that board is gone. Deleting a board
+moves its contents to the bin first, so "I deleted the wrong board" costs its
+name and nothing else.
 
-Three rules hold it up:
+Four rules hold it up:
 
 - **Deleting *inside* the bin is final.** `deleteItems()` checks whether the
   active board is the bin before moving anything, or the bin would put things
@@ -523,6 +539,20 @@ Three rules hold it up:
   the next save copies them straight back over the new: the item ends up on its
   own board *and* still in the bin. This is `syncActiveBoard()`'s trap from the
   other side, and it was a real bug before it was a rule.
+- **Its fallback may never be "the board in front of you".** That is the same
+  aliasing one step further on, and it was the second real bug here. Put back is
+  only offered while you are *standing in the bin* — `onTrashBoard()` gates the
+  menu row — so "the board in front of you" **is** the bin, and `state.notes` is
+  `tb.notes`. Pushing onto it put the item back into the bin, where the filters
+  above then removed it along with the copy it was meant to replace: the item
+  landed on no board at all, the toast said "Put 1 item back", and only Ctrl+Z
+  could tell you otherwise. It fired whenever the origin board had been deleted
+  or locked since. The fallback is `liveBoards().find((b) => !isLocked(b))`, and
+  when there is no such board the item **stays in the bin** and is said so —
+  the bin is the one place it is still safe. A locked board is not a candidate
+  in either position: it holds no plaintext, and `syncActiveBoard()` would
+  refuse to store what was pushed into it, which is the same disappearance by a
+  longer route.
 - **A locked board's contents cannot go in the bin.** There is no plaintext to
   move, so deleting one really does delete them — and the confirm says that
   instead of promising a recovery that is not there.
@@ -794,10 +824,13 @@ click into a program launch. The sanitiser lets `file:` hrefs through so a
 link survives being copied between notes; the guard is in main, where it
 cannot be bypassed by markup.
 
-Dropping any other file on the canvas makes a note that links to it. A link
-and not a copy, deliberately: the file stays where the rest of your filing
-expects it, and a note holding a stale copy of a model would be worse than no
-note at all.
+Dropping any file on the canvas now **copies it into the board's own folder**
+and links the note to that copy. That reverses what this paragraph used to say
+— "a link and not a copy, deliberately" — and §4n is where the reversal is
+argued. The short version: the reason given was true of a working document and
+was never true of the screenshot, the clip or the scan that most drops actually
+are, and it made a board impossible to send anywhere. The original file is
+never touched, moved or locked.
 
 ### A copy that is not on this disk
 
@@ -808,8 +841,24 @@ stolen laptop or a reinstall — which for anyone keeping real work in here is
 the larger risk, and nothing in the interface used to mention it.
 
 `settings.backupDir` is one folder, chosen once: a synced drive, a stick, a
-share. `backupNow()` writes the same JSON Export writes, dated, and main
-prunes to the newest ten. It is **not** a sync service and does not try to be.
+share. `backupNow()` writes the same JSON Export writes, dated, **and a copy of
+every unlocked board's files beside it**, and main prunes the JSONs to the
+newest ten. It is **not** a sync service and does not try to be.
+
+That second half is what makes a backup folder a *portable board*:
+
+```
+<your backup folder>/
+  mental-board-2026-08-29.json
+  files/<boardId>/clip.mp4, shot.png, …
+```
+
+Drop that `.json` on another machine and the pictures come with it, because
+`files/` beside a board file is exactly where `adoptAttachments()` looks. Two
+consequences worth stating: a locked board contributes no files (its notes are
+ciphertext, so there is no list to read), and the JSON is written *before* the
+files, so a stick pulled out halfway leaves the half that cannot be
+reconstructed.
 
 - **Written to a `.tmp` and renamed**, like the board itself. A backup half
   written because the stick came out is worse than none: it looks like one.
@@ -819,6 +868,158 @@ prunes to the newest ten. It is **not** a sync service and does not try to be.
 - **A failure is always said out loud**, even on the automatic one. A backup
   folder that has quietly stopped working is worse than never having set one
   up, because you stopped worrying about it.
+
+---
+
+## 4n. The files a board carries
+
+A board is not only text. Drop a video, a picture, a scan or a spreadsheet on
+it and **the file becomes part of the board**: preload copies it into
+
+```
+%APPDATA%/Mental Board/files/<boardId>/<name>
+```
+
+and the note stores the URL of *that* copy. One folder per board, named by the
+board's own id — which is why boards were given stable ids long before anything
+read them (§3a).
+
+### Why this reverses §4m
+
+§4m used to say the opposite, and said it deliberately: *a link and not a copy,
+so the file stays where the rest of your filing expects it, and a note never
+holds a stale copy of a model.* That reasoning is still correct about a working
+document. It was never correct about the three things people actually drop —
+a screenshot, a clip, a scan — and it had a cost the old wording did not
+mention: **a board could not be sent anywhere.** Export it, mail it, restore it
+on a new laptop, and every picture in it was a dead link to a path on a machine
+you no longer had.
+
+The original is never touched, moved or locked. What changes is only which copy
+the note points at.
+
+### The four rules
+
+- **The name is reduced to one path segment.** `safeName()` strips separators,
+  leading and trailing dots, the characters Windows refuses and the reserved
+  device names, and keeps the extension — because the extension is what decides
+  whether `shell:open-local` will open the file at all, so losing it would
+  quietly turn a document into something only Explorer can reach.
+- **Nothing is ever overwritten.** `freeName()` goes `name`, `name (2)`,
+  `name (3)`. Two files called `screenshot.png` from two different folders are
+  two different files, and the second silently replacing the first is a picture
+  disappearing out of a note written months ago.
+- **Nothing is deleted on its own.** A board's folder outlives the board,
+  because deleting a board puts its notes in the bin and the bin is meant to be
+  reversible — taking the pictures out from under it would make that a
+  half-recovery. The cost is that a folder slowly fills with files nothing
+  points at any more, and *Settings → Your board → Clean up unused* is the one
+  thing that clears them. See below.
+- **A copy is async.** `attachFile()` goes through `fs.promises`, for the same
+  reason `saveBoardAsync` exists: blocking the renderer for the length of a
+  two-gigabyte video copy is the exact stall this app was reworked to remove.
+
+### How a board travels
+
+The rule is one line: **a board file's attachments live in a `files/` folder
+beside it.** That is the shape `backupNow()` writes (§4m), so a backup folder is
+the transportable unit — copy it to a stick, drop the `.json` on another
+machine, and `adoptAttachments()` finds each file at
+`<beside>/files/<theirBoardId>/<name>`, or anywhere under `<beside>/files/` by
+name, and copies it into the folder of the board being created.
+
+`relinkAttachments()` then rewrites the stored markup, **including each note's
+`hist` entries** — a version in the history points at the same file the current
+body does, so leaving it addressed to the machine the board came from means
+restoring an old version hands you a dead image.
+
+Anything not found is left exactly as it was. A link that does not resolve is
+honest; rewriting it to something that does not exist either would only hide
+that.
+
+### What is where
+
+| Piece | Where |
+|---|---|
+| the copy, the naming, the adoption | `preload.js`, the block above `mbData` |
+| what a dropped file *is*, and its markup | `media.js` §11b — `isVideoFile`, `fileHtml`, `takeFileIn` |
+| a drop on the canvas | `init.js` — `onCanvasDrop`, `noteFromDroppedFile` |
+| a drop into a note | `editor.js` — `insertFilesInto` |
+| a board arriving from elsewhere | `boards.js` — `importBoardsFrom` |
+| the player's styling | `later.css` §43 |
+
+### Video in a note
+
+An ordinary `<video controls preload="metadata">`, so Chromium's own transport
+does the work — there is no custom player to keep in step with twelve themes,
+and none of the accessibility that comes free with the native one has to be
+rebuilt. `preload="metadata"` means a board of ten clips reads ten headers, not
+ten videos. No `autoplay`, for the same reason embeds are click-to-play: a board
+that starts making noise when you open it is a board you close.
+
+The CSP already allowed it — `media-src 'self' data: blob: file:` was there
+before any of this — so nothing about the policy changed.
+
+Three things the sanitiser has to get right, because a note can be copied into
+another note and markup is what a crafted board controls:
+
+- `VIDEO` and `AUDIO` are on `ALLOWED`, but **only `src` survives**, held to
+  `file:` by the same check that holds an `<img>` to a local file.
+- `controls` and `preload` are re-applied by the sanitiser rather than trusted
+  from the paste. What arrives is a source; what is inserted is our player.
+- `autoplay` is on no allow-list anywhere, so a pasted card cannot make a note
+  start playing by itself.
+
+### Cleaning up what nothing points at
+
+`cleanUpFiles()` in `settings.js`, `cleanupFiles()` in `preload.js`. Three
+things carry it:
+
+- **The renderer says what to *keep*, never what to delete.** It hands over
+  every file: URL it can still see; preload works out the difference and removes
+  only inside `files/`. No path crosses the bridge as an instruction, so the
+  worst a confused caller can do is keep too much.
+- **`referencedFileUrls()` is deliberately generous**, and getting it wrong in
+  one direction costs disk while the other costs a picture. Four places count,
+  and the middle two are the ones easy to forget:
+
+  | Held in | Why it counts |
+  |---|---|
+  | a note body, on any board | including the bin — the bin is a board |
+  | a note's `hist` | restoring an old version has to restore its picture |
+  | the undo / redo stacks | one Ctrl+Z and the note is back, with a hole in it |
+  | a saved template | note markup the user kept on purpose |
+
+- **It refuses outright while any board is locked and shut.** Its notes are
+  ciphertext, so there is no way to know what it points at, and sweeping anyway
+  would delete every picture on it — discovered the next time it was unlocked,
+  which is precisely the shape of loss this app was rebuilt over. The toast
+  names the board to open. Same rule as `syncActiveBoard()`, one layer out.
+
+The count is taken twice: once for the dialog, once for the delete. The dialog
+can sit open for as long as somebody takes to read it, and a reminder firing or
+a daily note landing in that time would write a file the first scan never saw.
+
+Deleted, not moved to a second bin. This is the sweep that runs *after* the
+board's own bin has been emptied, and a holding pen nobody empties is how the
+problem it solves comes back. The confirm says so.
+
+### Show me where it is
+
+Two rows, and neither can run a program:
+
+- **Show file location**, on a note that carries a file, calls
+  `shell:reveal-local` → `showItemInFolder`. Safe by construction rather than by
+  an allow-list that has to keep up with Windows.
+- **This board's files**, on the empty-canvas menu, calls `shell:open-path`,
+  which checks the path is a *directory* and that it sits inside the app's own
+  data folder before handing it to `openPath`.
+
+These replaced `shell:reveal`, which was a bare `shell.openPath(String(p))` with
+no scheme check, no extension check and — despite its name — no revealing:
+`openPath` on a `.exe` runs it. It had no callers and `script-src 'self'` kept
+anything in the page from reaching it, so it was never a live hole. It was a
+door built to the old standard standing next to the new one, and it is gone.
 
 ---
 
@@ -1177,14 +1378,14 @@ the end of the file before.
 
 | Sheet | Lines | What is in it |
 |-------|------:|---------------|
-| `tokens.css` | 259 | Reset, design tokens, the twelve theme palettes, the fourteen accents, the nine note colours |
-| `chrome.css` | 61 | Titlebar; the canvas itself — viewport, world, grid background, marquee |
-| `notes.css` | 202 | Notes, the eight resize handles, workflow frames, ropes, and rich text *inside* a note |
-| `menus.css` | 263 | Selection toolbar, slash menu, context menu, fab, zoom bar, compass chips, toast, overlays, motion, and the **late-overrides** block |
-| `icons.css` | 126 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
-| `lang.css` | 239 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
-| `boards.css` | 441 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `later.css` | 1160 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window** , **§31 the cheap-to-draw mode**, **§32 the day/night pair** and **§33 filtering the board** |
+| `tokens.css` | 266 | Reset, design tokens, the twelve theme palettes, the fourteen accents, the nine note colours |
+| `chrome.css` | 116 | Titlebar; the canvas itself — viewport, world, grid background, marquee |
+| `notes.css` | 209 | Notes, the eight resize handles, workflow frames, ropes, and rich text *inside* a note |
+| `menus.css` | 270 | Selection toolbar, slash menu, context menu, fab, zoom bar, compass chips, toast, overlays, motion, and the **late-overrides** block |
+| `icons.css` | 133 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
+| `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
+| `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
+| `later.css` | 1186 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window** , **§31 the cheap-to-draw mode**, **§32 the day/night pair** and **§33 filtering the board** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
 numbers and still run 1–39 across the set, so a reference like "styles.css §31"
@@ -1456,7 +1657,7 @@ Two things about the packaging config in `tools/build-app.js`:
 `asar: true` means the packaged app is a single `resources/app.asar` archive:
 **you cannot patch a built copy by dropping loose files into `App/`.** Rebuild.
 
-Redraw the icon after editing `tools/make-icon.js`:
+Rebuild the icon after replacing `tools/icon-source.png`:
 
 ```bash
 npm run icon
@@ -1695,6 +1896,16 @@ Two things that will waste your time if you don't know them:
   the user picking a file in a confirm dialog is not that. Leaving it on made
   Import the dead end at the end of the recovery instructions: it redrew the
   canvas, said "Imported", and wrote nothing.
+- **`Object.assign` lets the *last* source win, and Import wants the first.**
+  `adopt(raw, keepSettings)` merged the kept settings into the defaults and then
+  merged the file over the top, so the parameter named `keepSettings` did the
+  opposite of its name and the file's settings won: importing a board took its
+  theme, its language, its perf mode and its `backupDir` — that last one
+  repointing the automatic off-disk backup at a folder from whichever machine
+  wrote the file. The order is defaults, file, mine. Note the second half of the
+  same fix: the `railMode` heal reads the *unmerged* settings on purpose (see
+  §2), so it has to read the file overlaid with the kept ones, or a file with no
+  valid `railMode` forces "hover" over the setting the user is keeping.
 - **A legacy-settings guard has to read the raw settings, not the merged ones.**
   `adopt()` checked `st.railMode` before reading the old `settings.rail`
   boolean — but `Object.assign` has already put the default `'hover'` there, so
@@ -1736,17 +1947,22 @@ Two things that will waste your time if you don't know them:
   escape hatch there.
 - **`reencryptOpenBoards()` needs `.finally`, not `.then`.** Nothing in it can
   realistically reject today, but if it ever did, `encWriting` would latch true
-  and every later save would return at the guard — saving off for the rest of
-  the session with nothing said. That is the shape this project exists to kill,
-  and it costs one word to make impossible.
-- **A card's fold has to be cut *through* its corners, not parallel to them.**
-  In `tools/make-icon.js` there is no clipping, only compositing, so removing
-  the corner of a rounded rect means painting the tile's gradient back over it.
-  Offset that cut outwards and a band of the original outline survives, so the
-  fold reads as a tab stuck on the card; offset it inwards and the bottom and
-  right edges are cut back short of the chamfer, so the fold floats free with a
-  gap either side. The cut runs through both corner points, pushed *along* the
-  diagonal past each end and out by half a stroke.
+  and every later save would re-arm the debounce and never write — a board that
+  looks saved and is not. That is the shape this project exists to kill, and it
+  costs one word to make impossible.
+- **A save that cannot run *now* must re-arm the debounce, never just return.**
+  Both write paths refuse to start while one is already in flight — `asyncWriting`
+  in `writeNow()` and `encWriting` in `save()`. Returning on its own loses the
+  edit that arrived during the write. On the locked path that is not even a
+  narrow race: `encryptBoard()` snapshots the plaintext *after* awaiting
+  `deriveKey()`, so anything typed after that snapshot is not in the ciphertext
+  the in-flight write is about to commit. `writeNow()` then stamps `lastWritten`
+  with that stale envelope and every check the app has says the board is safe;
+  stop typing there and nothing ever triggers another save; `flushSave()` on the
+  way out takes the same async branch, whose `.finally` never runs before the
+  window goes. Measured at a ~20ms window per save cycle, and it widens on a
+  slower machine because PBKDF2 dominates the cycle. Both guards now call
+  `saveSoon()` before returning.
 - **A failed write must not update `lastWritten`.** This is the bug 1.4 was
   built to kill, and it is worth understanding because the shape of it will
   recur. `writeNow()` skips the write when the serialised board equals

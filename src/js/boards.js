@@ -122,15 +122,62 @@ async function importOneBoard() {
   let parsed;
   try { parsed = JSON.parse(r.json); } catch (_) { toast(t('msg.notOurFile')); return; }
   if (!parsed || !parsed.mbBoard || !parsed.board) { toast(t('msg.notABoardFile')); return; }
-  const b = adoptBoard(parsed.board);
-  if (!b) { toast(t('msg.notOurFile')); return; }
-  b.id = uid();                       // never collide with a board already here
-  b.archived = false;
-  b.updatedAt = Date.now();
-  state.boards.push(b);
+  await importBoardsFrom(parsed, r.path || '', '');
+}
+
+/* Somebody else's boards, added to yours.
+
+   One implementation behind two doors — Import in the board menu, and dropping
+   the file straight on the canvas — because they differ only in how the JSON
+   arrives, and two copies of "adopt a board" would drift the first time one of
+   them learned something.
+
+   `beside` is where the file was, and it is the whole of how attachments
+   travel. A board's files live in a `files/` folder next to it (see preload),
+   which is exactly the shape backupNow() writes — so a backup folder copied to
+   a stick and dropped on another machine brings its pictures and its videos
+   with it. When there is no such folder the boards still arrive; their file
+   links simply do not resolve, which is honest and visible.
+
+   Both shapes are taken: `mbBoard` is one board, `boards` is a whole export.
+   The second is deliberately *added* rather than replacing everything, because
+   the user dropped a file on a canvas — Settings → Import is where "replace
+   everything" lives, and it asks first. */
+async function importBoardsFrom(parsed, beside, label) {
+  const raws = parsed.mbBoard && parsed.board ? [parsed.board]
+             : (Array.isArray(parsed.boards) ? parsed.boards : []);
+  if (!raws.length) { toast(t('msg.notABoardFile')); return; }
+
+  const made = [];
+  let files = 0;
+  for (const raw of raws) {
+    const b = adoptBoard(raw);
+    if (!b) continue;
+    b.id = uid();                     // never collide with a board already here
+    b.archived = false;
+    b.updatedAt = Date.now();
+    /* A locked board arrives as an envelope and stays one. There is nothing to
+       relink — its notes are ciphertext — and it opens with the passphrase it
+       was locked with, on whichever machine it lands. */
+    if (!b.enc && beside && FILES && FILES.adoptAttachments) {
+      const urls = attachmentUrls(b);
+      if (urls.length) {
+        const got = await FILES.adoptAttachments(beside, urls, b.id);
+        if (got && got.map) { relinkAttachments(b, got.map); files += got.copied || 0; }
+      }
+    }
+    state.boards.push(b);
+    made.push(b);
+  }
+  if (!made.length) { toast(t('msg.notOurFile')); return; }
+
   renderBoardRail();
   save();
-  toast(t('msg.boardImported', { name: boardLabel(b) }));
+  const name = made.length === 1 ? boardLabel(made[0]) : (label || '');
+  toast(files
+    ? t('msg.boardImportedFiles', { name, n: files })
+    : (made.length === 1 ? t('msg.boardImported', { name })
+                         : t('msg.boardsImported', { n: made.length })), 4200);
 }
 
 async function deleteBoard(id) {

@@ -68,12 +68,18 @@ function wireNoteBody(body, n, el) {
     }
   });
   body.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); });
+  /* A file dropped *into* a note goes into that note, rather than making one of
+     its own — which is the difference between this handler and the canvas one,
+     and why it stops propagation. Any file, not only an image: a clip dragged
+     into the middle of a paragraph is the most natural way anybody would try to
+     put a video in a note. */
   body.addEventListener('drop', (e) => {
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (!f || !/^image\//.test(f.type)) return;
+    const files = e.dataTransfer.files ? [...e.dataTransfer.files] : [];
+    if (!files.length) return;
     e.preventDefault(); e.stopPropagation();
+    if (!canEditHere()) return;
     enterEdit(n);
-    insertImageFile(f, body, n);
+    insertFilesInto(files, body, n);
   });
 }
 
@@ -1027,18 +1033,28 @@ function placeCaret(node, offset) {
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
 
-function insertImageFile(file, body, n) {
-  const commit = (src) => {
+/* One image into the note being edited. Kept as its own name because the paste
+   handler and the toolbar both mean exactly this. */
+function insertImageFile(file, body, n) { insertFilesInto([file], body, n); }
+
+/* Files into the note being edited.
+
+   Each one is taken into the board's folder first and then inserted as whatever
+   it is — a player for a video, a picture for an image, a link for a document.
+   `takeFileIn` is what makes the note point at the board's copy rather than at
+   wherever the file happened to be dragged from, so the note survives the
+   original being moved, renamed or sent to somebody else. */
+async function insertFilesInto(files, body, n) {
+  for (const f of files) {
+    const taken = await takeFileIn(f);
+    if (!taken) continue;
+    const html = fileHtml(taken.url, taken.name);
+    if (!html) continue;
     body.focus();
-    insertHTML(`<img class="mb-img" src="${esc(src)}"><p><br></p>`);
-    n.body = bodyHtml(body); saveSoon();
-  };
-  const url = FILES && FILES.toUrl ? FILES.toUrl(file) : null;
-  if (url) { commit(url); return; }
-  if (file.size > 6 * 1024 * 1024) { toast(t('msg.imageTooBig')); return; }
-  const r = new FileReader();
-  r.onload = () => commit(r.result);
-  r.readAsDataURL(file);
+    insertHTML(html + '<p><br></p>');
+    n.body = bodyHtml(body);
+    saveSoon();
+  }
 }
 
 async function pickAndInsertImage() {
@@ -1096,7 +1112,7 @@ function onEditorPaste(e, body, n) {
    this, so they survive inside the app; letting arbitrary <svg> in from a paste
    would be handing a document from the internet a much larger attack surface
    than a note needs, for the sake of pasted decoration. */
-const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'CODE', 'PRE', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'HR', 'A', 'IMG', 'SPAN', 'DIV', 'MARK', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH']);
+const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'CODE', 'PRE', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'HR', 'A', 'IMG', 'SPAN', 'DIV', 'MARK', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'VIDEO', 'AUDIO']);
 function sanitize(html) {
   const d = document.createElement('div');
   d.innerHTML = html;
@@ -1122,6 +1138,14 @@ function sanitize(html) {
                     (a.name === 'data-title' || a.name === 'data-author')) ||
                    (el.tagName === 'DIV' && a.name === 'data-thumb' && /\bmb-embed\b/.test(el.className) && /^file:/i.test(a.value)) ||
                    (el.tagName === 'IMG' && a.name === 'src') ||
+                   /* A video or a sound copied from one note to another keeps
+                      playing. `controls` and `preload` are ours and are put
+                      back below; the only thing that survives from the paste
+                      is the source, and the check under IMG holds it to a
+                      local file exactly as it holds a picture. No autoplay
+                      attribute is on this list, so a crafted paste cannot
+                      make a note start making noise when it is opened. */
+                   ((el.tagName === 'VIDEO' || el.tagName === 'AUDIO') && a.name === 'src') ||
                    // a paragraph pasted from an RTL page keeps the side it was written on
                    (a.name === 'dir' && /^(ltr|rtl|auto)$/i.test(a.value)) ||
                    (a.name === 'class' && /^(mb-|fs-|note-)/.test(a.value));
@@ -1143,6 +1167,17 @@ function sanitize(html) {
     if (el.tagName === 'IMG') {
       const src = el.getAttribute('src') || '';
       if (!/^(data:image\/|file:)/i.test(src)) el.remove(); else el.className = 'mb-img';
+    }
+    /* Same rule as the picture above, and the controls are re-applied here
+       rather than trusted from the paste: what arrives is a source, what is
+       inserted is our player. */
+    if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
+      const src = el.getAttribute('src') || '';
+      if (!/^file:/i.test(src)) { el.remove(); return; }
+      el.className = el.tagName === 'VIDEO' ? 'mb-video-el' : 'mb-audio-el';
+      el.setAttribute('controls', '');
+      el.setAttribute('preload', 'metadata');
+      el.removeAttribute('autoplay');
     }
   });
   return d.innerHTML;
