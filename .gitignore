@@ -1,5 +1,10 @@
 node_modules/
-package-lock.json
+
+# package-lock.json is deliberately NOT ignored. Both dependencies are caret
+# ranges, so without the lockfile a fresh clone resolves whatever Electron 31.x
+# is current that day — and this app leans on specific Chromium behaviour:
+# document.execCommand, variable-font weight resolution, webUtils.getPathForFile.
+# One copy, one path, one known toolchain.
 
 # the runnable app, written by admin\Build App.cmd — always rebuilt, never edited
 App/

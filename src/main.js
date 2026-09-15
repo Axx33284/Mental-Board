@@ -2,10 +2,25 @@
    Owns the window, the on-disk data folder, and the native theme. The renderer
    never touches Node directly; everything goes through preload.js + these IPC
    handlers. */
-const { app, BrowserWindow, Menu, Tray, nativeImage, Notification,
-        ipcMain, dialog, shell, screen, nativeTheme, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, Notification, ipcMain, dialog,
+        shell, screen, nativeTheme, globalShortcut, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
+const store = require('./store.js');
+
+/* ---------- mbf:// — a board's own files ----------
+   A note never names a path on this disk. A picture it carries is
+   `mbf://<boardId>/<name>`, and this process answers that from the board's
+   own `files\` folder — so a board folder copied to another machine still
+   shows its pictures, and a crafted board cannot ask for a file outside the
+   folder it belongs to (store.resolveFile refuses anything else).
+
+   Registered before `ready`, as Electron requires. `standard` so the URL has
+   a host and a path; `stream` so a video can seek. */
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'mbf', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+]);
 
 let mainWindow = null;
 
@@ -25,13 +40,57 @@ let tray = null;
 let quitting = false;
 let runInBackground = true;
 
-/* ---------- where user data lives ----------
-   %APPDATA%/Mental Board/
-     board.json          the board itself
-     board.bak.json      previous good copy (written before every overwrite)
-     backups/            dated snapshots, plus one taken before each new version
+/* ---------- what main is allowed to say ----------
+   Every string this process shows — the tray menu, the "still running"
+   notification, the title on each native file dialog — used to be an English
+   literal sitting in the middle of the code. The app has a full catalogue and a
+   rule that no user-visible string may be written into a source file, and this
+   process was outside both: an Arabic window came with an English tray and
+   English file dialogs, and `npm run check:lang` passed the whole time, because
+   tools/app-source.js reads the script list out of index.html and neither
+   main.js nor preload.js is in it.
 
-   The path is PINNED here, not derived.
+   The renderer owns the language — it is where the catalogue is loaded and
+   where the picker lives — so it *tells* main, exactly the way it already tells
+   it about `background`. Until it does, these English defaults stand; they have
+   to, because the tray is built in whenReady() and the renderer has not
+   finished loading yet. When the strings arrive the tray is rebuilt in place.
+
+   Keys are written out literally at every call site so check-lang can see them.
+   That is also why this is a t() and not a bare object lookup. */
+const S_EN = {
+  'main.trayOpen': 'Open Mental Board',
+  'main.trayCapture': 'Quick capture ({key})',
+  'main.trayQuit': 'Quit',
+  'main.stillRunningTitle': 'Mental Board is still running',
+  'main.stillRunningBody': 'It sits in the tray so reminders and quick capture keep working. Right-click the tray icon to quit.',
+  'main.exportBoard': 'Export board — choose where to put the copy',
+  'main.importBoard': 'Import board — pick its board.json',
+  'main.exportImage': 'Export board as image',
+  'main.backupFolder': 'Choose a backup folder',
+  'main.insertImage': 'Insert image',
+  'main.pickBackground': 'Choose a background image',
+  'main.filterJson': 'Board files',
+  'main.filterPng': 'PNG image',
+  'main.filterImages': 'Images',
+  'main.crashTitle': 'Mental Board stopped responding',
+  'main.crashBody': 'The window has been reloaded from the last save on disk. Anything typed in the few seconds before it stopped may not be there.',
+  'main.crashOk': 'Reload'
+};
+let STRINGS = {};
+function t(key, vars) {
+  const v = STRINGS[key] || S_EN[key] || key;
+  return vars ? String(v).replace(/\{(\w+)\}/g, (m, k) => (vars[k] == null ? m : vars[k])) : v;
+}
+
+/* ---------- userData ----------
+   %APPDATA%/Mental Board/ holds only what is not the user's: Chromium's own
+   files, the window rect, the tray-notice marker — and, from a 1.x install,
+   the old board.json that migrateLegacy() reads once. The boards themselves
+   live in Documents\My Boards; see boardsRoot() below.
+
+   The path is PINNED here, not derived, because the single-instance lock is
+   keyed to it and the 1.x file has to be found where 1.x left it.
 
    By default Electron puts userData at appData/<productName>, so renaming the
    product in package.json — or switching packager — silently moves every
@@ -67,6 +126,37 @@ if (!userDataOverridden) {
   } catch (_) {}
 }
 
+/* ---------- where the boards live ----------
+   Documents\My Boards. Not %APPDATA%: that folder is hidden, and the whole
+   point of 2.0's layout is that a person can find their boards, copy one to a
+   stick, and delete the folder to start again. userData above still exists —
+   it holds only Chromium's own files, the window rect and the tray marker —
+   and the single-instance lock is still keyed to it, so two builds of this
+   app still cannot run at once.
+
+   A sandbox run (--user-data-dir) keeps its boards inside that folder, so a
+   test never touches the real ones. */
+function boardsRoot() {
+  if (userDataOverridden) return path.join(app.getPath('userData'), 'My Boards');
+  let docs = '';
+  try { docs = app.getPath('documents'); } catch (_) {}
+  if (!docs) docs = app.getPath('home');
+  return path.join(docs, 'My Boards');
+}
+/* Read once, before the window exists: the one setting main has to know
+   before `ready`. Software rendering is for the machine whose graphics driver
+   makes Chromium worse than no driver at all; it is off unless asked for. */
+function earlySettings() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(boardsRoot(), 'settings.json'), 'utf8'));
+    return (raw && raw.settings) || {};
+  } catch (_) { return {}; }
+}
+const EARLY = earlySettings();
+if (EARLY.softwareRender === true) {
+  try { app.disableHardwareAcceleration(); } catch (_) {}
+}
+
 /* One-time tidy for anyone updating from a build that mixed the two. These are
    Chromium's own directory names and nothing else; the board files are not in
    this list and are never touched. Everything here is a cache and regenerates
@@ -93,8 +183,6 @@ function tidyOldCache() {
 
 // whatever is actually in effect — pinned above, or the switch that overrode it
 function dataDir() { return app.getPath('userData'); }
-function boardFile() { return path.join(dataDir(), 'board.json'); }
-function bakFile() { return path.join(dataDir(), 'board.bak.json'); }
 
 /* ---------- persisted window rect ---------- */
 const winStateFile = () => path.join(dataDir(), 'window-state.json');
@@ -184,6 +272,44 @@ function createWindow() {
     noteStillRunning();
   });
   win.on('closed', () => { mainWindow = null; });
+
+  /* ---------- the renderer died ----------
+     Nothing used to watch for this, and it is the one failure in the app that
+     takes the *whole* board with it: `state` lives in the renderer, so a
+     process that goes takes everything since the last debounced save. What the
+     user saw was a white rectangle where their board had been, with no way to
+     tell whether any of it had reached the disk.
+
+     Reloading is right, and it is safe: the store holds everything up to the
+     last save, and load() will read it back exactly as it would on a cold
+     start. What must not happen is doing it silently — the few seconds between
+     the last save and the crash are genuinely gone, and somebody who is told
+     that will retype a sentence, while somebody who is not will trust a board
+     that quietly lost one.
+
+     `clean-exit` is not a crash: it is the normal teardown on the way out. */
+  win.webContents.on('render-process-gone', (_e, details) => {
+    const reason = (details && details.reason) || 'unknown';
+    console.error('renderer gone:', reason, details);
+    if (reason === 'clean-exit' || quitting) return;
+    try { win.webContents.reload(); } catch (_) {}
+    try {
+      dialog.showMessageBox(win, {
+        type: 'warning',
+        title: t('main.crashTitle'),
+        message: t('main.crashTitle'),
+        detail: t('main.crashBody'),
+        buttons: [t('main.crashOk')],
+        noLink: true
+      });
+    } catch (_) {}
+  });
+  /* Hung, not dead. Logged and left alone on purpose: this fires for a long
+     synchronous stretch as well as for a real hang — a save on a slow disk with
+     a very large board can trip it — and killing the renderer to "fix" a window
+     that was about to come back is the one response guaranteed to lose work. */
+  win.on('unresponsive', () => console.error('renderer unresponsive; leaving it to recover'));
+  win.on('responsive', () => console.log('renderer responsive again'));
 
   const sendMax = () => { if (!win.isDestroyed()) win.webContents.send('win:maximized', win.isMaximized()); };
   win.on('maximize', sendMax);
@@ -405,26 +531,32 @@ function trayImage() {
   catch (_) { return nativeImage.createEmpty(); }
 }
 
+/* Rebuilt rather than relabelled when the language changes — an Electron menu
+   is immutable once built, so there is nothing to edit in place. */
+function trayMenu() {
+  return Menu.buildFromTemplate([
+    { label: t('main.trayOpen'), click: () => showMain() },
+    /* CAPTURE_ACCEL is declared below this function but read at click time,
+       long after the module has finished evaluating. 'Control' is Electron's
+       spelling; Windows calls it Ctrl on every label a user ever reads. */
+    { label: t('main.trayCapture', { key: CAPTURE_ACCEL.replace('Control', 'Ctrl') }), click: () => {
+      const win = showMain();
+      if (win) win.webContents.send('capture:open');
+    } },
+    { type: 'separator' },
+    /* The only way out, and it has to be here: with the close button hiding
+       the window, an app with no visible quit is one people kill in Task
+       Manager — which is the one exit that skips the final save. */
+    { label: t('main.trayQuit'), click: () => { quitting = true; app.quit(); } }
+  ]);
+}
+
 function buildTray() {
   if (tray || !runInBackground) return;
   try {
     tray = new Tray(trayImage());
     tray.setToolTip('Mental Board');
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Open Mental Board', click: () => showMain() },
-      /* CAPTURE_ACCEL is declared below this function but read at click time,
-         long after the module has finished evaluating. 'Control' is Electron's
-         spelling; Windows calls it Ctrl on every label a user ever reads. */
-      { label: 'Quick capture (' + CAPTURE_ACCEL.replace('Control', 'Ctrl') + ')', click: () => {
-        const win = showMain();
-        if (win) win.webContents.send('capture:open');
-      } },
-      { type: 'separator' },
-      /* The only way out, and it has to be here: with the close button hiding
-         the window, an app with no visible quit is one people kill in Task
-         Manager — which is the one exit that skips the final save. */
-      { label: 'Quit', click: () => { quitting = true; app.quit(); } }
-    ]));
+    tray.setContextMenu(trayMenu());
     tray.on('click', () => showMain());
     tray.on('double-click', () => showMain());
   } catch (err) {
@@ -451,8 +583,8 @@ function noteStillRunning() {
   try {
     if (!Notification.isSupported()) return;
     new Notification({
-      title: 'Mental Board is still running',
-      body: 'It sits in the tray so reminders and quick capture keep working. Right-click the tray icon to quit.'
+      title: t('main.stillRunningTitle'),
+      body: t('main.stillRunningBody')
     }).show();
   } catch (_) {}
 }
@@ -462,6 +594,20 @@ function noteStillRunning() {
 ipcMain.on('win:background', (_e, on) => {
   runInBackground = !!on;
   if (runInBackground) buildTray(); else destroyTray();
+});
+
+/* The renderer resolved the catalogue; this is main being told what it may say.
+   Sent on boot and on every language change — see applyLang(). Only the `main.`
+   keys cross, so this is a dozen short strings and not the whole catalogue, and
+   only keys main already knows about are accepted. The tray is rebuilt because
+   its labels are the ones already on screen. */
+ipcMain.on('win:strings', (_e, table) => {
+  if (!table || typeof table !== 'object') return;
+  STRINGS = {};
+  for (const k of Object.keys(S_EN)) {
+    if (typeof table[k] === 'string' && table[k]) STRINGS[k] = table[k];
+  }
+  try { if (tray) tray.setContextMenu(trayMenu()); } catch (_) {}
 });
 
 /* ---------- IPC: window controls ---------- */
@@ -498,212 +644,172 @@ nativeTheme.on('updated', () => {
   }
 });
 
-/* ---------- IPC: export / import dialogs ---------- */
-ipcMain.handle('file:export', async (e, json, suggested) => {
-  const w = BrowserWindow.fromWebContents(e.sender);
-  const { canceled, filePath } = await dialog.showSaveDialog(w, {
-    title: 'Export board',
-    defaultPath: suggested || 'mental-board.json',
-    filters: [{ name: 'JSON', extensions: ['json'] }]
-  });
-  if (canceled || !filePath) return null;
-  try { fs.writeFileSync(filePath, json, 'utf8'); return filePath; } catch (err) { return { error: String(err) }; }
+/* ---------- IPC: the store ----------
+   Every call here returns a status the renderer has to act on; none throws.
+   `store:load` and `store:save-sync` are synchronous on purpose — the first
+   runs before anything is drawn, the second on the way out, where a promise
+   never settles. Everything else is off the renderer's thread. */
+ipcMain.on('store:load', (e) => {
+  try { e.returnValue = store.scan(); }
+  catch (err) { e.returnValue = { error: String((err && err.message) || err), boards: [], settings: { data: null, status: 'empty' } }; }
+});
+ipcMain.on('store:save-sync', (e, payload) => {
+  try { e.returnValue = store.saveAll(payload); }
+  catch (err) { e.returnValue = { ok: false, errors: [{ id: '', error: String((err && err.message) || err) }] }; }
+});
+ipcMain.handle('store:save', (_e, payload) => store.saveAllAsync(payload));
+ipcMain.on('store:snapshot', (e, id, json, day) => { e.returnValue = store.snapshot(id, json, day); });
+ipcMain.on('store:version-snapshot', (e, id, json, label) => { e.returnValue = store.versionSnapshot(id, json, label); });
+ipcMain.on('store:paths', (e) => {
+  e.returnValue = { root: store.rootDir(), userData: dataDir(), exeDir: path.dirname(process.execPath), version: app.getVersion() };
 });
 
-ipcMain.handle('file:import', async (e) => {
+/* the files a board carries */
+ipcMain.handle('files:attach', (_e, src, id, name) => store.attachFile(src, id, name));
+ipcMain.handle('files:attach-bytes', (_e, dataUrl, id, name) => store.attachBytes(dataUrl, id, name));
+ipcMain.on('files:list', (e, id) => { e.returnValue = store.listFiles(id); });
+ipcMain.handle('files:carry', (_e, urls, toId) => store.carryFiles(urls, toId));
+ipcMain.handle('files:unused', (_e, keep, onlyId) => store.cleanup(keep, false, onlyId));
+ipcMain.handle('files:remove-unused', (_e, keep, onlyId) => store.cleanup(keep, true, onlyId));
+ipcMain.on('files:read-image', (e, url) => { e.returnValue = store.readImage(url); });
+ipcMain.on('files:dir', (e, id) => { e.returnValue = id ? store.filesDir(id) : store.rootDir(); });
+
+/* whole boards */
+ipcMain.handle('board:duplicate-files', (_e, fromId, toId, name, group) => store.duplicateFiles(fromId, toId, name, group));
+ipcMain.handle('board:remove-dir', (_e, id) => store.removeBoardDir(id));
+ipcMain.handle('board:adopt-files', (_e, beside, urls, toId) => store.adoptExternalFiles(beside, urls, toId));
+/* Export = copy the board's folder somewhere the user picks. */
+ipcMain.handle('board:export', async (e, id, name) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   const { canceled, filePaths } = await dialog.showOpenDialog(w, {
-    title: 'Import board',
-    properties: ['openFile'],
-    filters: [{ name: 'JSON', extensions: ['json'] }]
+    title: t('main.exportBoard'), properties: ['openDirectory', 'createDirectory']
   });
   if (canceled || !filePaths.length) return null;
-  /* The path comes back as well as the bytes. A board's attachments live in a
-     `files/` folder beside it, so "where was this file?" is what lets an
-     imported board bring its pictures with it — see importBoardsFrom(). */
-  try { return { json: fs.readFileSync(filePaths[0], 'utf8'), path: filePaths[0] }; } catch (err) { return { error: String(err) }; }
+  return store.exportBoard(id, filePaths[0], name);
 });
+/* Import = pick a board.json (inside a board folder) or a 1.x .json export.
+   The data comes back with where it was, so its files can be brought in. */
+ipcMain.handle('board:import', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.importBoard'), properties: ['openFile'],
+    filters: [{ name: t('main.filterJson'), extensions: ['json'] }]
+  });
+  if (canceled || !filePaths.length) return null;
+  return store.readExternal(filePaths[0]);
+});
+ipcMain.handle('board:read-external', (_e, p) => store.readExternal(p));
 
-/* Save a board picture. Separate from file:export rather than folded into it,
-   because that one writes UTF-8 — handing it a PNG would write the *text* of
-   the bytes and produce a file no viewer will open. Takes a data: URL because
-   that is what a canvas produces, and decodes it here so the renderer never
-   has to hold a Buffer it has no way to make. */
+/* Save a board picture. Takes a data: URL because that is what a canvas
+   produces, and decodes it here so the renderer never holds a Buffer. */
 ipcMain.handle('file:save-image', async (e, dataUrl, suggested) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
   if (!m) return { error: 'not a png data url' };
   const { canceled, filePath } = await dialog.showSaveDialog(w, {
-    title: 'Export board as image',
+    title: t('main.exportImage'),
     defaultPath: suggested || 'board.png',
-    filters: [{ name: 'PNG image', extensions: ['png'] }]
+    filters: [{ name: t('main.filterPng'), extensions: ['png'] }]
   });
   if (canceled || !filePath) return null;
   try { fs.writeFileSync(filePath, Buffer.from(m[1], 'base64')); return { path: filePath }; }
   catch (err) { return { error: String(err) }; }
 });
 
-/* ---------- backups somewhere that is not this disk ----------
-   The app already keeps twenty dated snapshots and a copy before every
-   version — and every one of them sits in %APPDATA%, next to the file they are
-   protecting. That is exactly the right shape for "I broke my board" and no use
-   at all for a dead drive, a stolen laptop or a reinstall. For anybody keeping
-   work in here that is the largest risk in the app, and until now nothing in
-   the interface even mentioned it.
-
-   So: pick a folder once — a synced drive, a stick, a share — and the app
-   writes a dated copy there. `file:backup-dir` asks for the folder;
-   `file:backup` does the write and prunes to the newest few. */
+/* ---------- a mirror somewhere that is not this disk ----------
+   Everything the app does to protect a board lands beside the board. This is
+   the one thing that puts a copy on another drive: pick a folder once, and the
+   whole My Boards folder is mirrored into it — new and changed files only, so
+   a clip that has not changed is not copied twice, and nothing in the mirror
+   is ever deleted. */
 ipcMain.handle('file:backup-dir', async (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   const { canceled, filePaths } = await dialog.showOpenDialog(w, {
-    title: 'Choose a backup folder',
-    properties: ['openDirectory', 'createDirectory']
+    title: t('main.backupFolder'), properties: ['openDirectory', 'createDirectory']
   });
   if (canceled || !filePaths.length) return null;
   return filePaths[0];
 });
-
-const BACKUP_KEEP = 10;
-
-/* Copy a directory. Node has no recursive copy that predates 16.7 by enough to
-   rely on across every Electron this app may be built with, and cpSync's
-   options have moved around, so it is nine lines here and no surprises. */
-function copyDir(from, to) {
-  let n = 0;
-  fs.mkdirSync(to, { recursive: true });
-  for (const e of fs.readdirSync(from, { withFileTypes: true })) {
-    const a = path.join(from, e.name), b = path.join(to, e.name);
-    if (e.isDirectory()) n += copyDir(a, b);
-    else if (e.isFile()) { fs.copyFileSync(a, b); n++; }
-  }
-  return n;
-}
-
-/* The board, and the files the board carries.
-
-   A backup that is only the JSON is a backup of half a board now that notes
-   hold videos and pictures: restoring it on another machine gives you every
-   word and none of the images. So the attachments come too, in a `files/`
-   folder beside the JSON — which is the same shape the app's own data folder
-   uses, and the shape adoptAttachments() looks for on the way back in. The
-   consequence worth stating plainly: **a backup folder is a portable board.**
-   Copy it to a stick, drop the .json on another machine, and the pictures
-   arrive with it.
-
-   `boardIds` is what the renderer says to bring. Locked boards are not in that
-   list — their notes are ciphertext and there is nothing to show a file for. */
-ipcMain.handle('file:backup', async (_e, dir, json, name, boardIds, filesRoot) => {
+ipcMain.handle('file:backup', (_e, dir) => store.mirrorTo(dir));
+/* A complete, dated copy somewhere the user points. */
+ipcMain.handle('file:backup-all', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.backupFolder'), properties: ['openDirectory', 'createDirectory']
+  });
+  if (canceled || !filePaths.length) return null;
+  return store.backupAllTo(filePaths[0]);
+});
+/* ---------- start again ----------
+   Everything the user has — every board, every file, the settings — goes to
+   the Recycle Bin, and the store starts empty. The Recycle Bin, not rm: the
+   renderer has asked twice by the time this runs, and a folder that can still
+   be put back from the desktop costs nothing to keep that way. The renderer
+   reloads afterwards so nothing in memory is written over the fresh start. */
+ipcMain.on('store:tally', (e) => { e.returnValue = store.tally(); });
+ipcMain.handle('store:erase-all', async () => {
   try {
-    if (!dir || typeof dir !== 'string') return { error: 'no folder' };
-    fs.mkdirSync(dir, { recursive: true });
-    const safe = String(name || 'mental-board').replace(/[^\w.\- ]/g, '_').slice(0, 60);
-    const file = path.join(dir, safe);
-    /* Written to a .tmp and renamed, the same way the board itself is. A backup
-       half-written because the stick was pulled out is worse than no backup:
-       it looks like one. */
-    const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, json, 'utf8');
-    fs.renameSync(tmp, file);
-
-    /* The files, after the JSON. That order matters on a stick that gets pulled
-       out halfway: a board with some of its pictures missing is a board you can
-       still read, and the JSON is the half that cannot be reconstructed. A
-       failure here is reported but does not undo the JSON that already landed. */
-    let files = 0, filesError = '';
-    try {
-      const src = String(filesRoot || '');
-      const ids = Array.isArray(boardIds) ? boardIds : [];
-      if (src && ids.length && fs.existsSync(src)) {
-        const dest = path.join(dir, 'files');
-        for (const id of ids) {
-          const seg = String(id || '').replace(/[^\w-]/g, '_').slice(0, 48);
-          const from = path.join(src, seg);
-          try { if (seg && fs.existsSync(from)) files += copyDir(from, path.join(dest, seg)); } catch (_) {}
-        }
-      }
-    } catch (err) { filesError = String((err && err.message) || err); }
-
-    // keep the newest few and no more, so a synced folder does not grow forever
-    try {
-      const old = fs.readdirSync(dir)
-        .filter((f) => /^mental-board-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort();
-      while (old.length > BACKUP_KEEP) fs.unlinkSync(path.join(dir, old.shift()));
-    } catch (_) {}
-    return { path: file, files, filesError };
-  } catch (err) {
-    return { error: String((err && err.message) || err) };
-  }
+    const root = store.rootDir();
+    if (!root) return { ok: false, error: 'no store' };
+    try { await shell.trashItem(root); }
+    catch (err) {
+      // the Recycle Bin refused (a network drive, say): remove for real
+      try { fs.rmSync(root, { recursive: true, force: true }); }
+      catch (err2) { return { ok: false, error: String((err2 && err2.message) || err2) }; }
+    }
+    store.reset();
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 
 /* ---------- where is this, actually? ----------
-   `shell:reveal` used to live here as a bare `shell.openPath(String(p))` with
-   no scheme check, no extension check and — despite the name — no revealing:
-   openPath on a .exe runs it. It had no callers, and `script-src 'self'` kept
-   anything in the page from reaching it, so it was a door built to the old
-   standard standing next to the new one rather than a live hole. It is gone.
-
-   These two replace it, and neither can start a program:
-
-   - `shell:reveal-local` takes a file: URL and only ever calls
-     showItemInFolder, which opens Explorer with the file selected. That is
-     the whole of "show me where this is", and it is safe by construction
-     rather than by an allow-list that has to keep up with Windows.
-   - `shell:open-path` opens a **directory**, and checks that it is one. A
-     folder handed to openPath opens Explorer; a file handed to it does not,
-     which is exactly the distinction that matters here. The path also has to
-     sit inside the app's own data folder — the renderer only ever asks for a
-     board's files folder, so anything else is a bug or worse. */
-ipcMain.on('shell:reveal-local', (_e, url) => {
+   Neither of these can start a program: `reveal` only ever calls
+   showItemInFolder, and `open-board-dir` opens a *directory* inside My Boards. */
+ipcMain.on('shell:reveal-url', (_e, url) => {
   try {
-    const raw = String(url || '');
-    if (!/^file:/i.test(raw)) return;
-    shell.showItemInFolder(require('url').fileURLToPath(raw));
+    const p = store.pathOfUrl(url);
+    if (p) shell.showItemInFolder(p);
   } catch (_) {}
 });
-ipcMain.on('shell:open-path', (_e, dir) => {
+ipcMain.on('shell:open-board-dir', (_e, id) => {
   try {
-    const p = path.resolve(String(dir || ''));
-    const root = path.resolve(dataDir()) + path.sep;
-    if (!p.toLowerCase().startsWith(root.toLowerCase())) return;
-    fs.mkdirSync(p, { recursive: true });          // a board with no files yet
+    const p = id ? store.boardDir(id) : store.rootDir();
+    if (!p) return;
+    const root = path.resolve(store.rootDir()).toLowerCase();
+    if (!path.resolve(p).toLowerCase().startsWith(root)) return;
     if (fs.statSync(p).isDirectory()) shell.openPath(p);
   } catch (_) {}
 });
+ipcMain.on('shell:open-data-folder', () => { try { shell.openPath(store.rootDir()); } catch (_) {} });
 
-// image picker for the note editor — returns a file:// url, no copying involved
-ipcMain.handle('file:pick-image', async (e) => {
+/* image pickers — a path comes back, and the renderer takes the file into the
+   board (store.attachFile), so the note points at the board's own copy */
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg'];
+ipcMain.handle('file:pick-image', async (e, purpose) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   const { canceled, filePaths } = await dialog.showOpenDialog(w, {
-    title: 'Insert image',
+    title: purpose === 'background' ? t('main.pickBackground') : t('main.insertImage'),
     properties: ['openFile'],
-    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg'] }]
+    filters: [{ name: t('main.filterImages'), extensions: IMAGE_EXT }]
   });
   if (canceled || !filePaths.length) return null;
-  return require('url').pathToFileURL(filePaths[0]).href;
+  return filePaths[0];
 });
 
 ipcMain.on('shell:open-external', (_e, url) => {
   try { if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) shell.openExternal(url); } catch (_) {}
 });
 /* ---------- a document on this machine ----------
-   The renderer has two doors and this is the strict one. shell:open-external
-   above vets a *scheme*; this vets an extension as well, because opening a
-   local path is the only route in the app that can *run* a program —
-   shell.openPath on a .exe, .bat, .cmd, .lnk, .ps1 or .msi executes it.
+   The strict door. shell:open-external above vets a *scheme*; this vets an
+   extension as well, because opening a local path is the only route in the
+   app that can *run* a program — shell.openPath on a .exe, .bat, .cmd, .lnk,
+   .ps1 or .msi executes it. A board is a document that gets mailed around
+   and the sanitiser lets file: and mbf: hrefs through, so the guard lives
+   here, where nothing in the page can reach around it.
 
-   That matters because a board is a document. It gets exported, imported and
-   mailed around, and the paste sanitiser deliberately lets `file:` hrefs
-   through so a link survives being copied from one note into another. So the
-   sanitiser cannot be the thing that stops this: markup is precisely what a
-   crafted board controls. The guard has to live here, in main, where nothing
-   in the page can reach around it.
-
-   An allow-list, not a block-list, and the direction is the whole point. A
-   shape nobody thought of — .scf, .hta, .jar, .url, whatever Windows learns to
-   execute next — is refused by default instead of being discovered later.
-   Anything not on the list is *revealed* in Explorer rather than opened, which
-   still puts the user in front of their file and cannot run a thing. */
+   An allow-list: anything not on it is *revealed* in Explorer rather than
+   opened, which still puts the user in front of their file and cannot run a
+   thing. */
 const OPENABLE = new Set([
   '.txt', '.md', '.rtf', '.pdf', '.csv', '.tsv', '.json', '.xml', '.log', '.ini', '.yml', '.yaml',
   '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
@@ -713,19 +819,27 @@ const OPENABLE = new Set([
 ]);
 ipcMain.on('shell:open-local', (_e, url) => {
   try {
-    const raw = String(url || '');
-    if (!/^file:/i.test(raw)) return;          // this door is for file: and nothing else
-    const p = require('url').fileURLToPath(raw);
-    /* A folder is safe to hand straight to openPath — it opens Explorer, it
-       does not run anything — and linking a note to one is an ordinary thing
-       to want. */
+    const p = store.pathOfUrl(url);
+    if (!p) return;
     let isDir = false;
     try { isDir = fs.statSync(p).isDirectory(); } catch (_) {}
     if (isDir || OPENABLE.has(path.extname(p).toLowerCase())) shell.openPath(p);
     else shell.showItemInFolder(p);
   } catch (_) {}
 });
-ipcMain.on('shell:open-data-folder', () => { try { shell.openPath(dataDir()); } catch (_) {} });
+
+/* ---------- what this machine can afford ----------
+   The renderer decides the graphics mode, but only main can ask Chromium
+   whether there is a GPU behind the window at all. `gpu_compositing` reads
+   'disabled_software' on a machine with no usable graphics driver, and that
+   is the machine every blurred shadow and backdrop filter was hurting. */
+function gpuInfo() {
+  let compositing = '';
+  try { compositing = String((app.getGPUFeatureStatus() || {}).gpu_compositing || ''); } catch (_) {}
+  const software = /software|disabled/i.test(compositing) || EARLY.softwareRender === true;
+  return { compositing, software, softwareRender: EARLY.softwareRender === true };
+}
+ipcMain.on('sys:info', (e) => { e.returnValue = gpuInfo(); });
 
 /* ---------- there is no updater ----------
    1.3 downloaded updates from a GitHub Releases feed and staged an NSIS
@@ -741,7 +855,7 @@ ipcMain.on('shell:open-data-folder', () => { try { shell.openPath(dataDir()); } 
    back and nothing is staged for later. */
 
 /* ---------- boot ---------- */
-/* Only ever one copy. Two windows on one board.json both hold the whole board
+/* Only ever one copy. Two windows on one store both hold the whole board
    in memory and both write it back on a timer, so the second one to save wins
    and silently throws away everything the other did. Hand the launch over to
    the window that already exists instead. */
@@ -785,6 +899,29 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     try { fs.mkdirSync(dataDir(), { recursive: true }); } catch (_) {}
     tidyOldCache();
+    store.init(boardsRoot());
+    /* A 1.x board in %APPDATA% and an empty My Boards: lay it out the new way,
+       once. The old file is left where it was. */
+    try {
+      const m = store.migrateLegacy(dataDir());
+      if (m && m.migrated) console.log(`migrated ${m.migrated} board(s) from ${m.from}`);
+      else if (m && m.error) console.error('migration failed:', m.error);
+    } catch (err) { console.error('migration threw:', err); }
+    /* mbf://<boardId>/<name> → that board's files\<name>. Range headers are
+       passed through so a video can seek; anything the store will not resolve
+       is a 404 and nothing more. */
+    protocol.handle('mbf', (req) => {
+      try {
+        const u = new URL(req.url);
+        const name = decodeURIComponent(u.pathname.replace(/^\//, ''));
+        const p = store.resolveFile(u.hostname, name);
+        if (!p) return new Response('', { status: 404 });
+        const headers = {};
+        const range = req.headers.get('range');
+        if (range) headers.Range = range;
+        return net.fetch(pathToFileURL(p).href, { headers });
+      } catch (_) { return new Response('', { status: 400 }); }
+    });
     createWindow();
     buildTray();
     registerCapture();
@@ -809,4 +946,4 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-module.exports = { boardFile, bakFile };
+module.exports = { boardsRoot };

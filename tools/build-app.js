@@ -73,7 +73,7 @@ const MUST_SHIP = [
      the first and last script, the first and last stylesheet. A mistake in
      IGNORE that swallowed src/js or src/css would take one of these with it. */
   '/src/js/helpers.js', '/src/js/init.js',
-  '/src/css/tokens.css', '/src/css/later.css',
+  '/src/css/tokens.css', '/src/css/mental.css',
   '/src/assets/icons.js', '/src/assets/lang/en.js',
   '/src/assets/fonts.css', '/package.json'
 ];
@@ -87,6 +87,27 @@ async function main() {
     console.error(`${pkg.productName} is running. Close it first — the files in App\\ are locked while it is open.`);
     process.exit(1);
   }
+
+  /* Whose build is sitting in App\ right now?
+
+     BUILD.txt records the folder it was built *from*, and until this check
+     nothing ever read it back. So a project copied to a new folder — 1.4 to
+     1.5, say — inherited the old folder's App\, and `App\Mental Board.exe`
+     then ran source that was somewhere else entirely. Nothing in the app says
+     so: the titlebar shows the version it was built with, which is the old
+     one, and looks exactly like a build that simply has not been made yet.
+
+     Worse than confusing, because of the single-instance lock in main.js:
+     it is keyed to the pinned userData path, which every build ever shipped
+     shares. Launch the stale copy while a run from this source is open and the
+     old build wins the lock, quits without a word, and raises the other
+     window. That is the "I updated it and it came back the same" report, and
+     it is the exact failure §6 exists to prevent.
+
+     A notice, not a refusal: this build is about to delete App\ and replace it,
+     so the situation is being fixed on the very next line. What was missing was
+     anyone ever being told it had happened. */
+  reportForeignBuild();
 
   const packager = require('@electron/packager');
 
@@ -156,7 +177,27 @@ async function main() {
   console.log(`\n  App\\${EXE}   ${mb(size)}`);
   console.log(`  App\\BUILD.txt   says which build this is`);
   console.log(`\n  ${path.join(APP, EXE)}`);
-  console.log('\nDouble-click that. No install, no shortcut, and your board stays in %APPDATA%\\Mental Board.');
+  console.log('\nDouble-click that. No install, no shortcut, and your boards stay in Documents\\My Boards.');
+}
+
+/* The `from` line of the App\BUILD.txt that is there now, or ''. */
+function builtFrom() {
+  try {
+    const txt = fs.readFileSync(path.join(APP, 'BUILD.txt'), 'utf8');
+    return ((/^from (.+)$/m.exec(txt) || [])[1] || '').trim();
+  } catch (_) { return ''; }
+}
+
+function reportForeignBuild() {
+  const from = builtFrom();
+  if (!from) return;                                   // no App\ yet, or a build from before this line existed
+  if (path.resolve(from).toLowerCase() === path.resolve(ROOT).toLowerCase()) return;
+  console.log('  note: the App\\ folder here was built from a different project.');
+  console.log('        was: ' + from);
+  console.log('        now: ' + ROOT);
+  console.log('        Until this build finishes, App\\' + EXE + ' runs that other source —');
+  console.log('        and opening it alongside a run from here loses the single-instance');
+  console.log('        lock to whichever started first. See MAP.md §6.\n');
 }
 
 /* Read an asar's file listing without unpacking it.

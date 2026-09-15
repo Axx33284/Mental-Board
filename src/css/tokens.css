@@ -1,7 +1,10 @@
 /* Mental Board — tokens.css
-   Reset, design tokens, and all twelve theme palettes.
+   Reset, design tokens, and the first seven theme palettes.
+   The other eleven are at the end of later.css, in the order they were added:
+   §32 for the 1.4 set and §44 for the 1.5 one. A theme is only ever its surface
+   tokens plus a row in THEMES — see MAP.md §3c.
 
-   Sheet 1 of 8. styles.css was one append-only file and these are
+   Sheet 1 of 9. styles.css was one append-only file and these are
    its slices in the same order, so **later files still beat earlier ones** —
    the <link> order in index.html is load-bearing, not decoration. Adding a
    rule at the end of the last sheet is still how you win an argument with
@@ -40,11 +43,60 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .hidden { display: none !important; }
 
 :root {
-  --accent: #6b8afd;
-  --accent-ink: #ffffff;
-  --radius: 14px;
+  --accent: #7fd6c8;
+  --accent-ink: #0d0f11;
+  --radius: 6px;
   --fs: 1;
   --grid-size: 26px;
+}
+
+/* ---- Mental Board — the app's own look, and the default since 2.0 ----
+   Near-black with a cold cast, bone-white text, hairlines where 1.x had
+   shadows. Contrast comes from the hairlines and the type, not from lifting
+   surfaces off the page, which is also why it is the cheapest theme to draw:
+   nothing here is blurred. The light twin keeps the same construction on
+   paper. Both are surface tokens only; the chrome that arrived with them —
+   sharp corners, tracked labels, the settings nav — is css/mental.css and
+   applies to every theme. */
+:root[data-theme="mental"] {
+  --bg:        #0d0f11;
+  --grid-dot:  rgba(232,228,218,.10);
+  --grid-line: rgba(232,228,218,.05);
+  --surface:   #16191c;
+  --surface-2: #1d2124;
+  --surface-3: #262b2f;
+  --text:      #e8e4da;
+  --dim:       #9a9891;
+  --dimmer:    #66645f;
+  --line:      rgba(232,228,218,.12);
+  --line-2:    rgba(232,228,218,.22);
+  --shadow:    0 0 0 1px rgba(232,228,218,.08), 0 10px 28px rgba(0,0,0,.55);
+  --shadow-sm: 0 0 0 1px rgba(232,228,218,.08), 0 4px 12px rgba(0,0,0,.4);
+  --overlay:   rgba(6,7,9,.7);
+  --hi:        rgba(127,214,200,.28);
+  --danger:    #e0665e;
+  --code-bg:   rgba(232,228,218,.06);
+  --scroll:    rgba(232,228,218,.18);
+}
+:root[data-theme="mental-light"] {
+  --bg:        #ecebe7;
+  --grid-dot:  rgba(26,28,30,.16);
+  --grid-line: rgba(26,28,30,.08);
+  --surface:   #f7f6f2;
+  --surface-2: #efeee9;
+  --surface-3: #e4e2dc;
+  --text:      #1a1c1e;
+  --dim:       #5e605f;
+  --dimmer:    #8a8c89;
+  --line:      rgba(26,28,30,.14);
+  --line-2:    rgba(26,28,30,.26);
+  --shadow:    0 0 0 1px rgba(26,28,30,.08), 0 10px 26px rgba(26,28,30,.12);
+  --shadow-sm: 0 0 0 1px rgba(26,28,30,.08), 0 3px 10px rgba(26,28,30,.10);
+  --overlay:   rgba(30,32,34,.42);
+  --hi:        rgba(30,150,135,.28);
+  --danger:    #c2453c;
+  --code-bg:   rgba(26,28,30,.06);
+  --scroll:    rgba(26,28,30,.22);
 }
 
 :root[data-theme="dark"] {
@@ -103,7 +155,7 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
    only place an accent exists. Adding one is one line, in one file, and it
    cannot be half-done. The fallback below is what shows before the first
    applyTheme() runs. */
-:root { --accent: #6b8afd; }
+:root { --accent: #7fd6c8; }
 
 /* ---- extra themes ----
    Each one only restates the surface tokens; note colours below hang off
@@ -232,12 +284,11 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
   --c-violet-b:  #221a2e; --c-violet-l:  rgba(180,140,255,.30); --c-violet-c:  #b48cff;
   --c-pink-b:    #2b1924; --c-pink-l:  rgba(255,140,205,.30); --c-pink-c:    #ff8ccd;
 }
-:root[data-mode="dark"] { --c-pink-b: #2b1924; }
 /* Midnight wants flatter, darker note fills than the other dark themes */
 :root[data-theme="midnight"] { --c-default-b: #0d0d11; --c-default-l: rgba(255,255,255,.13); }
+:root[data-theme="mental"]   { --c-default-b: #16191c; --c-default-l: rgba(232,228,218,.14); --c-default-c: #9a9891; }
 :root[data-theme="dim"]      { --c-default-b: #2c2f38; }
 :root[data-theme="ocean"]    { --c-default-b: #10202d; }
-:root[data-theme="sand"]     { --c-default-b: #fffcf5; }
 :root[data-mode="light"] {
   --c-default-b: #ffffff; --c-default-l: rgba(20,24,40,.13);  --c-default-c: #8a90a5;
   --c-red-b:     #fff0f0; --c-red-l:     rgba(214,69,69,.34); --c-red-c:     #d64545;
@@ -249,6 +300,9 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
   --c-violet-b:  #f4eeff; --c-violet-l:  rgba(130,80,220,.30);--c-violet-c:  #8250dc;
   --c-pink-b:    #ffeef7; --c-pink-l:    rgba(214,70,150,.30);--c-pink-c:    #d64696;
 }
+/* the light themes' own note fills, after the light block so they win it */
+:root[data-theme="mental-light"] { --c-default-b: #f7f6f2; --c-default-l: rgba(26,28,30,.16); }
+:root[data-theme="sand"]     { --c-default-b: #fffcf5; }
 
 [data-color="default"] { --nb: var(--c-default-b); --nl: var(--c-default-l); --nc: var(--c-default-c); }
 [data-color="red"]     { --nb: var(--c-red-b);     --nl: var(--c-red-l);     --nc: var(--c-red-c); }

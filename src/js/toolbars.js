@@ -1,7 +1,7 @@
 /* Mental Board — toolbars.js
    The floating selection toolbar and the slash menu that sit over the editor.
 
-   Part 9 of 15. These files are plain scripts sharing one global
+   Part 9 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -163,8 +163,20 @@ function buildHilitePop() {
     const c = b.dataset.hi;
     if (!editing) return;
     editing.focus();
+    /* styleWithCSS has to be on for this one command — there is no HTML element
+       for a background colour, so with it off Chromium produces nothing at all.
+
+       **And it has to go straight back off.** It is a flag on the document, not
+       an argument to the command, so leaving it set changed what every *later*
+       command wrote for the rest of the session: after one click of the
+       highlighter, Ctrl+B stopped producing `<b>bold</b>` and started producing
+       `<span style="font-weight: bold">bold</span>`. Those spans then hit the
+       paste sanitiser, which keeps `background-color` and not `font-weight` —
+       so bold applied after a highlight was bold that vanished on the next
+       copy. Two bugs, one line apart, from a flag nobody turned back. */
     document.execCommand('styleWithCSS', false, true);
     document.execCommand('hiliteColor', false, c ? hexToRgba(c, 0.42) : 'transparent');
+    document.execCommand('styleWithCSS', false, false);
     persistEdit();
     pop.classList.remove('open');
   }));
@@ -225,10 +237,6 @@ function wireSelBar() {
     document.execCommand('removeFormat');
     document.execCommand('formatBlock', false, 'p');
     const s = getSelection();
-    if (s.rangeCount) {
-      const frag = s.getRangeAt(0).cloneContents();
-      void frag;
-    }
     if (editing) editing.querySelectorAll('span.mb-fs').forEach((sp) => {
       if (s.containsNode && s.containsNode(sp, true)) sp.replaceWith(...sp.childNodes);
     });
@@ -286,7 +294,7 @@ const blockDesc = (b) => t('block.' + b.k + '.d');
 function blockMatches(b, q) {
   if (!q) return true;
   const hay = [blockLabel(b), FALLBACK['block.' + b.k] || '', b.k];
-  return hay.some((s) => String(s).toLowerCase().includes(q));
+  return hay.some((s) => foldSearch(s).includes(q));
 }
 
 /* --- templates ---------------------------------------------------------
@@ -493,7 +501,7 @@ function updateSlash() {
    knows about a template it did not write. */
 function templateMatches(x, q) {
   if (!q) return true;
-  return String(templateName(x)).toLowerCase().includes(q);
+  return foldSearch(templateName(x)).includes(q);
 }
 function slashItems(q) {
   return [
@@ -508,7 +516,7 @@ function slashItems(q) {
 }
 
 function renderSlash() {
-  const q = slash.query.trim().toLowerCase();
+  const q = foldSearch(slash.query.trim());
   slash.items = slashItems(q);
   const list = $('slashList');
   if (!slash.items.length) {

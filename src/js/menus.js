@@ -1,7 +1,7 @@
 /* Mental Board — menus.js
    The right-click menu, and the compass that signposts off-screen workflows.
 
-   Part 11 of 15. These files are plain scripts sharing one global
+   Part 12 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -14,7 +14,28 @@ function openCtxMenu(clientX, clientY, id) {
   if (id && !selection.has(id)) setSelection([id], false);
   let html = '';
 
-  if (targets.length) {
+  const onePic = targets.length === 1 && !!(state.notes.find((x) => x.id === targets[0]) || {}).pic;
+  if (onePic) {
+    /* A picture on its own. No colour, no status, no text — the things it can
+       do are the things a picture can do. */
+    const item = (act, ic, label, key, cls) =>
+      `<button class="cm-item${cls ? ' ' + cls : ''}" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
+    const n0 = state.notes.find((x) => x.id === targets[0]);
+    html += `<div class="cm-label">${icon('image')}<span>${te('menu.picture')}</span></div>`;
+    html += item('editPic', 'brush', te('menu.editPicture'), te('menu.dblclick'));
+    html += item('replacePic', 'image', te('menu.replacePicture'));
+    html += item('link', 'link', te('menu.link'), 'L');
+    if (n0 && firstFileUrl(n0)) html += item('whereFile', 'folder_open', te('menu.whereFile'));
+    html += `<p class="cm-hint">${te('menu.pictureHint')}</p>`;
+    html += `<div class="cm-sep"></div>`;
+    if (onTrashBoard()) html += item('putBack', 'undo', te('menu.putBack'));
+    html += item('dup', 'content_copy', te('menu.duplicate'), 'Ctrl D');
+    html += item('cut', 'content_cut', te('menu.cut'), 'Ctrl X');
+    html += item('front', 'arrow_upward', te('menu.front'));
+    html += item('back', 'arrow_downward', te('menu.back'));
+    html += `<div class="cm-sep"></div>`;
+    html += item('del', 'delete', te('menu.delete'), 'Del', 'danger');
+  } else if (targets.length) {
     const first = itemById(targets[0]);
     html += `<div class="cm-label">${icon('colorize')}<span>${te('menu.colour')}</span></div><div class="cm-colors">` +
       COLORS.map((c) => `<button data-color="${c}" data-color-swatch data-color-key="${c}" class="${first && first.color === c ? 'on' : ''}" title="${te('colour.' + c)}"></button>`).join('') +
@@ -158,6 +179,8 @@ function openCtxMenu(clientX, clientY, id) {
     closeCtxMenu();
     switch (act) {
       case 'icon': openIconPicker(targets[0]); break;
+      case 'editPic': editPicture(targets[0]); break;
+      case 'replacePic': replacePicture(targets[0]); break;
       case 'newNoteHere': addNote(worldPt); break;
       case 'edit': { const n = state.notes.find((x) => x.id === targets[0]); if (n) enterEdit(n); break; }
       case 'link': startLinking(targets[0]); break;
@@ -175,7 +198,7 @@ function openCtxMenu(clientX, clientY, id) {
       case 'whereFile': revealFile(firstFileUrl(state.notes.find((x) => x.id === targets[0]))); break;
       case 'front': pushUndo(); targets.forEach(bringToFront); saveSoon(); break;
       case 'back': pushUndo(); targets.forEach(sendToBack); saveSoon(); break;
-      case 'del': pushUndo(); deleteItems(targets); break;
+      case 'del': askThenDelete(targets); break;
       case 'arrGrid': arrangeSelection('grid'); break;
       case 'arrRow': arrangeSelection('row'); break;
       case 'arrCol': arrangeSelection('column'); break;
@@ -211,7 +234,10 @@ const chipEls = new Map();   // frame id -> chip element
 function drawCompass() {
   const wrap = $('compass');
   if (!wrap) return;
-  if (!state.settings.compass || !state.frames.length) {
+  /* Focus mode hides the signposts, and this runs on every pan and zoom — so it
+     is worth not building chips nobody will see. Same early return the compass
+     switch takes, for the same reason. */
+  if (!state.settings.compass || state.settings.focusMode || !state.frames.length) {
     if (chipEls.size) { wrap.innerHTML = ''; chipEls.clear(); }
     return;
   }

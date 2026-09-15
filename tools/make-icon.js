@@ -16,11 +16,11 @@
    than one tone would otherwise collapse to a silhouette and lose every
    internal line.
 
-   The artwork is a brain: a lumpy dome with a central fissure and three folds
-   a side, black on white. It is drawn rather than taken from the icon set,
-   because the set has no brain in it — `psychology` and `psychology_alt` are
-   both *heads*, one with a cog and one with a question mark, and neither reads
-   as the thing this app is named after.
+   The artwork is a brain drawn in outline: two hemispheres of thick stroked
+   line either side of a central fissure, black on white. It is not taken from
+   the icon set, because the set has no brain in it — `psychology` and
+   `psychology_alt` are both *heads*, one with a cog and one with a question
+   mark, and neither reads as the thing this app is named after.
 
    One consequence worth knowing, because it reverses the older design's
    reasoning: an opaque white background is a white square on a dark taskbar.
@@ -28,9 +28,16 @@
    vanished against dark chrome. White is what was asked for; if it ever looks
    wrong there, this comment is the place to start.
 
-   At 16px the folds blur into the fill and what is left is a lumpy dark disc.
-   That is expected and is why the outline is bumpy rather than round: at the
-   size where the detail goes, the silhouette is the whole icon. */
+   The source is 768 square, and that number is load-bearing: every size below
+   divides it exactly (768/16, /24, /32, /48, /64, /128, /256 are all whole),
+   so each rung is an even box average rather than one whose window wobbles
+   between two widths across the row.
+
+   At 16px the inner folds soften into grey but the outer stroke and the
+   central fissure survive, so it still reads as a brain rather than a disc.
+   That is the size to check first after replacing the artwork: line-art thins
+   out as it shrinks, and artwork with a finer stroke than this will vanish
+   there long before it looks wrong at 256. */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');

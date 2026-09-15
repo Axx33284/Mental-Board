@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-fifteen scripts or eight sheets holds the thing you are after, so you never
+seventeen scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,8 +17,17 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + fifteen ordinary `<script>` tags. No framework, no bundler,
-no build step, no modules — every file shares one global scope.
+Plain HTML + CSS + seventeen ordinary `<script>` tags. No framework, no
+bundler, no build step, no modules — every file shares one global scope.
+
+**2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
+(§3, `src/store.js`); a picture dropped on the canvas stands on the board by
+itself and can be dragged into a note (§4q, `js/pictures.js`); a page menu at
+the top right holds everything about *this* board — its font, text size,
+background, group, copy, duplicate, trash, import, export (§4r, `js/page.js`);
+the app's own look, "Mental Board", is the default theme and the chrome it
+arrived with is `css/mental.css` (§5c); and a machine with no GPU is detected
+and treated as one (§4c).
 
 The things that make it more than a note wall:
 
@@ -43,7 +52,11 @@ The things that make it more than a note wall:
 | **Statuses on notes, the user's own list** | js/state.js, js/items.js, js/menus.js |
 | **Note shape, and three spacing levels** | js/theme.js + css/later.css |
 | **Per-block text alignment** | js/toolbars.js + css/later.css |
-| Twelve themes and nine accents plus your own, following Windows or the clock | js/theme.js + css/tokens.css |
+| **Eighteen themes** and nine accents plus your own, following Windows or the clock | js/theme.js + css/tokens.css |
+| **Note text in four faces, three shadow depths** | js/theme.js + css/later.css §45 |
+| **Lines a note up with its neighbours as you drag it** | js/items.js §7 + css/later.css §46 |
+| **Focus mode: the canvas and nothing else** | js/init.js + css/later.css §47 |
+| **What a new note starts as, and whether a delete asks** | js/state.js + js/edit-ops.js |
 | **Seven canvas papers, with a pitch and a strength** | js/view.js + css/chrome.css |
 | Any-language UI, RTL interface, per-paragraph bidi | js/helpers.js, css/lang.css |
 | **Arrange a selection into a grid, row or column** | js/edit-ops.js §4f |
@@ -56,6 +69,12 @@ The things that make it more than a note wall:
 | **Ropes you can colour, shape and pin** | js/links.js §4d |
 | **Video, sound and documents kept with the board** | js/media.js §4n |
 | **A backup folder you can carry to another machine** | js/settings.js §4m + §4n |
+| **Every board is a folder: `Documents\My Boards`** | src/store.js §3 |
+| **Pictures standing on the board, dragged into notes** | js/pictures.js §4q |
+| **The page menu: font, text size, background, group, copy, trash, export** | js/page.js §4r |
+| **Boards in groups, which are sub-folders** | js/page.js §4r |
+| **The Mental Board look, and a settings panel that explains itself** | css/mental.css §5c |
+| **No GPU? The app notices** | main.js + js/theme.js §4c |
 
 ---
 
@@ -69,11 +88,12 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           15 plain scripts, one global scope, no bundler   (§4)
-  css/          8 sheets whose <link> order *is* the cascade     (§5)
+  js/           17 plain scripts, one global scope, no bundler   (§4)
+  css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png
   main.js       Electron main
-  preload.js    the only bridge to disk
+  store.js      the My Boards folder — every read and write of user data (§3)
+  preload.js    the bridge: a list of IPC calls, no disk work of its own
 tools/        build + checks, never shipped
 admin/        double-clickable .cmd wrappers
 App/          the built app (generated; deleted and rewritten by every build)
@@ -81,25 +101,26 @@ App/          the built app (generated; deleted and rewritten by every build)
 
 | File | Lines | What it is |
 |------|-------|------------|
-| `src/main.js` | 813 | Electron main. Window, data folder, native theme, the tray and the quick-capture hotkey, the loopback player origin, export/import/backup dialogs, and the `shell:open-local` guard (§4m). |
-| `src/preload.js` | 543 | The only bridge to disk. Atomic board writes, the per-board attachments store (§4n), and 4 `contextBridge` globals. |
-| `src/index.html` | 817 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | 10290 | All app logic, in 15 plain scripts sharing one global scope. See §4. |
-| `src/css/*.css` | 2956 | All styling, in 8 sheets whose link order is the cascade. See §5. |
-| `src/assets/lang/en.js` | 640 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
-| `src/assets/lang/ar.js` | 739 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
+| `src/main.js` | ~980 | Electron main. Window, native theme, the tray and the quick-capture hotkey, the loopback player origin, the `mbf://` protocol that serves a board's own files, the store's IPC handlers, the dialogs, the GPU check, and the `shell:open-local` guard (§4m). |
+| `src/store.js` | ~620 | **The My Boards folder.** Runs in main. Scans the folder into boards, writes settings.json and each board.json atomically, lays a board's folder out (name, group, rename, move), keeps the files a board carries, copies them between boards, exports and imports whole boards, mirrors the folder for backup, and migrates a 1.x board.json once. See §3. |
+| `src/preload.js` | ~110 | The bridge. Five `contextBridge` globals, every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
+| `src/index.html` | 909 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
+| `src/js/*.js` | ~12100 | All app logic, in 17 plain scripts sharing one global scope. See §4. |
+| `src/css/*.css` | ~3800 | All styling, in 9 sheets whose link order is the cascade. See §5. |
+| `src/assets/lang/en.js` | 699 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
+| `src/assets/lang/ar.js` | 795 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
 | `src/assets/fonts.css` + `src/assets/fonts/` | — | **Generated.** Noto Sans Arabic (one variable woff2, 162 KB, OFL). Run via `npm run fonts`. |
 | `src/assets/icons.js` | — | **Generated.** 425 Material Symbols path strings + the picker's 21 groups. Do not hand-edit. |
 | `tools/make-icon.js` | 264 | Turns `tools/icon-source.png` into `assets/icon.png` + `.ico` — decodes it, recolours it black-on-white, box-filters it down to every size. Run via `npm run icon`. Excluded from the package. |
-| `tools/icon-source.png` | — | **The app icon, as artwork** — a brain, black on white, 512×512. The only source of truth for the icon: replace this file and re-run `npm run icon`. Drawn rather than taken from the icon set, because the set has no brain in it: `psychology` and `psychology_alt` are both *heads*. Excluded from the package — what ships is the generated `src/assets/icon.png` and `.ico`. |
+| `tools/icon-source.png` | — | **The app icon, as artwork** — a brain in outline, black on white, 768×768. The only source of truth for the icon: replace this file and re-run `npm run icon`. Not taken from the icon set, because the set has no brain in it: `psychology` and `psychology_alt` are both *heads*. 768 on purpose — every size `make-icon.js` emits (16, 24, 32, 48, 64, 128, 256) divides it exactly, so no rung is box-filtered through a ragged window. Excluded from the package — what ships is the generated `src/assets/icon.png` and `.ico`. |
 | `tools/fetch-icons.js` | 203 | Downloads the icon set into `assets/icons.js`. Run via `npm run icons`. Needs network; excluded from the package. |
 | `tools/fetch-fonts.js` | 87 | Downloads the Arabic face into `assets/fonts/`. Run via `npm run fonts`. Needs network; excluded from the package. |
-| `tools/app-source.js` | 57 | The app's scripts as one string, in `index.html`'s order. Both checkers read it, so neither keeps its own copy of the load order — the copy is what drifts. |
-| `tools/check-lang.js` | 110 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Run via `npm run check:lang`. |
+| `tools/app-source.js` | 79 | The app's scripts as one string, in `index.html`'s order. Both checkers read it, so neither keeps its own copy of the load order — the copy is what drifts. Also exposes `mainJs()`: `main.js` and `preload.js` are *not* in that order (they do not run in the page) but main draws the tray, the notification and every native dialog, so its strings have to be checked too. |
+| `tools/check-lang.js` | 115 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Covers the fifteen renderer scripts **and `main.js` + `preload.js`**. Run via `npm run check:lang`. |
 | `tools/check-icons.js` | 95 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
-| `admin/` | — | Six `.cmd` launchers: run, sandbox, check, back up, open the data folder, and **Build App**, which is how the app gets updated. |
+| `admin/` | — | Six `.cmd` launchers: run, sandbox, check, back up (a dated copy of My Boards beside the project), open My Boards, and **Build App**, which is how the app gets updated. |
 | `.gitattributes` | — | Line endings. `*.cmd` is pinned to CRLF — a batch file checked out with LF fails in ways that look like anything but that. |
 | `LICENSE` | — | MIT, plus the two bundled asset licences (Material Symbols, Noto). |
 | `package.json` | — | `npm start` runs it, `npm run build` builds it. No installer config, no publish target, no runtime dependencies. |
@@ -121,77 +142,134 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-fifteen scripts that follow. Between them they hold one mutable `state`, renders it into that fixed DOM, and writes it to
-`%APPDATA%/Mental Board/board.json`. There is no virtual DOM and no
+seventeen scripts that follow. Between them they hold one mutable `state`,
+render it into that fixed DOM, and write it to `Documents\My Boards` — one
+`settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
 yourself, then `saveSoon()`.** Notes and frames live in *world* coordinates;
 `#world` is a single `translate() scale()` transform, so panning and zooming
 never touch individual elements.
 
-### The four preload globals
+### The five preload globals
 
 | Global | Gives you |
 |--------|-----------|
-| `window.mbData` | `load()` `save(json)` `saveAsync(json)` `snapshot(json)` `versionSnapshot(json,label)` `paths()` `exportTo(json,name)` `importFrom()` `openDataFolder()` `pickBackupDir()` `backupTo(dir,json,name,boardIds)` |
-| `window.mbFiles` | `toUrl(file)` `pathOf(file)` `pickImage()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the attachments: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `adoptAttachments(beside,urls,boardId)` `listAttachments(boardId)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
-| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` |
+| `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` |
+| `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
+| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
+| `window.mbSys` | `info()` → `{ compositing, software, softwareRender }` — whether Chromium is drawing this window without a GPU. See §4c. |
 
-`mbData.save()` returns **`{ ok, error }`, not a boolean** — it catches its own
-errors and never throws, so the return value is the *only* signal that a write
-failed. `writeNow()` in the renderer must act on it. See §7.
+**Every one of these is a thin IPC call; the work is in `src/store.js`, in
+main.** Preload used to do the disk work itself. It moved because `mbf://`
+(§4n) needs the id→folder map in the process that serves it, and two copies of
+that map is how a picture goes missing.
 
-**There are two writers and the renderer picks by *when*, not by taste.**
-`save()` is synchronous; `saveAsync()` does the identical atomic dance through
-`fs.promises` and returns the same `{ ok, error }` in a promise. Preload runs in
-the *renderer* process, so the synchronous one blocks the UI thread for as long
-as the disk takes — nothing on an SSD, a tenth of a second per save on a
-spinning disk with a few megabytes of board, which is most of why this app felt
-bad on an old machine. Everything debounced goes through `saveAsync`;
-`flushSave()` on `beforeunload` uses `save()`, because a promise handed back
-there never settles. `saveAsync` serialises its calls through one chain — two
-overlapping writes would both be renaming the same `.tmp`.
+`load()` and `save()` are **synchronous** (`ipcRenderer.sendSync`) on purpose:
+the first runs before anything is drawn, the second on `beforeunload`, where a
+promise never settles. Everything else is `invoke` and off the renderer's
+thread — the writes go through `fs.promises` in main, so the UI never waits on
+a disk.
 
-(1.3 had a fifth, `window.mbUpdate`. There is no updater now — see §6.)
+**`save()` / `saveAsync()` take a payload, not a string, and return a status
+per document:** `{ settings: json|null, boards: [{ id, name, group, json }] }`
+in, `{ ok, errors: [{ id, error }], dirs }` out. Neither throws. One board's
+folder being read-only does not stop the others landing, and the renderer
+knows exactly which ones did — `writeNow()` keeps `lastWritten` per board and
+only stamps the ones that landed. **A call that returns a status must have that
+status acted on.** See §7.
 
-All four are absent when the page is opened in a plain browser; the renderer
-falls back to `localStorage` and degrades the file features. That fallback is
-deliberate — it makes the UI debuggable without launching Electron.
+`snapshot()` and `versionSnapshot()` return `{ ok, path }` / `{ ok: true,
+skipped: true }` / `{ ok: false, error }` — never `null`, which used to mean
+both "already done today" and "the write failed". `maybeSnapshot()` latches a
+board id only after a success, so a failed snapshot is retried.
 
-### Persistence
+All five are absent when the page is opened in a plain browser; the renderer
+falls back to `localStorage` (the 1.x one-document shape) and degrades the file
+features. That fallback is deliberate — it makes the UI debuggable without
+launching Electron.
 
-- `%APPDATA%/Mental Board/board.json` — the board.
-- `board.bak.json` — the previous good copy, written before every overwrite.
-- `backups/board-YYYY-MM-DD.json` — one snapshot per day, newest 20 kept.
-- `backups/board-before-<version>.json` — taken once, on the first launch of a
-  build whose version differs from the one recorded in the file. Kept apart
-  from the daily ones so it never ages out.
-- Writes are atomic: `.tmp` → copy current to `.bak` → rename over the top.
-  A crash mid-write can therefore never truncate `board.json`.
-- `save()` serialises the whole `state`, so **there is no whitelist to update**
-  when you add a field — unlike the sibling project. Add it to `defaults()` so
-  older saves get a value, and heal it in `adopt()`. Write through `serialise()`,
-  never `JSON.stringify(state)`; see §3a.
-- A locked board is written as ciphertext and nothing else, even while it is
-  open in front of you. See §3b.
-- `load()` → `adopt()` merges over defaults and drops anything malformed.
+### Persistence: the My Boards folder
 
-### The data folder is a contract
+```
+Documents\My Boards\
+  settings.json              the app's settings, templates, statuses, the
+                             rail order (boardOrder) and the open board
+  <Board name>\
+    board.json               { mbBoard: 2, id, name, icon, …, notes, frames, links, view }
+    board.bak.json           the previous good copy
+    files\                   every picture, clip and document the board carries
+  <Group>\<Board name>\      a board inside a group ("Move to…", §4r)
+  Trash\                     the bin — an ordinary board with trash: true
+  Backups\<Board name>\      YYYY-MM-DD.json, one per day, newest 14; and
+                             before-<version>.json, taken once per upgrade
+```
 
-`main.js` **pins** userData to `appData/Mental Board` instead of letting
-Electron derive it from `productName`. Renaming the product, or changing
-packager, would otherwise move every existing user's board to a folder the new
-build never looks at — indistinguishable, from their side, from the update
-having deleted their work. **That string must never change again.**
+The whole design is those four lines: **a board is a folder, and the folder is
+the whole board.** Copy it to a stick and it is complete, pictures included.
+Drop it into anyone's `My Boards` and it is listed at the next launch. Delete
+`My Boards` and the app starts as new. There is nothing anywhere else the user
+would miss — `%APPDATA%\Mental Board` holds only Chromium's files, the window
+rect and the tray-notice marker.
 
-Two things follow that are easy to get wrong:
+Rules that carry over from 1.x, and still hold per file:
 
-- `--user-data-dir` still wins. The pin is skipped when the switch is present,
-  or the sandbox in §6 quietly points at the real board. It did once.
-- Chromium's own caches go to `%LOCALAPPDATA%/Mental Board/chromium`, so the
-  folder the user is sent to holds only their own files. `tidyOldCache()`
-  removes the old copies once, by an explicit allowlist of Chromium directory
-  names — it must never learn to delete anything it does not name.
+- Writes are atomic: `.tmp` → copy current to `.bak` → rename over the top,
+  for `settings.json` and for every `board.json`. Two scratch names, because
+  the sync writer (the way out) and the async one (every other save) can
+  overlap on the same file.
+- **Only what changed is written.** `writeNow()` serialises each board, compares
+  it to what last landed for that id, and sends only the ones that differ. A
+  keystroke on a board of ten notes never re-serialises the four thousand on
+  the others, which is most of what made a big 1.x store feel slow to save.
+- `boardPayload()` serialises the whole board object minus two runtime keys,
+  so **there is no whitelist to update** when you add a board field. Add it to
+  `makeBoard()` and heal it in `adoptBoard()`. Settings likewise: `defaults()`
+  and `adopt()`.
+- A locked board is written as its envelope and nothing else, even while it is
+  open. See §3b.
+- The rail order lives in `settings.json`; a folder copied in by hand lands at
+  the end, by name.
+- `load()` → `adoptStore()` folds `{ settings, boards[] }` into the one-document
+  shape `adopt()` has always taken, so the healing, the 1.0.x path and Import
+  stay one function.
+
+**Back up, and start again.** Settings → Your boards has three ways to a copy
+and three ways back. `store.mirrorTo(dir)` copies what is new or changed into
+`<dir>\Mental Board backup\` and never deletes there (the once-a-day one);
+`store.backupAllTo(dir)` writes a complete dated copy, a new folder each time.
+`store:erase-all` in main sends the whole `My Boards` folder to the Recycle
+Bin (`shell.trashItem`, `rmSync` only if the Bin refuses), `store.reset()`
+makes an empty one, and the renderer reloads — with `loadFailed` set first so
+the flush on the way out cannot write the boards it still holds back into the
+fresh folder. `migrateLegacy()` leaves a marker beside the 1.x file so an
+emptied store does not bring the old board back at the next launch.
+
+**A board the store cannot read is shown, and never written.** Its folder is
+there and neither its `board.json` nor its `.bak` parses: it arrives with
+`unreadable: true`, named after its folder, with a warning icon in the rail.
+Switching to it is refused with a toast naming the folder, `writeNow()` skips
+it, `deleteBoard()` refuses it, and its menu offers one thing — open the
+folder. Collapsing that into "no board here" is how one half-copied file used
+to become permanent loss (§3 "Refusing to save"). `loadFailed` still exists for
+the case where the *folder itself* could not be scanned.
+
+### The data folder is still a contract
+
+`main.js` still **pins** userData to `appData/Mental Board`. Nothing of the
+user's lives there now, but the single-instance lock is keyed to it, so two
+builds of this app still cannot run at once (§6) — and the 1.x `board.json`
+there is what `store.migrateLegacy()` reads, once, into an empty `My Boards`.
+The old file is left exactly where it was.
+
+- `--user-data-dir` still wins, and a sandbox run keeps its boards *inside* that
+  folder (`.sandbox\My Boards`), so a test never touches the real ones.
+- Chromium's own caches go to `%LOCALAPPDATA%/Mental Board/chromium`.
+  `tidyOldCache()` removes the old copies once, by an explicit allowlist — it
+  must never learn to delete anything it does not name.
+- The Documents folder comes from `app.getPath('documents')`, which honours a
+  redirected or OneDrive-backed Documents. That is a feature — the folder
+  syncs — and the atomic writes mean a sync client only ever sees whole files.
 
 ### 3a. Boards, and why the live mirror exists
 
@@ -274,23 +352,33 @@ Four rules that keep it honest:
   Quit from the tray and a shutdown all arrive at `beforeunload` instead, where
   the synchronous write with the last good envelope is the backstop.
 
+**It locks the text, not the files.** `notes`, `frames` and `links` are
+encrypted; the pictures, video and documents the board carries are not. They sit
+in `%APPDATA%/Mental Board/files/<boardId>/` under their own names, readable by
+anyone who can read the disk — which is the very thing this feature is for. The
+board's *notes* no longer say which file is which, and that is the whole of what
+the lock buys here. Encrypting a two-gigabyte attachment store is a different
+feature with a different cost, so the honest move was to stop implying
+otherwise: `pass.lockBody` now says it in the confirm dialog, in both languages.
+
 What it does **not** protect: an open board is plaintext in memory like any
 other. This is protection from someone reading the disk or a backup, not from
 someone sitting at an unlocked machine. And there is no recovery — the confirm
 dialog says so in those words.
 
-### One file, not one file per board
+### One folder per board, since 2.0
 
-All boards live in the single `board.json`. That keeps the atomic write, the
-`.bak`, the dated snapshots and the "refusing to save" guarantee below exactly
-as they were — one file, one rename, one recovery story.
+1.x kept every board in one `board.json` and said so was deliberate: one file,
+one rename, one recovery story. 2.0 reverses it, and for the reason 1.x named
+as the way out — `updatedAt` already said which boards were dirty. The trade
+is now the other way round: a save costs one board's JSON, and the price is
+that the store is a folder walk rather than a file read, which `store.scan()`
+does once at boot.
 
-The cost is that `save()` serialises every board, so a debounced save gets more
-expensive as boards accumulate. It is a real trade and the numbers make it fine
-for now: boards are text, and the one thing that is not — a pasted image — is
-capped at 6 MB and was already being re-serialised on every keystroke when there
-was one board. If it ever does become a problem, per-board files are a contained
-change, because `updatedAt` already says which ones are dirty.
+What moved with it: the live mirror (§3a) is unchanged — `state.notes` is
+still the open board's array — and `serialise()` still produces the 1.x
+one-document shape, for the browser fallback and for anything that wants the
+whole store as one JSON. Nothing on disk is written by it any more.
 
 ### Migrating a 1.0.x board is the risky path
 
@@ -319,6 +407,52 @@ gets a dialog naming the folder and the recovery files.
 Collapsing those two states is what turns one unreadable file into permanent
 data loss: the app treats it as a first run, seeds a welcome note, and saves it
 over the file it just failed to read. Keep them apart.
+
+---
+
+## 3c. Twenty themes, and how to add the twenty-first
+
+A theme is **two things and nothing else**: a row in `THEMES` (js/helpers.js) and
+a `:root[data-theme="<id>"]` block of surface tokens. There is no third place —
+no registry, no picker list, no per-theme note colours — because `data-mode` on
+`<html>` carries the nine note colours and every theme inherits all nine by
+declaring itself `light` or `dark`.
+
+**Mental Board** and **Mental Board Light** are the two added in 2.0, and the
+first is the default. Near-black with a cold cast, bone-white text, hairlines
+where the others have shadows — and only surface tokens, like every other row.
+The *chrome* that arrived with them (sharp corners, tracked labels, the
+settings nav, selection as a bar of light) is `css/mental.css` §53 and applies
+to all twenty; see §5c.
+
+So adding one is:
+
+1. a row in `THEMES` with `{ id, name, mode, swatch: [bg, surface, text] }`
+2. a token block at the end of css/later.css, copied from the nearest existing
+   theme and re-tinted — the same variable set in the same order as §2
+3. `'theme.<id>'` in **every** `assets/lang/*.js` (check-lang fails the build
+   otherwise; `theme.` is one of the prefixes it exempts from the *used* scan,
+   so a missing translation is caught but a missing English key is not — write
+   both)
+4. `--c-default-b` only if the theme's own surface would let an untinted note
+   disappear into its canvas
+
+The eleven of 1.4 became eighteen in 1.5. The six added are not more shades of
+what was there — each one filled a hole somebody could name:
+
+| Theme | The gap it filled |
+|---|---|
+| Meadow | a light theme that is not grey, white or beige |
+| Blossom | the warm end of that same idea |
+| Contrast | edges you cannot miss: hairlines at .42 instead of .13, black on white, a grid you can read. A legibility choice, not a hue. |
+| Nordic | a *mid* dark — lighter than Dark, cooler and bluer than Dim |
+| Ember | the only warm dark; every other one is blue, green or purple |
+| Graphite | Mono's dark twin. No hue anywhere, so colour-coded notes have nothing competing with them. |
+
+**Contrast is deliberately not white-on-white.** Its canvas is `#f4f4f4` and its
+notes are `#ffffff`, because a note has to be findable against the paper and
+that is the whole job of the theme. Maximum contrast between *text and its own
+background* is not the same thing as no contrast between a note and the board.
 
 ---
 
@@ -405,9 +539,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in fifteen files
+## 4. `src/js/` — the app, in seventeen files
 
-One `renderer.js` of 7,862 lines became fifteen scripts. Nothing about how the
+One `renderer.js` of 7,862 lines became fifteen scripts, and 2.0 added two
+(`pictures.js`, `page.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -415,21 +550,23 @@ no bundler and no build step — the only thing joining them is the order
 
 | File | Lines | What is in it |
 |------|------:|---------------|
-| `helpers.js` | 310 | `$()` `clamp` `uid` `esc` `stripHtml`, `THEMES` (12), `ACCENTS` (14), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
-| `state.js` | 923 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
-| `theme.js` | 230 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, `applyLang`, `applySettings`. See §3d. |
-| `view.js` | 386 | `applyView` `toWorld` `toScreen`, `render()`, and viewport culling: `syncMounted` `ensureMounted` `applyFarMode`. See §4c. |
-| `items.js` | 450 | `makeNote` `makeFrame`, the status pill, the one drag/resize gesture engine, the selection set, and the camera (`zoomAt` `flyTo` `fitTo`). |
+| `helpers.js` | 436 | `$()` `clamp` `uid` `esc` `stripHtml` `maxOf`/`minOf`, `THEMES` (18), `ACCENTS` (14), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
+| `state.js` | 1029 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
+| `theme.js` | 276 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, `applyLang`, `applySettings`. See §3d. |
+| `view.js` | 409 | `applyView` `toWorld` `toScreen`, `render()`, and viewport culling: `syncMounted` `ensureMounted` `applyFarMode`. See §4c. |
+| `items.js` | 663 | `makeNote` `makeFrame`, the status pill, the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`). |
 | `links.js` | 274 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, `wireLinkClicks`. See §4d. |
 | `editor.js` | 1185 | The note editor — markdown shortcuts, `normalizeBody`, code colouring, tables, columns, user templates, the paste sanitiser. |
 | `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
 | `toolbars.js` | 590 | The floating selection toolbar, `BLOCKS` and the slash menu — the chrome that sits over the editor. |
-| `media.js` | 683 | The icon picker; images (select, resize, align, the crop/annotate studio); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `relinkAttachments`, `revealFile`. See §4n. |
-| `menus.js` | 437 | The right-click menu, and the compass that signposts off-screen workflows. See §7. |
-| `edit-ops.js` | 820 | Create, delete, **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export**. See §4f and §4g. |
-| `boards.js` | 1295 | Several boards, one rail: switching, the flyout, locking, drag-to-board, and the JSON export/import. |
-| `settings.js` | 1212 | The settings panel and every dialog behind it. See §5b. |
-| `init.js` | 1170 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS` — every event listener in one place. **Start here when a click does nothing.** |
+| `media.js` | ~700 | The icon picker; images (select, resize, align, the crop/annotate studio — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
+| `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
+| `menus.js` | 439 | The right-click menu, and the compass that signposts off-screen workflows. See §7. |
+| `edit-ops.js` | 856 | Create, delete (`askThenDelete` is the one door), **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export**. See §4f and §4g. |
+| `boards.js` | 1309 | Several boards, one rail: switching, the flyout, locking, drag-to-board, and the JSON export/import. |
+| `settings.js` | ~1400 | The settings panel and every dialog behind it, the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()` and the stats cache. See §5b. |
+| `page.js` | ~330 | **The page menu** at the top right and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
+| `init.js` | ~1350 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS` — every event listener in one place. **Start here when a click does nothing.** |
 
 ### The load order is the only contract
 
@@ -874,15 +1011,40 @@ reconstructed.
 ## 4n. The files a board carries
 
 A board is not only text. Drop a video, a picture, a scan or a spreadsheet on
-it and **the file becomes part of the board**: preload copies it into
+it and **the file becomes part of the board**: the store copies it into
 
 ```
-%APPDATA%/Mental Board/files/<boardId>/<name>
+Documents\My Boards\<Board name>\files\<name>
 ```
 
-and the note stores the URL of *that* copy. One folder per board, named by the
-board's own id — which is why boards were given stable ids long before anything
-read them (§3a).
+and the note stores **`mbf://<boardId>/<name>`** — never a path. Main registers
+`mbf` as a privileged scheme before `ready` and `protocol.handle()`s it by
+looking the board id up in the store's id→folder map and streaming the file
+(Range headers pass through, so a video seeks). `store.resolveFile()` refuses
+anything that is not inside that board's own `files\`, so a crafted board
+cannot ask for a file it does not own.
+
+That URL is what makes a board folder portable: nothing in it names this
+disk. Copy the folder to another machine and every picture still resolves,
+because the id is in the folder's `board.json` and the file is beside it. The
+host part is lowercase by construction (`uid()` is base-36) and the store
+lowercases on lookup, because URL hosts are case-insensitive whatever the
+file says.
+
+`file:` URLs are still accepted everywhere `mbf:` is — `isFileUrl()` in
+helpers.js is the one test — so a 1.x note that linked a document elsewhere on
+the disk keeps working. `migrateLegacy()` rewrites the 1.x attachment URLs
+(`file:///…/files/<id>/<name>`) to `mbf://` once, on the way in.
+
+**Files travel with notes.** When notes leave a board — a drag onto a rail
+tile, a paste onto another board, a put-back out of the bin, a board deleted
+into the bin — `carryNotesTo()` copies the files they point at into the
+destination board's folder and re-addresses the notes. Copied, never moved:
+another note on the source may show the same picture. The source's copy is
+what *Clean up unused* reclaims. Deleting a board is the one case where the
+copy has to land *before* the next step: its folder is about to go, so
+`deleteBoard()` saves the bin, carries, saves again, and only then asks the
+store to remove the folder.
 
 ### Why this reverses §4m
 
@@ -941,7 +1103,8 @@ that.
 
 | Piece | Where |
 |---|---|
-| the copy, the naming, the adoption | `preload.js`, the block above `mbData` |
+| the copy, the naming, the adoption, the carry | `src/store.js` — `attachFile`, `carryFiles`, `adoptExternalFiles` |
+| the URL scheme | `main.js` — `protocol.handle('mbf')`; `store.resolveFile` |
 | what a dropped file *is*, and its markup | `media.js` §11b — `isVideoFile`, `fileHtml`, `takeFileIn` |
 | a drop on the canvas | `init.js` — `onCanvasDrop`, `noteFromDroppedFile` |
 | a drop into a note | `editor.js` — `insertFilesInto` |
@@ -951,7 +1114,7 @@ that.
 ### Video in a note
 
 An ordinary `<video controls preload="metadata">`, so Chromium's own transport
-does the work — there is no custom player to keep in step with twelve themes,
+does the work — there is no custom player to keep in step with every theme,
 and none of the accessibility that comes free with the native one has to be
 rebuilt. `preload="metadata"` means a board of ten clips reads ten headers, not
 ten videos. No `autoplay`, for the same reason embeds are click-to-play: a board
@@ -1023,6 +1186,165 @@ door built to the old standard standing next to the new one, and it is gone.
 
 ---
 
+## 4q. A picture on the board
+
+Drop a screenshot on an empty patch of canvas and what you get is the
+screenshot — not a note with a screenshot in it. `js/pictures.js`.
+
+It **is** a note: `{ pic: true, ar }` on an ordinary note whose body is one
+`<img class="mb-img" src="mbf://…">`. That one decision is why the feature is
+230 lines and not a second item type threaded through render, culling, undo,
+the clipboard, the trash, the board-to-board drag and the export: every one of
+those already handles notes, and a picture is a note that is drawn
+differently. `makeNote()` hands a `pic` to `fillPicture()` — the image and the
+eight handles, no head, no body, no status — and never stubs it at far zoom,
+because a blank rectangle where a picture was reads as a broken board.
+
+Three gestures are its own:
+
+- **A resize keeps the shape.** `fitPictureBox()` runs inside the gesture
+  engine's resize branch: a corner follows the larger pull, an edge sets one
+  side and the other follows, and the anchored corner stays put. `ar` is
+  stored so the first resize does not have to wait for the picture to decode.
+- **A double-click opens the studio on it.** `openStudio(img)` takes a target
+  now; `applyStudio()` writes the result to the board's folder as a file
+  (`attachBytes`) rather than a data URL into the markup, and lands in
+  `pictureEdited()` for a picture, which re-measures the box so a crop changes
+  the shape rather than squashing the result into the old one.
+- **Dragging it onto a note puts it inside.** `beginMove()` records a lone
+  picture as `gesture.pic`; each move calls `trackPicTarget()`, which asks
+  `elementFromPoint()` what is under the pointer and lights the note up;
+  `finishPicDrop()` appends the `<img>` to that note's body and removes the
+  picture from the board — same file, nothing copied. The image toolbar's
+  "take it out" button is the way back.
+
+`.note.pic.dragging { pointer-events: none }` is load-bearing: without it,
+`elementFromPoint()` only ever finds the picture being dragged. The gesture
+holds pointer capture on the viewport, so the picture never needed the events.
+
+The board picture (§4g) cannot draw the picture itself — an image from the
+board's folder would taint the canvas — so it draws a framed box with an
+image glyph where the picture sits, at its size.
+
+## 4r. The page menu, and what a board decides for itself
+
+The board's name at the top right of the canvas, and behind it everything
+about *this* board rather than about the app. Settings (Ctrl+,) is the place
+for the app; this is the place for the page. `js/page.js`.
+
+Three looks are stored **on the board** and fall back to Settings when unset:
+`font` (one of `NOTE_FONTS`, or `''`), `smallText`, and `bg` — `{ file, fit,
+dim }`, a picture in the board's own folder, named and never pathed.
+`applyBoardLook()` paints them: from `render()` on every board switch and
+from `applySettings()` whenever the global they fall back to changes. They
+are on the board so a board keeps its look when it is exported.
+
+- **Font** is offered as sample cards ("Ag" in each face) rather than names,
+  because the shape is the only thing worth choosing on. The stacks are CSS
+  variables (`--face-*`, mental.css §51) so the card and the note body read
+  the same list. Seven faces, all system fonts: Segoe, Constantia, Verdana,
+  Cascadia/Consolas, Candara, Bahnschrift, Segoe Print.
+- **Small text** scales the note bodies only; the interface keeps its size.
+- **Background** goes under the paper as one fixed, composited layer
+  (`#bgImage`) with a veil of the canvas colour over it (`dim`, 0–90%), so
+  notes stay readable on a photograph and panning costs nothing. Four fits.
+  The file is counted by `referencedFileUrls()` so *Clean up unused* keeps it,
+  and by `importBoardsFrom()` so an imported board brings it.
+- **Copy everything on this board** (Ctrl+Shift+C) selects all and hands off
+  to `copySelection()`, so the internal clipboard and the system clipboard
+  both get it; the selection is put back afterwards.
+- **Move to a group.** A group is a word on the board (`b.group`) and a
+  sub-folder of My Boards; the rail shows grouped boards under a heading, and
+  the store moves the folder on the next save. One level, on purpose.
+  `moveBoardToGroup()` keeps `state.boards` contiguous by group so the order
+  on screen and in `settings.json` agree. `Backups` is reserved.
+- **Import / Export.** Export copies the board's folder — `board.json` and
+  `files\` — wherever the user points (`store.exportBoard`), after a
+  `saveNow()` so the copy is of *now*. A locked board travels locked. Import
+  takes a `board.json`, a 1.x single-board export or a 1.x everything-export,
+  keeps the board's id if nothing here has it (then the URLs inside are
+  already right), gives it a new one otherwise and relinks, and brings the
+  files in from beside where the file was (`adoptExternalFiles`). The folder
+  has to exist before files can be copied into it, so the board is saved
+  first — that is the `saveNow()` in the middle of `importBoardsFrom()`.
+
+## 4o. Lining a note up with its neighbours
+
+`guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
+`#guidesSvg` — a layer of its own inside `#world`, above `#notesLayer`.
+
+Two notes a pixel and a half out of line look wrong, and there is nothing on an
+infinite canvas to aim at. Snap-to-grid does not answer it: the grid is 26px and
+the note you want to match is wherever somebody put it. So while something is
+dragged, the six lines it could sit on — left, centre, right, top, middle,
+bottom — are compared against the same six on every item nearby; within a few
+screen pixels the drag is nudged onto the match and the line is drawn.
+
+Five decisions hold it up:
+
+- **The candidates are gathered once, in `beginMove()`.** Nothing standing still
+  moves during a drag, so recomputing them per pointermove is the same answer at
+  sixty times the cost. On a board of thousands that is the difference between a
+  feature and a stall.
+- **Only what is inside `visibleWorldRect()` counts**, capped at `GUIDE_MAX`
+  (400). Lining up with a note two screens away is not something anybody is
+  trying to do, and it is not something they could see the line for either.
+- **The tolerance is screen pixels converted to world** — `GUIDE_TOL / z`. A
+  fixed world tolerance is unusable zoomed out (everything is within reach) and
+  useless zoomed in (nothing ever is).
+- **The box is the union of everything travelling.** Dragging five notes lines
+  the *five* up with the neighbour, rather than lining one of them up and
+  leaving the other four wherever the offset put them.
+- **It nudges, it does not lock.** The correction is applied on top of that
+  frame's pointer delta only; keep moving and it lets go.
+
+**Grid snap wins when both are on**, and `beginMove()` skips gathering
+candidates entirely in that case. Two snaps arguing over one drag is a note that
+will not go where it is pointed, and grid snap is the more explicit of the two
+requests.
+
+The two `<line>` elements are made once and moved thereafter — the same
+diff-don't-rebuild rule the compass chips follow, and for the same reason:
+assigning the markup again every frame restarts the fade, so the guide would
+never actually appear. `.off` hides them; nothing is removed.
+
+`#guidesSvg` is a separate `<svg>` rather than a second `<g>` inside
+`#linksSvg`, because `resetLinks()` empties that one on every render and these
+have to outlive it.
+
+Resize is deliberately not covered. It needs edge-specific logic — which of the
+eight handles you are dragging decides which of the six lines can match — and
+the move case is where the annoyance actually lives.
+
+---
+
+## 4p. Focus mode
+
+`settings.focusMode`, `toggleFocusMode()` in `init.js`, `body.focus-mode` and
+css/later.css §47. Everything that is *about* the board rather than *on* it goes:
+the rail, the + dial, the zoom bar and the edge signposts.
+
+Three things are load-bearing:
+
+- **The titlebar stays.** It carries the window's own minimise, maximise and
+  close, and a frameless window with no way to close it is not a focus mode.
+- **The rail is not hidden from CSS.** `renderBoardRail()` reads `focusMode` and
+  treats it as `railMode: 'off'`, which also drops `has-rail` from `<body>` —
+  and that class is what insets `#stage`. Hide the nav from CSS alone and you
+  leave a rail's width of empty margin down the side of a canvas that has no
+  rail in it.
+- **It is stored, so it survives a restart — which is why the toast is not
+  optional.** Every visible way back out is one of the things this mode just
+  hid. `toggleFocusMode()` names the key each time it goes on, and `init()` says
+  it again on any launch that starts in it. Same rule `flashRail()` follows: a
+  control that is invisible at rest has to introduce itself.
+
+Ctrl+`.` beside Ctrl+`,` on purpose — the keys are neighbours and so are the two
+things they do. It works while typing, because clearing the screen is something
+you do mid-sentence and nothing in a note needs that chord.
+
+---
+
 ## 4c. Big boards: culling, far zoom, and the save debounce
 
 A note is roughly forty DOM nodes once its head, badges, eight handles and rich
@@ -1077,10 +1399,23 @@ each other whatever order the ropes mount in.
 
 ## 4a. Language, and why bidi is two separate things
 
-**No user-visible string may be written into `index.html`, `src/js/` or
-`src/css/`.** They all live in `assets/lang/<id>.js`, and `en.js` is the
-source of truth. If you add a feature with new text, add the key to `en.js`
-*and* to every translation in the same change.
+**No user-visible string may be written into `index.html`, `src/js/`,
+`src/css/` — or `src/main.js`.** They all live in `assets/lang/<id>.js`, and
+`en.js` is the source of truth. If you add a feature with new text, add the key
+to `en.js` *and* to every translation in the same change.
+
+Main is the newest half of that rule and the one that was missing. It draws the
+tray, the "still running" notification and the title on every native file
+dialog, and it has no catalogue: those strings were English literals, and
+`check:lang` could not see them because `app-source.js` reads the script list
+out of `index.html` and main is not in it. So an Arabic window came with an
+English tray and an English "Insert image", and the check passed the whole time.
+
+Main now keeps `S_EN` as its fallback — it has to, the tray is built in
+`whenReady()` before the renderer exists — and the **renderer tells it the rest**
+through `mbWin.setStrings()`, on boot and on every language change. See
+`sendMainStrings()` in `js/theme.js`; the keys are `main.*` and are written out
+literally at both ends so the checker sees them.
 
 | You are writing | Use |
 |---|---|
@@ -1096,6 +1431,51 @@ a half-finished translation shows English, never blanks.
 
 **Adding a language** is one file plus one `<script>` tag in `index.html`. The
 picker in Settings builds itself from whatever registered on `window.MB_LANG`.
+
+### A shortcut is a key, not a letter
+
+`e.key` is what the *layout* produced. On a Windows Arabic layout the F key
+reports `ب`, so every `e.key.toLowerCase() === 'f'` in the app matched nothing:
+Ctrl+F, Ctrl+Z, Ctrl+S, Ctrl+C/X/V, Ctrl+K, Ctrl+`,`, and the bare N, G and L
+were **all dead**, and the same for Russian, Greek and Hebrew. For anyone
+working in Arabic the app simply had no keyboard.
+
+`letterKey(e)` and `chordKey(e)` in §1 are the answer, and **the order inside
+them is the part to not get wrong**: `e.key` is tried first and `e.code` is the
+fallback, never the other way round. On AZERTY and QWERTZ the letter printed on
+the cap is the one the user means — a French A sends `key: 'a'` with
+`code: 'KeyQ'` — so reading the code first would quietly move every shortcut to
+a key with the wrong letter on it. Honour the label when it is Latin; fall back
+to the physical position only when it is not, which is exactly the case a
+non-Latin layout presents, and which matches the Latin legend printed on the
+same cap of every Arabic keyboard.
+
+Every letter shortcut goes through `letterKey()`. Punctuation and digits go
+through `chordKey()`, for the same reason: an Arabic layout puts `،` on the
+comma key and some variants put ٠-٩ on the digit row.
+
+### Searching Arabic means folding it first
+
+Arabic writes the same word several ways and people type the easy one: `أحمد`
+is typed `احمد`, `مهمّة` is typed `مهمة`, a word may carry a tatweel (`مشـروع`)
+for looks, and a year is as likely to be `٢٠٢٦` as `2026`. Comparing the strings
+as written found none of those.
+
+`foldSearch()` in §1 is the comparison key: harakat, hamza marks and the
+superscript alef removed, tatweel dropped, the alef / ya / ta-marbuta /
+hamza-carrier forms collapsed onto one letter each, Arabic-Indic and Persian
+digits mapped to ASCII, NFKC for the presentation forms that arrive out of old
+PDFs. **Both sides go through it** — Ctrl+F, the jump palette, the slash menu
+and the template list all fold the query, and `noteTextFolded()` caches the
+folded body beside the plain text so a thousand notes fold once per edit rather
+than once per keystroke.
+
+It is a comparison key and **nothing else**: what the user typed into a note is
+stored and displayed exactly as written. Folding for display would be the app
+correcting somebody's spelling of their own language.
+
+The Latin path is one regex test and a `toLowerCase()`, so an English board pays
+nothing.
 
 ### The two bidi mechanisms — do not confuse them
 
@@ -1365,7 +1745,7 @@ reputation for being broken.
 
 ---
 
-## 5. `src/css/` — eight sheets, and the order is the cascade
+## 5. `src/css/` — nine sheets, and the order is the cascade
 
 `styles.css` was written as an append-only log where later rules beat earlier
 ones. It is now eight files, in the same order, and **that property is
@@ -1373,19 +1753,20 @@ unchanged** — the `<link>` order in `index.html` is what makes `later.css` win
 an argument with `tokens.css`. Nothing in the files themselves says so.
 
 So: the link list is load-bearing, not decoration. Reordering it changes how the
-app looks. Add new rules to the end of the last sheet, the way you added them to
-the end of the file before.
+app looks. Add new rules to the end of the last sheet — `mental.css` since
+2.0 — the way you added them to the end of the file before.
 
 | Sheet | Lines | What is in it |
 |-------|------:|---------------|
-| `tokens.css` | 266 | Reset, design tokens, the twelve theme palettes, the fourteen accents, the nine note colours |
+| `tokens.css` | 265 | Reset, design tokens, the first seven theme palettes, the fourteen accents, the nine note colours |
 | `chrome.css` | 116 | Titlebar; the canvas itself — viewport, world, grid background, marquee |
 | `notes.css` | 209 | Notes, the eight resize handles, workflow frames, ropes, and rich text *inside* a note |
 | `menus.css` | 270 | Selection toolbar, slash menu, context menu, fab, zoom bar, compass chips, toast, overlays, motion, and the **late-overrides** block |
-| `icons.css` | 133 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
+| `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `later.css` | 1186 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window** , **§31 the cheap-to-draw mode**, **§32 the day/night pair** and **§33 filtering the board** |
+| `mental.css` | ~560 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer. Wins every argument with the eight above by position. See §5c. |
+| `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
 numbers and still run 1–39 across the set, so a reference like "styles.css §31"
@@ -1488,6 +1869,104 @@ The new **Links** tab is where the ropes and the embed switch live. Everything
 else kept its section heading, so the `STATIC_ICONS` rows that target
 `h3:has([data-t="set.x"]) .sec-ic` still resolve.
 
+### Finding a setting
+
+`filterSettings()` in settings.js, css/later.css §49. Nine tabs is a much better
+answer than one long scroll and it is still the wrong answer to "where is the
+thing that turns off the note buttons" — you have to already know it lives under
+Notes. Typing in the box at the top of the nav shows every matching row from
+every pane at once.
+
+The grouping is the part worth understanding. A pane is a flat list of rows,
+checkboxes, button strips and hint paragraphs, and a hint belongs to the control
+above it — so a **unit** is one control plus every `p.set-note` that immediately
+follows it, matched on their combined text. That is why searching for "shadow"
+finds the Graphics row as well as the Shadow one: Graphics' own hint is what
+mentions blurred shadows. Hiding a row and leaving its hint behind, or the
+reverse, is what makes a filtered list look broken.
+
+Four rules:
+
+- **Headings follow their content.** A pane's `h3` shows when anything in it
+  matched, a `.set-sub-h` when anything under it did. Results with no heading
+  over them are a list of controls with no idea which part of the app they
+  belong to.
+- **A row the panel itself has hidden stays out of it.** `pairRow`, `clockRow`,
+  `customBox` and `dailyBoardRow` carry `.hidden` when they do not apply, and
+  that class is `!important` — so search could never reveal one, but it could
+  count it as a match and draw a heading over nothing.
+- **`sf-off`, never `.hidden`.** `.hidden` is the panel's own channel for "this
+  does not apply right now", and two mechanisms writing to one flag is how a
+  control ends up invisible for good.
+- **Both sides go through `foldSearch()`**, so the box finds Arabic the way
+  Ctrl+F does — see §4a. Typing `الظل` finds `الظِلّ`.
+
+Clicking a tab empties the box rather than fighting it: picking a tab and
+searching are two ways of doing the same thing, and only one of them can be the
+answer at a time. Escape empties the box; a second Escape closes the panel.
+
+### The two figures that are expensive to work out
+
+`syncSettingsUI()` runs on **every** control in the panel — clicking a theme
+card, nudging the rope thickness, switching a tab. Two of the things it painted
+were not cheap: the word count walks every note on every board, and the file
+count is a `readdirSync` plus a `statSync` per file, per board, straight through
+the preload bridge on the UI thread. So a control that should feel instant paid
+for a full directory scan of the attachment store and a pass over every word the
+user has ever written — and `startThemeClock()` called it once a minute for free
+while the panel sat open.
+
+Neither figure can change while the panel is open unless something *in* the
+panel changed it. They are computed on open (`refreshSettingsStats()`), cached as
+the finished translated strings, and painted from the cache thereafter.
+`markStatsStale()` nulls it, and exactly five things call it: emptying the bin,
+the Erase button, cleaning up files, importing boards, and a language change.
+Everything else that moves them can only happen with the panel shut, where the
+next open is fresh anyway.
+
+### What 1.5 added to the panel
+
+| Tab | Setting | Key |
+|---|---|---|
+| Appearance | six more themes — see §3c | `theme` |
+| Appearance | whether the app animates at all | `motion` |
+| Canvas | how far one notch of the wheel goes | `zoomSpeed` |
+| Canvas | line notes up with their neighbours — see §4o | `guides` |
+| Canvas | focus mode — see §4p | `focusMode` |
+| Notes | what the writing is set in | `noteFont` |
+| Notes | how far a note sits off the paper | `noteShadow` |
+| Notes | what a new note starts as | `noteColor` `noteW` `noteH` |
+| Notes | ask before deleting | `confirmDelete` |
+| Your board | put every setting back | `resetSettings()` |
+| the nav | find a setting across all nine tabs | `filterSettings()` |
+
+Three of them are worth a note of their own.
+
+**`motion` has three values and `auto` writes no attribute at all.** The
+stylesheet already answers that case with `@media (prefers-reduced-motion:
+reduce)`, which is the operating system's own switch — resolving it in JS would
+mean re-resolving it whenever Windows changed its mind. What `full` needs is to
+*beat* that media query, and a rule cannot un-set an `!important` it does not
+own, so the two reduced-motion blocks (css/icons.css and css/later.css §31) are
+scoped `body:not([data-motion="full"])` instead. That is the whole mechanism:
+an explicit choice overrides the OS, and no choice leaves the OS to it.
+
+**`noteShadow` goes through two variables, not through the tokens.**
+`--note-shadow` and `--note-shadow-hover` are defined on `<body>` in §45 and read
+by the four `.note` rules in css/notes.css. Redefining `--shadow-sm` directly —
+which is what `body[data-perf="lite"]` does — would have changed the rail tiles,
+the menus, the theme cards and the toast along with it, and this is a setting
+about notes. Restating the four rules down in §45 instead would have been worse:
+source order would then put `.selected` after `.dragging`, and every dragged note
+is selected.
+
+**`resetSettings()` keeps three fields.** `backupDir` and `lastBackup`, because
+forgetting a folder the user chose would silently stop the off-disk copies while
+the checkbox still said they were on; and `lang`, because the toast confirming
+what just happened is written in it. It replaces `state.settings` and nothing
+else, so `appVersion`, `boards`, `templates` and `statuses` are untouched by
+construction rather than by a list somebody has to keep in step.
+
 ### Icons stand on their own
 
 Every icon slot in a list used to be a bordered 26–27px tile with the glyph
@@ -1500,12 +1979,76 @@ row's own hover state. `styles.css` §34.
 
 ---
 
-## 5c. Fewer colours, better shown
+## 5c. The Mental Board look
+
+`css/mental.css` §53, and it applies to every theme. Three rules do most of it:
+
+- **Hairlines, not shadows.** A panel is a rectangle with a 1px edge in
+  `--line-2`. Nothing floats, nothing is blurred. That is also what makes the
+  chrome cheap on a machine with no GPU — the old design's §31 had to switch
+  its blur and shadows *off* to get there; this one never has them.
+- **Corners are barely corners.** `--r: 3px` on chrome. Notes keep their own
+  shape setting; a workflow frame follows it.
+- **Selection is a bar of light.** The row under the pointer, the tab that is
+  open, the option that is on: `--text` becomes the background and `--bg` the
+  ink. One language for "this one", everywhere, needing no colour to say it.
+  The accent is kept for focus rings, checks and the caret.
+
+Labels — section headings, tab names, the titlebar, buttons — are set in
+`--face-label` (Bahnschrift, which ships with Windows 10 and 11; the fallbacks
+keep the tracking) in tracked uppercase.
+
+**The settings panel explains itself beside the rows.** Every `p.set-note`
+hint that used to sit under its control is hidden in the panes and shown
+instead in `#setDesc` — a column to the side of the rows — for the row the
+pointer or the focus is on: `wireSettingsDesc()` in settings.js, grouping a
+control with the notes that follow it exactly the way `filterSettings()` does,
+so the two never disagree about what belongs to what. Only content stays
+inline: the stats line, the version, the backup folder. The hints are still in
+the DOM, so the search box still finds them.
+
+### What the reference does, and what was taken from it
+
+The look was checked against the game it was asked to resemble (Capcom's
+*Resident Evil Requiem*, 2026 — title, options, load and modal screens), and
+§54 of mental.css is the result. What the reference does, concretely:
+
+| Screen | What Capcom did |
+|---|---|
+| Options | Full black. Title top-left in condensed capitals. A **row of tabs across the top** in condensed capitals with hairlines between them and a glowing underline under the open one; a smaller sub-tab row under that. Section headers are small **slanted grey tabs**. Rows: label left in sentence case, `‹ value ›` in a fixed column with a **short bar under every option and the chosen one lit**; hairlines between rows; dependent rows indented and dimmed. The highlighted row is a **light gradient bar, brightest at the leading edge and fading across the row**, with the text left white — not an inversion. The **description sits in a column to the right**, in sentence case, ending "(Default: …)", sometimes with a preview image. Button prompts centred along the bottom. Almost no colour; the one green bar is data. |
+| Title menu | A dark photograph (an evidence board — pinned photos and string). A left-hand column in a **typewriter face**; the chosen item white on a black bar with rough edges, the rest grey; a one-line description bottom-left in a plain sans, then the prompt. |
+| Load game | Paper and ledger lines, typewriter text, the chosen row a paper-white bar with dark text. |
+| Modals | Near-black, centred sentence-case text, thin **L-shaped corner marks** at two corners. |
+| Type | ITC American Typewriter for the title and save menus; Neue Frutiger for the body; Univers Condensed for counters and prompts (per Fonts In Use). |
+
+What the app takes from that, and where: the tab row across the top with the
+underline glow and the description column (`.set-nav`, `.set-desc`); the
+gradient highlight bar for rows and menu items (`--spot`, mirrored for RTL
+by `--spot-edge`); options as underlined words rather than pills (`.seg`);
+slanted section tabs (`.set-sub-h`, `clip-path`, mirrored for RTL); corner
+marks on dialogs (`.sheet::before/::after`); a typewriter face for board names
+and the app's own name, declared as `"MB Typewriter"` with a **Latin-only
+`unicode-range`** so an Arabic board name falls through to the normal face
+instead of a letter-spaced monospace fallback. Inversion (§53's bar of light)
+is kept only where the reference inverts: the title menu, i.e. the boards
+launcher when the window is open and toolbar toggles.
+
+What was deliberately not taken: the distressed textures and brushed edges
+(they need image assets and are the wrong register for a notes app), the
+photograph behind the title, and centred button prompts on every screen.
+
+Two specificity traps this sheet had to fight, because the rail's own block
+(boards.css §21) sets its radii and the active tile's fill under
+`body.rail-hover …`, which outweighs a bare class: the active row's inversion
+and the panel's corners are matched at the same weight at the end of
+mental.css. Add a rule for the rail and check it in *both* rail modes.
+
+## 5d. Fewer colours, better shown
 
 Two controls in the appearance pane were a wall of colour with no structure,
 and the cause was the same for both: nothing said what you were looking at.
 
-**Twelve theme cards in one grid** read as a swatch book. Nothing marked where
+**A dozen theme cards in one grid** read as a swatch book. Nothing marked where
 the light ones stopped and the dark ones started, so you scanned all twelve
 every time. They are split under two headings now — the division they were
 always organised by — and the light/dark badge each card used to carry is gone
@@ -1663,18 +2206,34 @@ Rebuild the icon after replacing `tools/icon-source.png`:
 npm run icon
 ```
 
+### An App\\ built somewhere else
+
+`BUILD.txt` records the folder the build came *from*, and nothing ever read it
+back. So a project copied to a new folder inherited the old folder's `App\`, and
+`App\Mental Board.exe` then ran source that was somewhere else entirely — with
+the titlebar showing the old version, which looks exactly like a build that
+simply has not been made yet. Combined with the single-instance lock above, the
+stale copy wins the launch and raises its own window.
+
+`reportForeignBuild()` in `tools/build-app.js` compares the two paths and says
+so before building. A notice, not a refusal: the build is about to replace
+`App\` anyway, and what was missing was anyone ever being told.
+
 ### Verifying a UI change for real
 
 Launch with a throwaway profile so real user data is never touched, and drive
-it over the Chrome DevTools Protocol. `npm run sandbox` is exactly this:
+it over the Chrome DevTools Protocol. `npm run sandbox` is exactly this — and
+since 2.0 a sandbox run keeps its boards in `.sandbox\My Boards`, migrating
+`.sandbox\board.json` into it on first launch, so the real `Documents\My
+Boards` is never opened:
 
 ```bash
 ./node_modules/electron/dist/electron.exe . --user-data-dir=.sandbox --remote-debugging-port=9444
 ```
 
-Then connect a CDP client to `http://127.0.0.1:9444/json/list` (Python:
-`websocket-client`, with `suppress_origin=True` — Electron rejects the
-handshake otherwise). `Runtime.evaluate` lets you call any renderer function
+Then connect a CDP client to `http://127.0.0.1:9444/json/list` (Node 22's
+built-in `WebSocket` works as is; Python needs `websocket-client` with
+`suppress_origin=True` — Electron rejects the handshake otherwise). `Runtime.evaluate` lets you call any renderer function
 directly (`addNote()`, `drawCompass()`), `Input.dispatchMouseEvent` lets you
 actually drag things, and `Page.captureScreenshot` lets you look at the result.
 Screenshots can lag a frame; capture twice.
@@ -1690,6 +2249,159 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+- **`lastWrittenBoard` is primed at load, and that is what stops a flush
+  from writing every board.** `primeWritten()` records each board as read;
+  without it the first save of a session found nothing "last written" and
+  wrote all of them — which, after Delete everything, resurrected the boards
+  from memory into the fresh folder. A board read from its .bak or renamed by
+  the store is deliberately left out, so those *are* written.
+
+- **A store call returns a status per document, and each one has to be acted
+  on.** `mbData.save()` / `saveAsync()` return `{ ok, errors: [{ id, error }] }`
+  and never throw. `writeNow()` stamps `lastWrittenBoard` only for the ids
+  that are not in `errors`, so a board whose folder is read-only is retried on
+  the next save while the others carry on — treat the whole result as one
+  boolean and one bad folder silently disables saving for every board. Same
+  bug as 1.3, one level down.
+
+- **A board's folder must exist before a file can be copied into it.** The
+  store makes the folder on the first save (`ensureDir` inside `saveAll`), and
+  `attachFile` refuses an id it has no folder for. So an import saves the new
+  board *before* adopting its files, and a delete saves the bin before
+  carrying files into it. `saveNow()` exists for exactly these two places.
+
+- **`mbf://` hosts are lowercase.** URL hosts are case-insensitive and the
+  browser lowercases them; the store lowercases every id on lookup and
+  `fileUrl()` lowercases on the way out. Compare ids from a URL with
+  `.toLowerCase()` or a board copied from a 1.x file with an uppercase id
+  will resolve nothing.
+
+- **A dragged picture must not take the pointer.** `finishPicDrop()` asks
+  `elementFromPoint()` what is under the pointer, and without
+  `.note.pic.dragging { pointer-events: none }` the answer is always the
+  picture itself. The gesture holds pointer capture on the viewport, so the
+  picture never needed the events.
+
+- **An unreadable board is shown and never written.** `unreadable: true` is a
+  runtime flag (dropped by `boardPayload()`); `writeNow()` skips it,
+  `switchBoard()` / `deleteBoard()` / `duplicateBoard()` refuse it, and
+  `liveBoards()` excludes it. Add a new path that writes boards and check it
+  honours the flag, or the first half-copied folder becomes a lost board.
+
+- **The rail's active row is styled under `body.rail-hover` in boards.css,
+  which outweighs a bare class.** A restyle of `.br-row.on` in the last sheet
+  does nothing to the tile's own fill until it is matched at the same weight.
+  See §5c.
+
+- **The settings hints are hidden by mental.css, not removed.** They are read
+  by the footer on hover and by the search box. Deleting one because "nothing
+  shows it" takes the hint out of both.
+
+- **The titlebar does not mirror.** `html[dir="rtl"] .titlebar { direction: ltr }`
+  keeps the gear at the left and the three window buttons at the right in an
+  Arabic window, as every other window on the desktop has them. Only the
+  canvas chrome and the panels mirror. Put a new control in the titlebar and
+  it stays where it is in both directions.
+
+- **A keyboard shortcut keyed on `e.key` only works on a Latin layout.** See
+  §4a. Use `letterKey()` / `chordKey()`, and note that `e.key` has to be tried
+  *before* `e.code` or AZERTY and QWERTZ break instead.
+
+- **A search that does not fold Arabic finds nothing anyone types.** See §4a.
+  Fold both sides through `foldSearch()`; never fold what is stored.
+
+- **`execCommand('styleWithCSS')` is a flag on the document, not an argument to
+  the command.** `hiliteColor` needs it on — there is no HTML element for a
+  background colour — and it was switched on and left on. From the first click
+  of the highlighter, every later command in the session wrote CSS instead of
+  tags: Ctrl+B stopped producing `<b>bold</b>` and started producing
+  `<span style="font-weight: bold">`. Those spans then met the paste sanitiser,
+  which keeps `background-color` and not `font-weight`, so bold applied after a
+  highlight was bold that vanished on the next copy. Two bugs one line apart,
+  from a flag nobody turned back. Turn it off on the next line.
+
+- **The sanitiser strips `style`, and three features store their state there.**
+  An image's size (`style.width`), a run's font size (`span.mb-fs` +
+  `style.fontSize`) and a highlight (`background-color`) have no other record,
+  so copying a formatted paragraph between notes silently dropped all three —
+  the text arrived, the formatting did not, and nothing said so. `STYLE_OK` in
+  `editor.js` is the allow-list: three properties on three tags, values
+  re-parsed rather than trusted. **Anything new that stores state in an
+  attribute has to be added there or it will not survive a paste.**
+
+- **Filter a class list per class, not by testing the attribute string.**
+  `/^(mb-|fs-|note-)/.test(el.className)` only ever looked at the first class,
+  so `class="mb-al-center hostile"` survived whole — arbitrary classes and all —
+  while `class="hostile mb-fs"` was dropped whole and took a legitimate font
+  size with it. Which one happened depended on nothing but the order they were
+  written in. `safeClass()` splits and filters; `al-` is on the list because
+  that is the only record of an image's alignment.
+
+- **A far-zoom note has no `.note-body`.** Below `FAR_Z` notes mount as stubs —
+  see §4c — so `els.get(id)` can hand back an element that is a coloured
+  rectangle and nothing else. **Anything that reaches for a `.note-body`, a head
+  button or a resize handle must go through `ensureMounted(id)`**, which fills a
+  stub before returning it. That was already the rule for culled items; it now
+  covers "mounted but not finished" as well, with the same one call.
+
+- **Filling the stubs back in belongs in `syncMounted()`, after the cull — not
+  in `applyFarMode()`.** Leaving far zoom means going from the whole board on
+  screen to a screenful of it, so nearly every mounted stub is about to be
+  culled. Finishing them all first measured 600ms of building notes to throw
+  most of them away on the next line; doing it to the survivors is 18ms.
+
+- **A status returned is a status that must be acted on — backups included.**
+  `versionSnapshot()`'s return was ignored outright and `maybeSnapshot()` set
+  its `snapped` latch *before* the call, so a failed daily snapshot was never
+  retried and neither failure was ever reported. The pre-upgrade copy is written
+  once, on the first launch of a build, and there is no second chance at it. See
+  §3.
+
+- **`toISOString().slice(0, 10)` is today in UTC.** It rolls over at 03:00 in
+  Riyadh and 20:00 in Los Angeles, and it disagreed with `todayKey()`, which has
+  always been local — so the daily snapshot and the daily note could name
+  different days, and a snapshot taken at one in the morning was filed under
+  yesterday and therefore not taken at all. `localDay()` in preload,
+  `todayKey()` in the renderer.
+
+- **Locking a board does not encrypt the files it carries.** See §3b. Say so
+  where the user can read it, rather than letting the word "locked" imply it.
+
+- **`Math.max(1, ...arr.map(…))` throws above ~130,000 elements** — measured,
+  in this Electron build. Spread passes every element as a separate argument and
+  V8 runs out of stack; same failure as the `btoa(...bytes)` entry below. It was
+  in five places, and the one that mattered was `adoptBoard()`, which runs on the
+  **load** path: a board that large threw while being read, `load()` caught it as
+  `unreadable`, and the file was refused for ever — permanent data loss from
+  nothing but a big board. `maxOf(arr, fn, seed)` and `minOf()` in helpers.js are
+  the fix, and all five call sites go through them. A loop has no ceiling and is
+  not measurably slower at any size this app will see. **Do not reintroduce the
+  spread**; it looks tidier and it is a cliff.
+
+- **Two files may not declare the same top-level function.** The seventeen scripts
+  share one global scope, so a second `function foo()` silently replaces the
+  first — and which one wins is decided by nothing more interesting than the
+  `<script>` order. `roundRectPath()` was declared in *both* media.js and
+  edit-ops.js with identical bodies, which is harmless right up until somebody
+  fixes a bug in the copy they happened to be reading and nothing changes,
+  because the other one is the one that runs. There is one copy now, in media.js.
+  The scan is four lines of node and worth running after any move of code between
+  files: parse every script for `^function name` / `^const name =` and look for a
+  name that appears twice.
+
+- **Anything that adds items in bulk has to call `updateCulling()`.**
+  `addNote()` and `deleteItems()` always did; `addFrame()`, `duplicate()` and
+  `pasteClipboard()` did not, and all three can carry a board across the
+  threshold in one gesture — duplicating a selection of forty is the obvious
+  case. The symptom is mild and confusing: culling stays off until the next pan,
+  so the board is briefly slower than it should be for no visible reason.
+
+- **A settings panel that recomputes everything on every click gets slow in a
+  way nobody attributes to the panel.** See §5b. The rule is the general one:
+  anything in `syncSettingsUI()` that touches the disk or walks every note on
+  every board has to be cached and invalidated explicitly, because that function
+  is called by every control in it.
 
 - **`btoa(String.fromCharCode(...bytes))` breaks above ~125,000 bytes.** Spread
   passes every byte as a separate argument and V8 runs out of stack — measured
@@ -2229,6 +2941,13 @@ These were considered and left out; they are not oversights.
   saved. Shipping a library of them means shipping their content in every
   language the app speaks, and the content would still be a guess about somebody
   else's week. See §4b.
+- **A far-zoom note is a stub, but the stub is not a virtualised body.** Below
+  `FAR_Z` a note now mounts as the div, its colour, its place and its status
+  pill and nothing else — `makeNote(n, stub)` — with `fillNote()` adding the
+  text, the head, the handles and the listeners on the way back in. That took
+  fit-everything on 3,000 notes from 330ms to 77ms and a pan frame there from
+  9.2ms to 1.5ms. What is still *not* done is virtualising the body of a note
+  you can actually read: above `FAR_Z` every mounted note is built in full.
 - **Culling does not virtualise the note bodies.** Below `FAR_Z` the bodies come
   out of the layout, but the note elements themselves are still built in full
   when they mount. Building a cheap stub and upgrading it on zoom-in would save

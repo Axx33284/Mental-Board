@@ -1,5 +1,5 @@
 @echo off
-:: Builds the app into ..\App and points your shortcuts at it.
+:: Builds the app into ..\App. It makes no shortcuts and touches none:
 ::
 :: This is the only way the app gets updated now. There is no installer, no
 :: Add/Remove Programs entry, and nothing downloads a new version behind your

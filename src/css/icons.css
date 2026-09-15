@@ -1,7 +1,7 @@
 /* Mental Board — icons.css
    Icon sizing per context, the theme picker, the icon picker, and image editing.
 
-   Sheet 5 of 8. styles.css was one append-only file and these are
+   Sheet 5 of 9. styles.css was one append-only file and these are
    its slices in the same order, so **later files still beat earlier ones** —
    the <link> order in index.html is load-bearing, not decoration. Adding a
    rule at the end of the last sheet is still how you win an argument with
@@ -127,7 +127,16 @@
 .studio-foot { display: flex; align-items: center; gap: 9px; padding: 13px 18px; border-top: 1px solid var(--line); }
 .st-hint { flex: 1; font-size: 12px; color: var(--dimmer); }
 
-body.no-anim *, body.no-anim *::before, body.no-anim *::after { transition: none !important; animation: none !important; }
+/* The operating system's own answer, and the default one — settings.motion is
+   'auto' until somebody says otherwise. `body:not([data-motion="full"])` is
+   what lets an explicit "Full" in Settings override it for this app alone: an
+   app that moves is a separate question from a desktop that moves, and someone
+   who wants this one animated should not have to change a system setting to
+   get it. See css/later.css §45. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  body:not([data-motion="full"]) *,
+  body:not([data-motion="full"]) *::before,
+  body:not([data-motion="full"]) *::after {
+    animation-duration: .01ms !important; transition-duration: .01ms !important;
+  }
 }

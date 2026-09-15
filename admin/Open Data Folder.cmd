@@ -1,15 +1,19 @@
 @echo off
-:: Opens the folder your notes actually live in.
+:: Opens the folder your boards actually live in: Documents\My Boards.
 ::
-:: board.json          the board
-:: board.bak.json      the copy from before the last save
-:: backups\            dated copies, newest twenty, plus one per app version
+:: settings.json            how the app is set up, and the order of the boards
+:: <Board name>\board.json  one folder per board; files\ beside it holds its
+::                          pictures, clips and documents
+:: <Group>\<Board name>\    a board inside a group
+:: Trash\                   the bin
+:: Backups\<Board name>\    one dated copy of each board per day, plus one
+::                          taken before each new app version
 ::
-:: Recovery is a rename: put a good copy over board.json and restart. If you
-:: edit one of these by hand, save it as UTF-8 without a BOM — Notepad's default
-:: adds one, and the app used to refuse a perfectly good board because of it.
-:: (It strips the BOM now, but there is no reason to add one.)
-set "DATA=%APPDATA%\Mental Board"
+:: Recovery is a rename: put a good copy over a board's board.json and restart.
+:: Copy a board's folder anywhere and it is the whole board; delete My Boards
+:: and the app starts as new. If you edit a file by hand, save it as UTF-8.
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('MyDocuments')"`) do set "DOCS=%%i"
+set "DATA=%DOCS%\My Boards"
 if not exist "%DATA%" (
   echo Mental Board has not saved anything yet — %DATA% does not exist.
   pause

@@ -1,7 +1,7 @@
 /* Mental Board — editor.js
    The note editor: markdown, blocks, tables, columns, templates, the paste sanitiser.
 
-   Part 7 of 15. These files are plain scripts sharing one global
+   Part 7 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -107,6 +107,7 @@ function bodyHtml(body) {
 
 function enterEdit(n) {
   if (!canEditHere()) return;
+  if (n && n.pic) { editPicture(n.id); return; }     // a picture has no text; its editor is the studio
   // the note may be culled — flying to it and opening it are one gesture
   const el = ensureMounted(n.id);
   if (!el) return;
@@ -155,10 +156,6 @@ function exitEdit() {
   editDirty = false;
 }
 
-function focusedNoteBody() {
-  return editing;
-}
-
 /* --- keyboard inside a note ------------------------------------------- */
 function onEditorKey(e, body, n) {
   e.stopPropagation();     // canvas shortcuts must not fire while typing
@@ -173,7 +170,8 @@ function onEditorKey(e, body, n) {
 
   if (e.key === 'Escape') { e.preventDefault(); exitEdit(); $('viewport').focus(); return; }
 
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openLinkDialog(); return; }
+  // letterKey(), not e.key: on an Arabic layout the K key reports 'ل'. See §1.
+  if ((e.ctrlKey || e.metaKey) && letterKey(e) === 'k') { e.preventDefault(); openLinkDialog(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); exitEdit(); return; }
 
   const pre = caretPre();
@@ -484,7 +482,6 @@ function insertCallout() { escapeList(); insertHTML(`<div class="mb-callout">${i
    That is also why any count works. 2 through 5 are what the menu offers;
    `/columns 9` gives nine, and the toolbar's + has no ceiling but the width of
    the note. */
-const COLS_MIN = 1;
 const COLS_MAX = 12;
 const colCell = () => '<div class="mb-col"><p><br></p></div>';
 
@@ -1060,11 +1057,17 @@ async function insertFilesInto(files, body, n) {
 async function pickAndInsertImage() {
   if (!editing) return;
   const body = editing, n = editNote;
-  if (FILES && FILES.pickImage) {
-    const url = await FILES.pickImage();
-    if (!url) return;
+  if (FILES && FILES.pickImage && FILES.attach) {
+    /* A path comes back, and the picture is taken into the board's folder
+       before the note sees it — so the note points at its own copy, and the
+       board still shows the picture when the original is moved or the board
+       is sent somewhere. */
+    const p = await FILES.pickImage();
+    if (!p) return;
+    const r = await FILES.attach(p, state.activeBoard, '');
+    if (!r || r.error) { toast(t('msg.fileFailed', { name: p.split(/[\\/]/).pop() })); return; }
     body.focus();
-    insertHTML(`<img class="mb-img" src="${esc(url)}"><p><br></p>`);
+    insertHTML(`<img class="mb-img" src="${esc(r.url)}" loading="lazy" decoding="async"><p><br></p>`);
     n.body = bodyHtml(body); saveSoon();
     return;
   }
@@ -1112,6 +1115,64 @@ function onEditorPaste(e, body, n) {
    this, so they survive inside the app; letting arbitrary <svg> in from a paste
    would be handing a document from the internet a much larger attack surface
    than a note needs, for the sake of pasted decoration. */
+/* ---- what may survive a paste, beyond the tag ----
+
+   **Inline style is stripped from everything, with three exceptions**, and they
+   are exceptions because three of the editor's own features store their state
+   there and nowhere else:
+
+     · an image's size   — setImgWidth() writes style.width / style.height
+     · a run's font size — applyFontPx() writes style.fontSize on span.mb-fs
+     · a highlight       — execCommand('hiliteColor') writes background-color
+
+   Without them, copying a formatted paragraph from one note into another
+   silently dropped every size, every highlight and every image's dimensions.
+   The text arrived, the formatting did not, and nothing said so — which reads
+   as the app losing work rather than as a paste rule.
+
+   Values are re-parsed rather than trusted. A length has to be a plain number
+   with a unit, or `auto`; a colour has to be a hex or an rgb()/rgba(). Anything
+   else — a `url(...)`, a smuggled `position: fixed`, an inherited
+   `background-image` from a web page — is dropped. The allowance is for three
+   named properties on three named tags, so it cannot become a way to paste
+   layout into somebody's note. */
+const STYLE_OK = {
+  IMG: ['width', 'height'],
+  SPAN: ['font-size', 'background-color'],
+  MARK: ['background-color']
+};
+const STYLE_LEN = /^(auto|0|\d+(\.\d+)?(px|%|em|rem))$/i;
+const STYLE_COLOR = /^(#[0-9a-f]{3,8}|rgba?\(\s*[\d.,%\s]+\))$/i;
+function safeStyle(el) {
+  const ok = STYLE_OK[el.tagName];
+  if (!ok) { el.removeAttribute('style'); return; }
+  const keep = [];
+  for (const prop of ok) {
+    const v = (el.style.getPropertyValue(prop) || '').trim();
+    if (!v) continue;
+    if ((prop === 'background-color' ? STYLE_COLOR : STYLE_LEN).test(v)) keep.push(prop + ':' + v);
+  }
+  if (keep.length) el.setAttribute('style', keep.join(';'));
+  else el.removeAttribute('style');
+}
+
+/* Classes are filtered **one at a time**, not by testing the start of the whole
+   attribute. `/^(mb-|fs-|note-)/.test(el.className)` only ever looked at the
+   first class in the list, so `class="mb-al-center hostile"` survived whole —
+   arbitrary classes and all — while `class="hostile mb-fs"` was dropped whole
+   and took a legitimate font size with it. Which of the two happened depended
+   on nothing but the order the classes were written in.
+
+   `al-` is on the list because that is where alignImage() stores an image's
+   alignment, and it is the only record of it. */
+const CLASS_OK = /^(mb-|fs-|note-|al-)/;
+function safeClass(el) {
+  const kept = String(el.getAttribute('class') || '')
+    .split(/\s+/).filter((c) => c && CLASS_OK.test(c));
+  if (kept.length) el.setAttribute('class', kept.join(' '));
+  else el.removeAttribute('class');
+}
+
 const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'CODE', 'PRE', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'HR', 'A', 'IMG', 'SPAN', 'DIV', 'MARK', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'VIDEO', 'AUDIO']);
 function sanitize(html) {
   const d = document.createElement('div');
@@ -1136,7 +1197,7 @@ function sanitize(html) {
                       right class. */
                    (el.tagName === 'DIV' && /\bmb-embed\b/.test(el.className) &&
                     (a.name === 'data-title' || a.name === 'data-author')) ||
-                   (el.tagName === 'DIV' && a.name === 'data-thumb' && /\bmb-embed\b/.test(el.className) && /^file:/i.test(a.value)) ||
+                   (el.tagName === 'DIV' && a.name === 'data-thumb' && /\bmb-embed\b/.test(el.className) && isFileUrl(a.value)) ||
                    (el.tagName === 'IMG' && a.name === 'src') ||
                    /* A video or a sound copied from one note to another keeps
                       playing. `controls` and `preload` are ours and are put
@@ -1148,14 +1209,21 @@ function sanitize(html) {
                    ((el.tagName === 'VIDEO' || el.tagName === 'AUDIO') && a.name === 'src') ||
                    // a paragraph pasted from an RTL page keeps the side it was written on
                    (a.name === 'dir' && /^(ltr|rtl|auto)$/i.test(a.value)) ||
-                   (a.name === 'class' && /^(mb-|fs-|note-)/.test(a.value));
+                   /* Both of these are kept here and *filtered below*, once
+                      the loop has finished reading the original className —
+                      the data-embed rules above test it, so it must not have
+                      been rewritten yet. See safeClass() and safeStyle(). */
+                   a.name === 'class' ||
+                   (a.name === 'style' && !!STYLE_OK[el.tagName]);
       if (!keep) el.removeAttribute(a.name);
     });
+    safeClass(el);
+    safeStyle(el);
     /* `file:` is allowed through so a link to a document survives being copied
        from one note to another. It is not a way in: main vets the extension
        before it opens anything and reveals in Explorer rather than running
        whatever it was handed. See shell:open-local. */
-    if (el.tagName === 'A' && !/^(https?:|mailto:|file:)/i.test(el.getAttribute('href') || '')) el.removeAttribute('href');
+    if (el.tagName === 'A' && !/^(https?:|mailto:|file:|mbf:)/i.test(el.getAttribute('href') || '')) el.removeAttribute('href');
     // a pasted table has to carry our class or it renders as unstyled rows
     if (el.tagName === 'TABLE') el.className = 'mb-table';
     /* A remote image is dropped, not kept. The CSP in index.html is
@@ -1166,14 +1234,20 @@ function sanitize(html) {
        local file or an inlined data URL, and this is now the only rule. */
     if (el.tagName === 'IMG') {
       const src = el.getAttribute('src') || '';
-      if (!/^(data:image\/|file:)/i.test(src)) el.remove(); else el.className = 'mb-img';
+      if (!/^(data:image\/|file:|mbf:)/i.test(src)) { el.remove(); return; }
+      /* The class list is rebuilt rather than trusted — but the alignment
+         survives it. alignImage() records left/centre/right as al-* and
+         nothing else remembers it, so wiping the attribute wholesale is how a
+         centred picture came back left-aligned on the far side of a copy. */
+      const align = ['al-left', 'al-center', 'al-right'].find((c) => el.classList.contains(c));
+      el.className = 'mb-img' + (align ? ' ' + align : '');
     }
     /* Same rule as the picture above, and the controls are re-applied here
        rather than trusted from the paste: what arrives is a source, what is
        inserted is our player. */
     if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
       const src = el.getAttribute('src') || '';
-      if (!/^file:/i.test(src)) { el.remove(); return; }
+      if (!isFileUrl(src)) { el.remove(); return; }
       el.className = el.tagName === 'VIDEO' ? 'mb-video-el' : 'mb-audio-el';
       el.setAttribute('controls', '');
       el.setAttribute('preload', 'metadata');

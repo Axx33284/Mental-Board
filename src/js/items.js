@@ -1,7 +1,7 @@
 /* Mental Board — items.js
    Note and frame elements, the one drag/resize gesture engine, selection, and the camera.
 
-   Part 5 of 15. These files are plain scripts sharing one global
+   Part 5 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -14,13 +14,57 @@ function placeEl(el, it) {
   el.style.width = it.w + 'px'; el.style.height = it.h + 'px';
 }
 
-function makeNote(n) {
+/* A note, in two halves — and the split is what makes fit-everything zoom
+   survivable on a big board.
+
+   Culling stops helping at exactly the zoom where it is needed most: put the
+   whole board on screen and every note is "visible", so every note mounts. At
+   3,000 notes that was one 330ms freeze on the gesture people use most to get
+   their bearings — measured, on a fast machine. `body.far-zoom` already hid the
+   text, the head and the handles with `display: none`, but hiding them happens
+   *after* they have been built: the markup was parsed, four icons were drawn,
+   eight handles were created and about a dozen listeners were attached, for
+   three thousand notes, so that CSS could then decline to paint any of it.
+
+   Below FAR_Z a note is therefore built as a **stub**: the div, its colour, its
+   place, and the status pill — which is the one child far-zoom does *not* hide,
+   because a coloured pill is a landmark. Nothing else. fillNote() adds the rest,
+   and it runs on the way back in.
+
+   The rule that keeps this from becoming a trap: **a stub is only ever created
+   while `farMode` is true, and anything that needs a note's insides goes
+   through `ensureMounted()`, which fills one before handing it back.** That was
+   already the contract for culled items (MAP.md §4c) — this widens it from "the
+   element may not exist" to "the element may not be finished yet", and the same
+   one call answers both. */
+function makeNote(n, stub) {
   const el = document.createElement('div');
   el.className = 'note';
   el.dataset.id = n.id;
   el.dataset.color = n.color || 'default';
   el.style.zIndex = String(n.z || 1);
   placeEl(el, n);
+  /* A picture is one <img> and eight handles — cheaper than a stub would be
+     worth, and a blank rectangle where a picture was reads as a broken board.
+     Never stubbed. See pictures.js. */
+  if (n.pic) { fillPicture(el, n); return el; }
+  if (stub) {
+    el.dataset.stub = '1';
+    el.innerHTML = '<div class="note-status hidden"></div>';
+    paintNoteStatus(el, n);
+    return el;
+  }
+  fillNote(el, n);
+  return el;
+}
+
+/* Everything makeNote() used to do inline. Called straight away for an ordinary
+   mount, and later for a stub the view zoomed back in on. Safe to call twice:
+   it replaces the whole subtree, so the listeners go with the nodes they were
+   on and nothing is bound to the same element twice. */
+function fillNote(el, n) {
+  if (n.pic) { fillPicture(el, n); return; }
+  delete el.dataset.stub;
   el.innerHTML =
     `<div class="note-head">
        <span class="nh-grip">${icon('drag_indicator')}</span>
@@ -41,16 +85,51 @@ function makeNote(n) {
   el.querySelector('.nh-btn.ico').addEventListener('click', (e) => { e.stopPropagation(); openIconPicker(n.id); });
   const body = el.querySelector('.note-body');
   body.innerHTML = n.body || '';
+  lazyImages(body);
   paintCodeBlocks(body);
   paintEmbeds(body);              // the card, not the player; see the embeds block
   wireNoteBody(body, n, el);
-  el.querySelector('.nh-btn.del').addEventListener('click', (e) => { e.stopPropagation(); pushUndo(); deleteItems([n.id]); });
+  el.querySelector('.nh-btn.del').addEventListener('click', (e) => { e.stopPropagation(); askThenDelete([n.id]); });
   el.querySelector('.nh-btn.lk').addEventListener('click', (e) => { e.stopPropagation(); startLinking(n.id); });
   el.querySelector('.nh-btn.more').addEventListener('click', (e) => {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
     openCtxMenu(r.left, r.bottom + 6, n.id);
   });
+}
+
+/* Every picture in a note decodes off the main thread and is not fetched at
+   all until the note is near the screen. Set on the element rather than in
+   the stored markup, so a board written by 1.x gets it too and nothing about
+   what is saved changes. A big board of screenshots used to decode every one
+   of them on the first paint. */
+function lazyImages(root) {
+  if (!root) return;
+  root.querySelectorAll('img').forEach((img) => {
+    if (!img.hasAttribute('loading')) img.setAttribute('loading', 'lazy');
+    if (!img.hasAttribute('decoding')) img.setAttribute('decoding', 'async');
+  });
+}
+
+/* Redraw a note's text from `n.body` without rebuilding the whole element —
+   after a history restore, after its pictures were re-addressed. A stub has
+   no body to draw into and is left for unstub(); a picture is all body, so it
+   is rebuilt outright. */
+function repaintNoteBody(el, n) {
+  if (!el || !n || el.dataset.stub) return;
+  if (n.pic) { fillNote(el, n); return; }
+  const body = el.querySelector('.note-body');
+  if (!body) return;
+  body.innerHTML = n.body || '';
+  lazyImages(body);
+  paintCodeBlocks(body);
+  paintEmbeds(body);
+}
+
+/* Finish a note that was mounted as a stub. Returns the element either way, so
+   callers can chain. */
+function unstub(el, n) {
+  if (el && el.dataset && el.dataset.stub && n) fillNote(el, n);
   return el;
 }
 
@@ -114,14 +193,33 @@ function repaintIcons(id) {
   if (isFrame(id)) paintFrameIcon(el, it); else paintNoteIcon(el, it);
 }
 
+/* One pass over the notes, not one per frame.
+
+   This runs on every animation frame of a pan (syncMounted calls it), and it
+   used to call notesInFrame() per frame — which is `state.notes.filter(...)`,
+   so a board with a dozen workflows on screen walked every note a dozen times
+   and allocated a dozen arrays, sixty times a second, to write a number that
+   almost never changes. Counting into a map costs one walk and no arrays.
+
+   Only mounted frames are counted, as before: an unmounted one has nothing to
+   write the number into, and it gets its count when it mounts. */
 function refreshFrameCounts() {
-  state.frames.forEach((f) => {
+  const live = [];
+  for (const f of state.frames) {
     const el = els.get(f.id);
-    if (!el) return;
-    const c = notesInFrame(f).length;
+    if (!el) continue;
     const cnt = el.querySelector('.frame-count');
-    if (cnt) cnt.textContent = c ? `· ${num(c)}` : '';
-  });
+    if (cnt) live.push({ f, cnt, n: 0 });
+  }
+  if (!live.length) return;
+  for (const n of state.notes) {
+    const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+    for (const e of live) {
+      const f = e.f;
+      if (cx >= f.x && cx <= f.x + f.w && cy >= f.y && cy <= f.y + f.h) e.n++;
+    }
+  }
+  for (const e of live) e.cnt.textContent = e.n ? `· ${num(e.n)}` : '';
 }
 // a note belongs to a frame when its centre sits inside it
 function notesInFrame(f) {
@@ -186,7 +284,7 @@ function bringToFront(id) {
 function sendToBack(id) {
   const n = state.notes.find((x) => x.id === id);
   if (!n) return;
-  const min = Math.min(1, ...state.notes.map((x) => x.z || 1));
+  const min = minOf(state.notes, (x) => x.z || 1, 1);
   n.z = min - 1;
   const el = els.get(id);
   if (el) el.style.zIndex = String(n.z);
@@ -196,6 +294,130 @@ function sendToBack(id) {
    pitch; gridStep() is whatever the user set it to, and a snap that did not
    follow it would put notes between the lines they were aiming at. */
 function snapV(v) { const g = gridStep(); return state.settings.snap ? Math.round(v / g) * g : Math.round(v); }
+
+/* ---- lining a note up with its neighbours -------------------------------
+
+   Dragging a note next to another one and getting it *almost* level is the
+   most common small annoyance on a canvas like this: two notes a pixel and a
+   half out of line look wrong, and there is nothing to aim at. Snap-to-grid
+   does not answer it — the grid is 26px and the note you want to match is
+   wherever somebody put it.
+
+   So while something is dragged, the six lines it could line up on — its left,
+   centre and right, its top, middle and bottom — are compared against the same
+   six on every item nearby. Within a few screen pixels the drag is nudged onto
+   the match, and the line is drawn so you can see what it caught on.
+
+   Four decisions worth keeping:
+
+   - **The candidates are gathered once, at the start of the drag.** Nothing
+     standing still moves while you drag, so recomputing them per pointermove
+     would be the same answer at sixty times the cost. On a board of thousands
+     that is the difference between a feature and a stall.
+   - **Only what is near the viewport counts**, and at most GUIDE_MAX of those.
+     Lining up with a note two screens away is not something anybody is trying
+     to do, and it is not something they could see the line for either.
+   - **The tolerance is in screen pixels, converted to world.** A fixed world
+     tolerance would be unusable zoomed out — everything within reach — and
+     useless zoomed in, where nothing ever is. Six screen pixels is the same
+     six pixels of pointer travel at every zoom.
+   - **It nudges, it does not lock.** The offset is applied on top of the
+     pointer delta for that frame only; keep moving and it lets go. A snap you
+     have to fight is worse than no snap at all.
+
+   Grid snap wins when it is on. It is an explicit "put things on the grid", and
+   two snaps arguing over one drag is a note that will not go where it is
+   pointed. */
+const GUIDE_TOL = 6;        // screen px, converted to world at the current zoom
+const GUIDE_MAX = 400;      // candidate items considered
+let guideEls = null;        // the two <line>s, reused rather than rebuilt
+
+/* The static items a drag could line up against, and the coordinates they
+   offer. Frames count: a workflow's edge is exactly the thing you want a note
+   flush against. */
+function guideCandidates(movingIds) {
+  const R = visibleWorldRect();
+  const xs = [], ys = [];
+  let n = 0;
+  const take = (it) => {
+    if (n >= GUIDE_MAX || movingIds.has(it.id) || !inRect(it, R)) return;
+    n++;
+    xs.push(it.x, it.x + it.w / 2, it.x + it.w);
+    ys.push(it.y, it.y + it.h / 2, it.y + it.h);
+  };
+  state.notes.forEach(take);
+  state.frames.forEach(take);
+  return { xs, ys, n };
+}
+
+/* The nudge, and the two lines to draw for it. `box` is where the dragged set
+   would land unaided. Returns the correction and the world coordinates that
+   matched, with null for an axis that found nothing. */
+function guideFit(box, cand, tol) {
+  const edgesX = [box.x, box.x + box.w / 2, box.x + box.w];
+  const edgesY = [box.y, box.y + box.h / 2, box.y + box.h];
+  let bestX = null, bestY = null;
+  for (let i = 0; i < cand.xs.length; i++) {
+    const c = cand.xs[i];
+    for (let j = 0; j < 3; j++) {
+      const d = c - edgesX[j];
+      if (Math.abs(d) <= tol && (!bestX || Math.abs(d) < Math.abs(bestX.d))) bestX = { d, at: c };
+    }
+  }
+  for (let i = 0; i < cand.ys.length; i++) {
+    const c = cand.ys[i];
+    for (let j = 0; j < 3; j++) {
+      const d = c - edgesY[j];
+      if (Math.abs(d) <= tol && (!bestY || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, at: c };
+    }
+  }
+  return {
+    dx: bestX ? bestX.d : 0, dy: bestY ? bestY.d : 0,
+    vx: bestX ? bestX.at : null, hy: bestY ? bestY.at : null
+  };
+}
+
+/* Two <line>s, made once and moved thereafter — the same diff-don't-rebuild
+   rule the compass chips follow, and for the same reason: assigning the markup
+   again every frame restarts the fade-in, so the guide would never appear.
+
+   `SVGNS` is declared in links.js, which loads *after* this file. That is fine
+   and it is worth saying why: the load order only governs what a file can read
+   while it is being **evaluated**, and this is a function body that first runs
+   during a drag, long after init(). Reading it at the top level of this file
+   would be the temporal dead zone. See MAP.md §4. */
+function drawGuides(fit, box) {
+  const svg = $('guidesSvg');
+  if (!svg) return;
+  if (!guideEls) {
+    const mk = () => {
+      const l = document.createElementNS(SVGNS, 'line');
+      l.setAttribute('class', 'guide-line off');
+      svg.appendChild(l);
+      return l;
+    };
+    guideEls = { v: mk(), h: mk() };
+  }
+  const span = 90;      // world px of overhang past the block, so a line reads as one
+  const { v, h } = guideEls;
+  if (fit.vx == null) v.setAttribute('class', 'guide-line off');
+  else {
+    v.setAttribute('class', 'guide-line');
+    v.setAttribute('x1', fit.vx); v.setAttribute('x2', fit.vx);
+    v.setAttribute('y1', box.y - span); v.setAttribute('y2', box.y + box.h + span);
+  }
+  if (fit.hy == null) h.setAttribute('class', 'guide-line off');
+  else {
+    h.setAttribute('class', 'guide-line');
+    h.setAttribute('y1', fit.hy); h.setAttribute('y2', fit.hy);
+    h.setAttribute('x1', box.x - span); h.setAttribute('x2', box.x + box.w + span);
+  }
+}
+function clearGuides() {
+  if (!guideEls) return;
+  guideEls.v.setAttribute('class', 'guide-line off');
+  guideEls.h.setAttribute('class', 'guide-line off');
+}
 
 function beginMove(e, id) {
   if (!selection.has(id)) setSelection([id], e.shiftKey);
@@ -216,9 +438,17 @@ function beginMove(e, id) {
     /* Which ropes this drag can possibly move. Worked out once here rather than
        per pointermove, so the drag loop can redraw those and leave every other
        rope on the board alone — see drawLinks(). */
-    ids: new Set(items.map((it) => it.id))
+    ids: new Set(items.map((it) => it.id)),
+    /* One picture on its own can be dropped into a note — see pictures.js.
+       Only alone: five things dragged at once are being moved, not filed. */
+    pic: (items.length === 1 && items[0].pic) ? items[0] : null
   };
   items.forEach((it) => els.get(it.id)?.classList.add('dragging'));
+  /* Worked out once, here, because nothing standing still moves during a drag.
+     Skipped entirely when the feature is off or grid snap is on, so neither
+     costs anything it does not use. */
+  gesture.guides = (state.settings.guides && !state.settings.snap)
+    ? guideCandidates(gesture.ids) : null;
   /* Geometry only: a drag moves things that already exist and creates nothing.
      The one exception is dropping onto a board tile, and finishBoardDrop()
      swaps this step for a full one when that happens. */
@@ -236,8 +466,8 @@ function beginResize(e, id, dir) {
     ids: new Set([id]),
     sx: e.clientX, sy: e.clientY, z: state.view.z,
     ox: it.x, oy: it.y, ow: it.w, oh: it.h,
-    minW: frame ? FRAME_MIN_W : NOTE_MIN_W,
-    minH: frame ? FRAME_MIN_H : NOTE_MIN_H,
+    minW: frame ? FRAME_MIN_W : (it.pic ? PIC_MIN : NOTE_MIN_W),
+    minH: frame ? FRAME_MIN_H : (it.pic ? PIC_MIN : NOTE_MIN_H),
     kids: frame ? [] : null
   };
   els.get(id)?.classList.add('dragging');
@@ -260,9 +490,28 @@ function onGestureMove(e) {
   const g = gesture;
 
   if (g.kind === 'move') {
-    const dx = (e.clientX - g.sx) / g.z, dy = (e.clientY - g.sy) / g.z;
+    let dx = (e.clientX - g.sx) / g.z, dy = (e.clientY - g.sy) / g.z;
     if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 3) return;
     g.moved = true;
+    /* Line the whole dragged block up with what is around it. The box is the
+       union of everything travelling, so dragging five notes lines the five up
+       with the neighbour rather than lining one of them up and leaving the rest
+       wherever the offset happened to put them. */
+    if (g.guides && g.guides.n) {
+      let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      g.items.forEach(({ it, ox, oy }) => {
+        const x = ox + dx, y = oy + dy;
+        if (x < x1) x1 = x;
+        if (y < y1) y1 = y;
+        if (x + it.w > x2) x2 = x + it.w;
+        if (y + it.h > y2) y2 = y + it.h;
+      });
+      const box = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+      const fit = guideFit(box, g.guides, GUIDE_TOL / g.z);
+      dx += fit.dx; dy += fit.dy;
+      box.x += fit.dx; box.y += fit.dy;
+      drawGuides(fit, box);
+    }
     g.items.forEach(({ it, ox, oy }) => {
       it.x = snapV(ox + dx); it.y = snapV(oy + dy);
       const el = els.get(it.id);
@@ -270,6 +519,7 @@ function onGestureMove(e) {
     });
     drawLinks(g.ids); scheduleCompass();
     trackBoardDrop(e);
+    if (g.pic) trackPicTarget(e, g);
     return;
   }
 
@@ -281,6 +531,8 @@ function onGestureMove(e) {
     if (d.includes('s')) h = Math.max(g.minH, g.oh + dy);
     if (d.includes('w')) { const nw = Math.max(g.minW, g.ow - dx); x = g.ox + (g.ow - nw); w = nw; }
     if (d.includes('n')) { const nh = Math.max(g.minH, g.oh - dy); y = g.oy + (g.oh - nh); h = nh; }
+    // a picture keeps its shape, whichever handle is pulled
+    if (it.pic) ({ x, y, w, h } = fitPictureBox(g, { x, y, w, h }));
     it.x = snapV(x); it.y = snapV(y); it.w = snapV(w); it.h = snapV(h);
     const el = els.get(it.id);
     if (el) placeEl(el, it);
@@ -321,10 +573,14 @@ function endGesture() {
   const g = gesture;
   gesture = null;
   document.querySelectorAll('.dragging').forEach((el) => el.classList.remove('dragging'));
+  clearGuides();
   $('marquee').classList.add('hidden');
   $('viewport').classList.remove('panning');
   // dropped on a board tile? that ends the gesture as a move-to-board instead
   if (g.kind === 'move' && g.moved && finishBoardDrop(g)) return;
+  // a picture let go over a note goes into the note
+  if (g.kind === 'move' && g.moved && g.pic && finishPicDrop(g)) return;
+  markPicTarget(null);
   if (g.kind === 'move' && !g.moved) popUndo();     // a plain click shouldn't cost an undo step
   if (g.kind === 'move' || g.kind === 'resize') {
     refreshFrameCounts();
@@ -388,7 +644,13 @@ function onWheel(e) {
   e.preventDefault();
   const zoomIntent = e.ctrlKey || state.settings.wheel === 'zoom';
   if (zoomIntent) {
-    const f = Math.pow(0.999, e.deltaY * (e.ctrlKey ? 2.4 : 1.6));
+    /* How far one notch goes. A multiplier on the exponent rather than on the
+       resulting factor, because the factor is already exponential — scaling it
+       directly would make the fast end runaway and the slow end never arrive.
+       The clamp afterwards is unchanged and is what stops a trackpad's
+       hundred-pixel deltas from crossing the whole zoom range in one flick. */
+    const speed = clamp(+state.settings.zoomSpeed || 100, 40, 220) / 100;
+    const f = Math.pow(0.999, e.deltaY * (e.ctrlKey ? 2.4 : 1.6) * speed);
     zoomAt(e.clientX, e.clientY, clamp(f, 0.5, 2));
   } else {
     state.view.x -= e.deltaX;

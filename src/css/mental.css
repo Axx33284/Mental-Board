@@ -1,0 +1,693 @@
+/* Mental Board — mental.css
+   The 2.0 look: pictures on the board, the page menu, and the chrome that
+   came with the Mental Board theme — sharp corners, hairlines, tracked
+   labels, a settings panel that is a list on the left and rows on the right.
+
+   Sheet 9 of 9, and the last one on purpose: styles.css was one append-only
+   file and the eight before this are its slices in the same order, so
+   **later files still beat earlier ones** — the <link> order in index.html is
+   load-bearing. Everything in here wins an argument with everything above it
+   by position alone. Add new rules to the end of this sheet. See MAP.md §5. */
+
+/* ─────────────── 50. pictures on the board ───────────────
+   A note with `pic: true` — see js/pictures.js. The note chrome is stripped:
+   the picture is the whole box, and the box is invisible until you point at
+   it. Handles and selection are the note's own. */
+.note.pic {
+  background: transparent; border: 1px solid transparent; padding: 0;
+  box-shadow: none; overflow: hidden; border-radius: 2px;
+  contain: layout style;
+}
+.note.pic::before { display: none; }
+.note.pic .pic-img {
+  display: block; width: 100%; height: 100%; object-fit: fill;
+  pointer-events: none; user-select: none; -webkit-user-drag: none;
+}
+.note.pic:hover { border-color: var(--line-2); box-shadow: none; }
+.note.pic.selected, .note.pic.editing { border-color: transparent; box-shadow: 0 0 0 2px var(--accent); }
+.note.pic.dragging { box-shadow: 0 0 0 2px var(--accent), 0 18px 40px rgba(0,0,0,.45); }
+/* While it is being dragged the picture must not be what the pointer is over,
+   or elementFromPoint() only ever finds the picture and never the note under
+   it. The gesture holds pointer capture on the viewport, so this costs nothing. */
+.note.pic.dragging { pointer-events: none; }
+.note.pic.find-hit { box-shadow: 0 0 0 2px #f0cc5a; }
+/* the file behind it is gone: a plain box with a hairline says so without a
+   broken-image glyph the theme cannot colour */
+.note.pic.pic-broken { background: var(--surface-2); border-color: var(--line); }
+.note.pic.pic-broken .pic-img { opacity: 0; }
+/* a note that a dragged picture would land in */
+.note.pic-target { box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px color-mix(in srgb, var(--accent) 28%, transparent) !important; }
+/* pictures stay pictures at far zoom — they are the landmarks */
+body.far-zoom .note.pic .pic-img { display: block; }
+body[data-noteshadow] .note.pic:not(.selected):not(.dragging) { box-shadow: none; }
+/* a line of explanation inside a menu */
+.cm-hint { font-size: 11.5px; color: var(--dimmer); padding: 2px 12px 6px; margin: 0; max-width: 250px; line-height: 1.35; }
+
+/* ─────────────── 51. a board's own look ───────────────
+   Font, text size and background are stored on the board and painted by
+   applyBoardLook() in js/page.js. The font stacks are variables so the
+   picker's sample cards and the note bodies read the same list. Every stack
+   keeps "Noto Sans Arabic" in front — see css/lang.css for why. */
+:root {
+  --face-system:  "Noto Sans Arabic", "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+  --face-serif:   "Noto Sans Arabic", Constantia, Georgia, Cambria, "Times New Roman", serif;
+  --face-wide:    "Noto Sans Arabic", Verdana, Tahoma, "DejaVu Sans", sans-serif;
+  --face-mono:    "Noto Sans Arabic", "Cascadia Mono", Consolas, "Courier New", ui-monospace, monospace;
+  --face-rounded: "Noto Sans Arabic", Candara, Corbel, "Segoe UI Variable Display", "Trebuchet MS", sans-serif;
+  --face-narrow:  "Noto Sans Arabic", Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif;
+  --face-hand:    "Noto Sans Arabic", "Segoe Print", "Segoe Script", "Comic Sans MS", cursive;
+}
+body[data-notefont="system"]  .note-body { font-family: var(--face-system); }
+body[data-notefont="serif"]   .note-body { font-family: var(--face-serif); }
+body[data-notefont="wide"]    .note-body { font-family: var(--face-wide); }
+body[data-notefont="mono"]    .note-body { font-family: var(--face-mono); }
+body[data-notefont="rounded"] .note-body { font-family: var(--face-rounded); }
+body[data-notefont="narrow"]  .note-body { font-family: var(--face-narrow); letter-spacing: .01em; }
+body[data-notefont="hand"]    .note-body { font-family: var(--face-hand); }
+body[data-notefont="rounded"] #fontEg { font-family: var(--face-rounded); }
+body[data-notefont="narrow"]  #fontEg { font-family: var(--face-narrow); }
+body[data-notefont="hand"]    #fontEg { font-family: var(--face-hand); }
+/* small text: the note's own text only; the interface keeps its size */
+body.small-text .note-body { font-size: calc(12px * var(--fs, 1)); line-height: 1.5; }
+body.small-text .note-body h1 { font-size: 1.5em; }
+
+/* the background picture, under the paper, fixed to the viewport */
+#bgImage {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-repeat: no-repeat; background-position: center; background-size: cover;
+}
+#bgImage[data-fit="contain"] { background-size: contain; }
+#bgImage[data-fit="tile"]    { background-size: auto; background-repeat: repeat; }
+#bgImage[data-fit="center"]  { background-size: auto; }
+/* the dimming veil is the canvas colour laid over the picture, so notes stay
+   readable on a busy photograph and the picture still reads as a picture */
+#bgImage::after { content: ""; position: absolute; inset: 0; background: var(--bg); opacity: var(--bg-dim, .4); }
+#grid { z-index: 1; }
+#world { z-index: 2; }
+body.has-bg #grid { opacity: .55; }
+
+/* ─────────────── 52. the page button and menu ───────────────
+   The board's name at the top right of the canvas, and behind it the menu
+   for this board. Drawn in the chrome's language: a dark panel, hairlines,
+   tracked labels, and a row that lights up as a bar under the pointer. */
+.pg-btn {
+  position: absolute; top: 12px; right: 14px; z-index: 30;
+  display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 8px 0 10px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--line); border-radius: 3px;
+  color: var(--text); font-size: 12.5px; letter-spacing: .02em;
+  max-width: min(46vw, 360px);
+}
+.pg-btn:hover, body.page-open .pg-btn { border-color: var(--line-2); background: var(--surface-2); }
+.pg-btn .pg-ic .mi { width: 15px; height: 15px; display: block; }
+.pg-btn .pg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pg-btn .pg-name[contenteditable] { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; min-width: 60px; }
+.pg-btn .pg-more { color: var(--dim); display: grid; place-items: center; }
+.pg-btn .pg-more .mi { width: 16px; height: 16px; }
+html[dir="rtl"] .pg-btn { right: auto; left: 14px; }
+body.focus-mode .pg-btn { display: none; }
+
+#pageMenu {
+  position: absolute; top: 50px; right: 14px; z-index: 31;
+  width: 300px; max-height: calc(100vh - 70px); overflow: auto;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 3px;
+  box-shadow: var(--shadow); padding: 6px 0 8px;
+  user-select: none;
+}
+html[dir="rtl"] #pageMenu { right: auto; left: 14px; }
+.pm-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.pm-head .mi { width: 16px; height: 16px; color: var(--dim); }
+.pm-title { flex: 1; font-weight: 650; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-x { width: 24px; height: 24px; display: grid; place-items: center; color: var(--dim); border-radius: 3px; }
+.pm-x:hover { background: var(--surface-3); color: var(--text); }
+.pm-x .mi { width: 14px; height: 14px; }
+.pm-label {
+  display: flex; align-items: center; gap: 6px; padding: 9px 12px 4px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--dimmer);
+}
+.pm-label .mi { width: 12px; height: 12px; }
+.pm-row {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 7px 12px; font-size: 12.5px; color: var(--text); text-align: start;
+  border-radius: 0; position: relative;
+}
+.pm-row .mi { width: 15px; height: 15px; color: var(--dim); flex: 0 0 auto; }
+.pm-row > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-row .k { font-size: 10.5px; color: var(--dimmer); letter-spacing: .04em; }
+.pm-row:hover { background: var(--text); color: var(--bg); }
+.pm-row:hover .mi, .pm-row:hover .k { color: var(--bg); }
+.pm-row.danger { color: var(--danger); }
+.pm-row.danger .mi { color: var(--danger); }
+.pm-row.danger:hover { background: var(--danger); color: #fff; }
+.pm-row.danger:hover .mi { color: #fff; }
+.pm-sep { height: 1px; background: var(--line); margin: 6px 12px; }
+/* a switch row: label left, the switch itself right */
+.pm-check { cursor: pointer; }
+.pm-check > span:first-child { display: grid; place-items: center; }
+.pm-switch { position: relative; width: 30px; height: 16px; flex: 0 0 auto; }
+.pm-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.pm-switch i {
+  position: absolute; inset: 0; border-radius: 2px; border: 1px solid var(--line-2); background: var(--surface-2);
+  transition: background .15s, border-color .15s;
+}
+.pm-switch i::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 1px;
+  background: var(--dim); transition: transform .15s, background .15s;
+}
+.pm-switch input:checked + i { background: var(--accent); border-color: var(--accent); }
+.pm-switch input:checked + i::after { transform: translateX(14px); background: var(--accent-ink); }
+.pm-check:hover .pm-switch i { border-color: var(--bg); }
+/* the font cards: a sample in each face, the name under it */
+.pm-fonts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 2px 12px 6px; }
+.pm-font {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim);
+  background: var(--surface-2);
+}
+.pm-font:hover { border-color: var(--line-2); color: var(--text); }
+.pm-font.on { border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.pm-ag { font-size: 18px; line-height: 1; color: var(--text); }
+.pm-fn { font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.pm-font[data-face="system"]  .pm-ag { font-family: var(--face-system); }
+.pm-font[data-face="serif"]   .pm-ag { font-family: var(--face-serif); }
+.pm-font[data-face="wide"]    .pm-ag { font-family: var(--face-wide); }
+.pm-font[data-face="mono"]    .pm-ag { font-family: var(--face-mono); }
+.pm-font[data-face="rounded"] .pm-ag { font-family: var(--face-rounded); }
+.pm-font[data-face="narrow"]  .pm-ag { font-family: var(--face-narrow); }
+.pm-font[data-face="hand"]    .pm-ag { font-family: var(--face-hand); }
+/* background: one row of controls, more when a picture is set */
+.pm-bg { padding: 2px 0 4px; }
+.pm-bg-row { display: flex; align-items: center; gap: 9px; padding: 6px 12px; font-size: 12.5px; }
+.pm-bg-row .mi { width: 15px; height: 15px; color: var(--dim); }
+.pm-bg-acts { margin-inline-start: auto; display: flex; gap: 4px; }
+.pm-mini {
+  font-size: 11px; padding: 3px 8px; border: 1px solid var(--line-2); border-radius: 2px; color: var(--text);
+  letter-spacing: .03em;
+}
+.pm-mini:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
+.pm-bg-opts { display: flex; flex-direction: column; gap: 6px; padding: 2px 12px 4px; }
+.pm-dim { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--dim); }
+.pm-dim input { flex: 1; }
+.pm-dim-v { min-width: 34px; text-align: end; font-variant-numeric: tabular-nums; }
+
+/* groups in the boards list */
+.br-group {
+  display: flex; align-items: center; gap: 6px; padding: 10px 12px 3px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--dimmer);
+}
+.br-group .mi { width: 12px; height: 12px; }
+.br-row.unreadable .br-tile { opacity: .55; }
+.br-row.unreadable .br-ic { color: var(--danger) !important; }
+
+/* the move-to dialog */
+.mv-list { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 10px; }
+.mv-item {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 3px;
+  text-align: start; font-size: 13px; color: var(--text); border: 1px solid transparent;
+}
+.mv-item .mi { width: 16px; height: 16px; color: var(--dim); }
+.mv-item .mi:last-child { margin-inline-start: auto; color: var(--accent); }
+.mv-item:hover { background: var(--text); color: var(--bg); }
+.mv-item:hover .mi { color: var(--bg); }
+.mv-item.on { border-color: var(--line-2); }
+.mv-new { display: flex; gap: 6px; }
+.mv-new input { flex: 1; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-2); color: var(--text); outline: none; }
+.mv-new input:focus { border-color: var(--accent); }
+.seg.wrap { flex-wrap: wrap; }
+
+/* ─────────────── 53. the chrome ───────────────
+   How the app's own furniture is drawn since 2.0, whatever theme is showing.
+   Three rules do most of it:
+
+   - **Hairlines, not shadows.** A panel is a rectangle with a 1px edge in
+     `--line-2`. Nothing floats; nothing is blurred. That is also what makes
+     the chrome cheap on a machine with no GPU — see §31 in later.css for
+     what the old design had to switch off to get there.
+   - **Corners are barely corners.** 3px on chrome, so a panel reads as a
+     panel and not as a pill. Notes keep their own shape setting.
+   - **Selection is a bar of light.** The row under the pointer, the tab that
+     is open, the option that is on: text colour becomes the background and
+     the background becomes the text. One language for "this one", used
+     everywhere, and it needs no colour to say it.
+
+   Labels — section headings, tab names, the titlebar — are set in a narrow
+   face with tracking, small caps style. Bahnschrift ships with Windows 10
+   and 11; the fallbacks keep the tracking so the shape survives. */
+:root {
+  --r: 3px;
+  --face-label: Bahnschrift, "Segoe UI Variable Display", "Segoe UI", Inter, sans-serif;
+  --label-track: .12em;
+}
+.label, .cm-label, .sm-head, .pm-label, .br-group, .br-head, .set-sec h3, .set-sub-h,
+.fld span, .ct-fld > span, .ct-head, .path-label, .pal-foot, .cap-hint, .st-width span, .sheet-head h2, .tb-title {
+  font-family: var(--face-label); text-transform: uppercase; letter-spacing: var(--label-track); font-weight: 600;
+}
+.sheet-head h2 { font-size: 13px; letter-spacing: .14em; }
+kbd { border-radius: 2px; font-family: var(--face-label); letter-spacing: .04em; }
+
+/* ---- titlebar ---- */
+.titlebar { background: var(--bg); border-bottom: 1px solid var(--line); }
+.tb-title { font-size: 11.5px; color: var(--text); letter-spacing: .18em; }
+.tb-ver { border-radius: 2px; background: transparent; border: 1px solid var(--line); font-family: var(--face-label); letter-spacing: .06em; }
+.tb-btn { border-radius: var(--r); }
+.tb-gear:hover .ic { transform: none; }
+.win-btn.danger:hover { background: var(--danger); }
+
+/* ---- every floating panel ---- */
+#selBar, #tableBar, #colsBar, #imgBar, #slashMenu, #ctxMenu, #boardMenu, #pasteMenu, #zoombar, #toast, #findBar,
+.sb-pop, .fab-item, .cp-chip, .br-panel, .pal-shell, .cap-shell, .sheet, .eh-card, .studio-shell {
+  border-radius: var(--r); background: var(--surface); border: 1px solid var(--line-2);
+  box-shadow: var(--shadow); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+#selBar button, #tableBar button, #colsBar button, #imgBar button, #zoombar button, #findBar button,
+.sheet-x, .sb-pop button, .br-act, .tb-btn { border-radius: 2px; }
+#selBar button.on { background: var(--text); color: var(--bg); }
+#fontPx { border-radius: 2px; }
+#fontPx:focus { box-shadow: none; border-color: var(--accent); }
+.overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* ---- menus: a dark list, and a bar of light under the pointer ---- */
+#ctxMenu, #boardMenu, #pasteMenu, #slashMenu { padding: 4px 0 6px; min-width: 210px; }
+.cm-item, .sm-item {
+  border-radius: 0; padding: 7px 12px; font-size: 12.5px; text-align: start;
+}
+.cm-item:hover, .sm-item:hover, .sm-item.sel { background: var(--text); color: var(--bg); box-shadow: none; }
+.cm-item:hover .mi, .cm-item:hover .k, .sm-item:hover .sm-tx span, .sm-item.sel .sm-tx span { color: var(--bg); }
+.cm-item.danger:hover { background: var(--danger); color: #fff; }
+.cm-item.danger:hover .mi { color: #fff; }
+.cm-label { padding: 8px 12px 4px; color: var(--dimmer); }
+.cm-sep { margin: 5px 12px; }
+.cm-colors { padding: 3px 12px 8px; gap: 5px; }
+.cm-colors button { border-radius: 2px; height: 20px; border-width: 1px; }
+.cm-colors button::after { border-radius: 1px; inset: 5px; }
+.cm-colors button:hover { transform: none; box-shadow: 0 0 0 1px var(--text); }
+.cm-colors button.on { box-shadow: 0 0 0 1px var(--text), 0 0 0 3px var(--surface), 0 0 0 4px var(--text); }
+.cm-status { padding: 0 8px 6px; }
+.cm-st { border-radius: 2px; }
+.cm-pos { padding: 2px 12px 8px; }
+.sm-ic { border-radius: 2px; }
+.sm-item:hover .sm-ic, .sm-item.sel .sm-ic { background: var(--bg); color: var(--text); border-color: transparent; }
+.sm-head { padding: 6px 12px; }
+
+/* ---- the boards window ---- */
+.br-panel { padding: 4px 0 6px; }
+.br-head { padding: 8px 12px 8px; margin: 0 0 4px; color: var(--dim); }
+.br-head-n { border-radius: 2px; background: transparent; border: 1px solid var(--line); }
+.br-row { border-radius: 0; margin: 0; }
+.br-row:hover { background: var(--surface-2); }
+.br-row.on { background: var(--text); box-shadow: none; --acts-bg: var(--text); }
+.br-row.on > .br-tile, .br-row.on > .br-tile.on, .br-row.on .br-count, .br-row.on .br-flag { color: var(--bg); }
+.br-row.on .br-ic { color: var(--bg) !important; }
+.br-row.on .br-act { color: var(--bg); }
+.br-row.on .br-act:hover { background: var(--bg); color: var(--text); }
+.br-tile { border-radius: 0; }
+.br-add, .br-trash { border-radius: 0; }
+.br-launcher { border-radius: var(--r); }
+.br-badge { border-radius: 2px; }
+.br-list { padding: 0; }
+
+/* ---- the fab and the zoom bar ---- */
+#fab {
+  width: 42px; height: 42px; border-radius: var(--r);
+  background: var(--text); color: var(--bg); box-shadow: 0 0 0 1px var(--line-2);
+  transition: transform .14s, background .14s;
+}
+#fab:hover { transform: none; background: var(--accent); color: var(--accent-ink); }
+body.fab-open #fab { transform: none; }
+.fab-item { border-radius: var(--r); padding: 7px 12px 7px 8px; box-shadow: var(--shadow-sm); }
+.fab-item:hover { background: var(--text); color: var(--bg); }
+.fab-item:hover .fi-ic { background: var(--bg); color: var(--text); border-color: transparent; }
+.fab-item:hover em { color: var(--bg); border-color: color-mix(in srgb, var(--bg) 40%, transparent); }
+.fi-ic { border-radius: 2px; color: var(--text); }
+.fab-item em { border-radius: 2px; font-family: var(--face-label); letter-spacing: .06em; }
+#zoombar { padding: 3px; box-shadow: var(--shadow-sm); }
+#zoombar button { border-radius: 2px; }
+#zLevel { font-family: var(--face-label); letter-spacing: .05em; }
+.cp-chip { border-radius: var(--r); box-shadow: var(--shadow-sm); }
+.cp-chip:hover { transform: translate(-50%, -50%); background: var(--text); color: var(--bg); }
+.cp-chip:hover .cp-arrow { color: var(--bg); }
+#toast { border-radius: var(--r); letter-spacing: .01em; }
+#findBar { border-radius: var(--r); }
+#findInput { font-size: 13px; }
+
+/* ---- sheets and dialogs ---- */
+.sheet { animation: fade .12s ease-out; }
+.sheet-head { padding: 13px 18px; }
+.sheet-x { width: 26px; height: 26px; }
+.sheet-x:hover { background: var(--text); color: var(--bg); }
+.btn {
+  border-radius: var(--r); padding: 7px 14px; font-size: 11.5px;
+  font-family: var(--face-label); text-transform: uppercase; letter-spacing: .1em; font-weight: 600;
+  background: transparent; border: 1px solid var(--line-2); color: var(--text);
+}
+.btn:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn:hover .mi { color: var(--bg); }
+.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn.primary:hover { filter: none; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.primary:hover .mi { color: var(--accent-ink); }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.btn.danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.small { padding: 5px 10px; font-size: 10.5px; }
+.fld input, .mv-new input, .ip-search, #palInput, #capInput {
+  border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line-2);
+}
+.fld input:focus, .mv-new input:focus { box-shadow: none; border-color: var(--accent); }
+.fld-err { font-size: 12px; color: var(--danger); }
+.pal-shell, .cap-shell { border-radius: var(--r); }
+.pal-item, .cap-head, .bp-item, .hist-item, .tpl-item { border-radius: 2px; }
+.pal-item.sel, .pal-item:hover, .bp-item:hover { background: var(--text); color: var(--bg); }
+.pal-item.sel *, .pal-item:hover *, .bp-item:hover * { color: var(--bg) !important; }
+
+/* ---- controls ---- */
+.seg { border-radius: var(--r); padding: 2px; gap: 2px; background: transparent; border: 1px solid var(--line-2); }
+.seg button { border-radius: 2px; padding: 4px 10px; font-size: 12px; letter-spacing: .01em; }
+.seg button.on { background: var(--text); color: var(--bg); }
+.seg.small button { padding: 3px 8px; font-size: 11.5px; }
+.swatches button { border-radius: 2px; width: 20px; height: 20px; border-width: 1px; border-color: transparent; }
+.swatches button:hover { transform: none; box-shadow: 0 0 0 1px var(--text); }
+.swatches button.on { border-color: var(--surface); box-shadow: 0 0 0 1px var(--text), 0 0 0 3px var(--surface), 0 0 0 4px var(--text); }
+.set-check input, input[type="checkbox"].ck {
+  appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0;
+  border: 1px solid var(--line-2); border-radius: 2px; background: var(--surface-2);
+  display: grid; place-items: center; flex: 0 0 auto;
+}
+.set-check input::after { content: ""; width: 7px; height: 7px; background: var(--accent); opacity: 0; transition: opacity .1s; }
+.set-check input:checked { border-color: var(--accent); }
+.set-check input:checked::after { opacity: 1; }
+.set-check input:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+input[type="range"]::-webkit-slider-runnable-track { height: 2px; border: 0; border-radius: 0; background: var(--line-2); }
+input[type="range"]::-webkit-slider-thumb {
+  width: 12px; height: 12px; margin-top: -5px; border-radius: 1px;
+  background: var(--text); border: 0; box-shadow: none;
+}
+input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:active::-webkit-slider-thumb { background: var(--accent); }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.sel-wrap .sel { border-radius: var(--r); border: 1px solid var(--line-2); background: var(--surface-2); }
+.time-fld, .ct-box, .path-box, .ct-color, .tc-card, .paper-card, .st-list > *, .tpl-item, .hist-item, .eh-start, .fc-dot,
+.pf-sw, .set-find, .keys kbd, .ip-find, .ip-scroll, #ipGrid button, .ip-colors button, .st-tools button, #stColors button {
+  border-radius: 2px;
+}
+.ct-color::-webkit-color-swatch { border-radius: 1px; }
+.set-find { border: 1px solid var(--line-2); background: var(--surface-2); }
+
+/* ---- settings: a list on the left, rows on the right, a line at the foot ---- */
+.set-sheet { width: min(920px, 94vw); height: min(680px, 88vh); }
+.set-nav { flex: 0 0 196px; padding: 10px 0; gap: 0; background: var(--bg); border-inline-end: 1px solid var(--line-2); }
+.set-find { margin: 2px 10px 10px; }
+.set-tab {
+  border-radius: 0; padding: 9px 14px 9px 18px; gap: 11px;
+  font-family: var(--face-label); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; font-weight: 600;
+  color: var(--dim); position: relative; transition: none;
+}
+.set-tab:hover { background: transparent; color: var(--text); }
+.set-tab:hover::before { content: ""; position: absolute; inset-inline-start: 8px; top: 50%; width: 4px; height: 4px; margin-top: -2px; background: var(--text); }
+.set-tab.on { background: var(--text); color: var(--bg); font-weight: 600; box-shadow: none; }
+.set-tab.on::before { display: none; }
+.set-tab .tab-ic { color: currentColor; }
+.set-panes { padding: 2px 26px 20px; }
+.set-panes .set-sec h3 {
+  margin: 0 0 6px; padding: 16px 0 10px; border-bottom: 1px solid var(--line-2);
+  font-size: 11px; color: var(--text); display: flex; align-items: center; gap: 8px;
+}
+.set-panes .set-sec h3 .sec-ic { color: var(--dim); }
+.set-sub-h { margin-top: 18px !important; font-size: 10.5px !important; color: var(--dim) !important; border-bottom-color: var(--line) !important; }
+/* a row is a line: label on the start side, control on the end side, a
+   hairline underneath — the shape of every options screen in a game menu */
+.set-panes .set-row {
+  margin: 0; padding: 9px 0; border-bottom: 1px solid var(--line); min-height: 42px;
+}
+.set-panes .set-row > label { color: var(--text); font-size: 13px; display: flex; align-items: center; gap: 9px; }
+.set-panes .set-row.sub > label { color: var(--dim); font-size: 12.5px; padding-inline-start: 22px; }
+.set-panes .set-row.sub { margin-inline-start: 0; }
+.set-panes .set-row.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.set-panes .set-check { padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--text); font-size: 13px; margin: 0; }
+.set-panes .set-check.sub { padding-inline-start: 22px; color: var(--dim); }
+.set-panes .set-check:hover { color: var(--text); }
+.set-panes .set-row:hover > label, .set-panes .set-check:hover { color: var(--text); }
+.set-panes .set-row .set-val { font-family: var(--face-label); letter-spacing: .04em; color: var(--dimmer); }
+/* the hints live in the footer while the pointer is on their row; only what
+   is content rather than commentary stays inline */
+.set-panes p.set-note { display: none; }
+.set-panes #setStats, .set-panes #setVersion, .set-panes #backupWhere, .set-panes #setNoMatch { display: block; padding: 10px 0 0; margin: 0; }
+.set-panes .set-btns { padding: 12px 0 0; }
+.set-panes .set-btns.end { margin-top: 0; }
+.set-panes .set-row .set-btns { padding: 0; }
+.theme-grid { padding: 12px 0 6px; }
+.ct-box { margin: 12px 0; background: transparent; border-color: var(--line-2); }
+.path-box { border-radius: var(--r); border: 1px solid var(--line-2); background: transparent; margin-top: 12px; }
+.path-val { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; }
+.set-desc {
+  flex: 0 0 auto; min-height: 46px; padding: 10px 26px 10px 22px;
+  border-top: 1px solid var(--line-2); background: var(--bg);
+  font-size: 12px; color: var(--dim); line-height: 1.5;
+  display: flex; align-items: center; gap: 12px;
+}
+.set-desc::before { content: ""; width: 4px; height: 4px; background: var(--accent); flex: 0 0 4px; opacity: 0; }
+.set-desc.on::before { opacity: 1; }
+.set-desc:empty::after { content: attr(data-empty); color: var(--dimmer); font-family: var(--face-label); text-transform: uppercase; letter-spacing: .12em; font-size: 10.5px; }
+.keys { gap: 0 24px; }
+.key-row { padding: 7px 0; border-bottom: 1px solid var(--line); }
+
+/* ---- the empty board's card ---- */
+.eh-card { border-radius: var(--r); backdrop-filter: none; padding: 24px 28px; }
+.eh-card h2 { font-family: var(--face-label); text-transform: uppercase; letter-spacing: .14em; font-size: 14px; }
+.eh-start { border-radius: 2px; }
+.eh-start:hover { background: var(--text); color: var(--bg); }
+
+/* ---- scrollbars ---- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { border-radius: 0; border-width: 2px; }
+
+/* ---- notes: a hairline edge and a colour rule, nothing lifted ---- */
+.note { transition: border-color .12s, box-shadow .12s; }
+.note.selected { box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.note.editing { box-shadow: 0 0 0 1px var(--accent); }
+.frame-title { border-radius: 2px; }
+.nh-btn { border-radius: 2px; }
+.ns-pill { border-radius: 2px; }
+.theme-card { border-radius: 2px; }
+.theme-card.on { box-shadow: 0 0 0 1px var(--text), 0 0 0 3px var(--surface), 0 0 0 4px var(--text); }
+.tc-note { border-radius: 2px; }
+.tc-name { font-size: 11px; }
+/* boards.css §21 paints the active tile in both rail modes with a selector
+   heavier than the row's; the row is the thing lit up now, so the tile has to
+   give up its own fill in both */
+body.rail-hover .br-row.on > .br-tile.on, body.has-rail .br-row.on > .br-tile.on,
+body.rail-hover .br-row.on > .br-tile, body.has-rail .br-row.on > .br-tile { background: none; box-shadow: none; color: var(--bg); }
+.br-row.on .br-name, .br-row.on .br-count, .br-row.on .br-tile.on .br-count { color: var(--bg); }
+.br-row.on .br-count { opacity: .7; }
+/* the rail's own block (boards.css §21) sets its radii under body.rail-hover,
+   which outweighs a bare class; matched here at the same weight */
+body.rail-hover .br-launcher { border-radius: var(--r); box-shadow: none; background: var(--surface); border-color: var(--line-2); }
+body.rail-hover #boardRail:hover .br-launcher, body.rail-hover.rail-open .br-launcher { background: var(--text); color: var(--bg); border-color: var(--text); }
+body.rail-hover .br-panel { border-radius: var(--r); padding: 4px 0 6px; background: var(--surface); border-color: var(--line-2); transform: none; transition: opacity .12s; }
+body.rail-hover .br-badge { border-radius: 2px; }
+#boardRail .br-add { border-radius: 2px; margin: 4px 8px; }
+#boardRail .br-tile { border-radius: 0; }
+#boardRail .br-row-plain .br-tile { border-radius: 0; }
+#focusChip { border-radius: var(--r); }
+#focusChip .fc-dot { border-radius: 1px; }
+.pal-ic, .pal-shell, .cap-shell { border-radius: 2px; }
+.pal-item.sel { box-shadow: none; }
+/* a workflow frame follows the note shape setting rather than keeping a 20px
+   corner of its own; text selection takes the accent, not the OS blue */
+.frame { border-radius: calc(var(--radius) * 1.2); }
+body[data-shape="round"] .frame { border-radius: 16px; }
+.note-body ::selection, .note-body::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); }
+
+/* ─────────────── 54. what the reference actually does ───────────────
+   Studied against Requiem's own screens (title, options, load, modals):
+
+   - the options screen is a row of condensed capitals across the TOP, hairlines
+     between them, a glowing underline under the open one; the rows sit under
+     that and the description of the highlighted row sits in a column to the
+     side, with "(Default: …)" — not a footer;
+   - the highlighted row is not inverted: it is a light gradient bar, brightest
+     at the leading edge and fading out across the row, with the text left
+     white; the main menu inverts (white on a black bar) and the load screen
+     uses a paper-white bar — so inversion is kept for the few places that
+     read as a title menu, and the gradient bar is used for rows;
+   - a setting's options are plain words with a short bar under EVERY option
+     and the chosen one lit, not a pill;
+   - section headers are small slanted grey tabs;
+   - modals carry thin L-shaped corner marks;
+   - the title menu is set in a typewriter face.
+
+   Everything below overrides §53 by position. */
+:root {
+  --spot: linear-gradient(to right, color-mix(in srgb, var(--text) 26%, transparent) 0, color-mix(in srgb, var(--text) 7%, transparent) 55%, transparent 100%);
+  --spot-edge: inset 2px 0 0 var(--text);
+  --face-type: "American Typewriter", "Courier Prime", "Courier New", "Lucida Console", monospace;
+}
+html[dir="rtl"] {
+  --spot: linear-gradient(to left, color-mix(in srgb, var(--text) 26%, transparent) 0, color-mix(in srgb, var(--text) 7%, transparent) 55%, transparent 100%);
+  --spot-edge: inset -2px 0 0 var(--text);
+}
+
+/* ---- the highlighted row: a bar of light that fades, text left alone ---- */
+.cm-item:hover, .sm-item:hover, .sm-item.sel, .pm-row:hover, .mv-item:hover,
+.pal-item:hover, .pal-item.sel, .bp-item:hover, .eh-start:hover, .fab-item:hover, .cp-chip:hover, .br-row.on {
+  background: var(--spot); color: var(--text); box-shadow: var(--spot-edge);
+}
+.cm-item:hover .mi, .cm-item:hover .k, .sm-item:hover .sm-tx span, .sm-item.sel .sm-tx span,
+.pm-row:hover .mi, .pm-row:hover .k, .mv-item:hover .mi, .fab-item:hover em, .cp-chip:hover .cp-arrow { color: var(--dim); }
+.pal-item.sel *, .pal-item:hover *, .bp-item:hover * { color: var(--text) !important; }
+.pal-item.sel .pal-tx span, .pal-item:hover .pal-tx span { color: var(--dim) !important; }
+.sm-item:hover .sm-ic, .sm-item.sel .sm-ic { background: var(--surface); color: var(--text); border-color: var(--line-2); }
+.fab-item:hover .fi-ic { background: var(--surface); color: var(--text); border-color: var(--line-2); }
+.fab-item:hover em { border-color: var(--line-2); }
+.cm-item.danger:hover { background: var(--spot); color: var(--danger); box-shadow: inset 2px 0 0 var(--danger); }
+.cm-item.danger:hover .mi { color: var(--danger); }
+.pm-row.danger:hover { background: var(--spot); color: var(--danger); box-shadow: inset 2px 0 0 var(--danger); }
+.pm-row.danger:hover .mi { color: var(--danger); }
+.pm-check:hover .pm-switch i { border-color: var(--line-2); }
+/* the boards window: the open board is the lit row, not an inverted one */
+body.rail-hover .br-row.on > .br-tile.on, body.has-rail .br-row.on > .br-tile.on,
+body.rail-hover .br-row.on > .br-tile, body.has-rail .br-row.on > .br-tile,
+.br-row.on .br-name, .br-row.on .br-count, .br-row.on .br-tile.on .br-count { color: var(--text); }
+.br-row.on .br-ic { color: var(--text) !important; }
+.br-row.on .br-act { color: var(--dim); }
+.br-row.on .br-act:hover { background: var(--surface-3); color: var(--text); }
+.br-row.on { --acts-bg: var(--surface); }
+/* the title menu keeps its inversion: the page menu's own header row, the
+   launcher when the boards window is open */
+body.rail-hover #boardRail:hover .br-launcher, body.rail-hover.rail-open .br-launcher { background: var(--text); color: var(--bg); }
+
+/* ---- a setting's options: words with a bar under each, the chosen one lit ---- */
+.seg { border: 0; padding: 0 2px; gap: 14px; background: transparent; }
+.seg button {
+  padding: 3px 1px 7px; border-radius: 0; position: relative; color: var(--dim);
+  font-size: 12.5px; letter-spacing: 0;
+}
+.seg button::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--line-2); transition: background .12s, box-shadow .12s;
+}
+.seg button:hover { color: var(--text); background: transparent; }
+.seg button.on { background: transparent; color: var(--text); }
+.seg button.on::after { background: var(--text); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--text) 45%, transparent); }
+.seg.small { gap: 10px; }
+.seg.small button { padding: 2px 1px 6px; font-size: 11.5px; }
+#pmBgFit { padding: 2px 4px; }
+
+/* ---- settings: tabs across the top, the description beside the rows ---- */
+.set-sheet { width: min(1080px, 96vw); height: min(740px, 92vh); background: var(--bg); display: flex; flex-direction: column; }
+.set-sheet .sheet-head { padding: 12px 20px 10px 24px; border-bottom: 0; gap: 16px; }
+.set-sheet .sheet-head h2 { font-size: 20px; letter-spacing: .1em; font-weight: 500; }
+.set-sheet .set-find { margin: 0; width: 220px; }
+.set-nav {
+  flex: 0 0 auto; flex-direction: row; align-items: stretch; gap: 0;
+  padding: 0 24px; overflow-x: auto; overflow-y: hidden;
+  background: transparent; border-inline-end: 0; border-bottom: 1px solid var(--line-2);
+}
+.set-nav::-webkit-scrollbar { height: 0; }
+.set-tab {
+  flex: 0 0 auto; width: auto; padding: 11px 18px 12px; border-radius: 0;
+  border-inline-end: 1px solid var(--line); color: var(--dim);
+  font-size: 12px; letter-spacing: .1em; font-weight: 500; white-space: nowrap;
+  background: transparent; box-shadow: none; position: relative;
+}
+.set-tab:last-child { border-inline-end: 0; }
+.set-tab .tab-ic { display: none; }
+.set-tab:hover { background: transparent; color: var(--text); box-shadow: none; }
+.set-tab:hover::before { display: none; }
+.set-tab.on { background: transparent; color: var(--text); box-shadow: none; }
+.set-tab.on::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px;
+  background: var(--text); box-shadow: 0 0 12px 3px color-mix(in srgb, var(--text) 50%, transparent);
+}
+.set-shell { flex: 1; min-height: 0; display: flex; }
+.set-panes { flex: 1 1 auto; min-width: 0; overflow: auto; padding: 6px 28px 24px 24px; }
+.set-desc {
+  flex: 0 0 300px; min-height: 0; align-self: stretch;
+  border-top: 0; border-inline-start: 1px solid var(--line);
+  padding: 30px 24px; background: transparent;
+  display: block; font-size: 13px; line-height: 1.65; color: var(--dim);
+  white-space: pre-line; overflow: auto;
+}
+.set-desc.on { color: var(--text); }
+.set-desc::before { display: none; }
+.set-desc:empty::after { font-size: 11px; letter-spacing: .12em; }
+/* the section heading: a slanted grey tab over the rows, the way the
+   reference marks "Character Controls" */
+.set-panes .set-sec h3, .set-panes .set-sub-h {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin: 18px 0 0; padding: 5px 30px 5px 12px; border: 0;
+  background: var(--surface-3); color: var(--dim) !important;
+  font-size: 11px !important; letter-spacing: .1em; font-weight: 500;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 100%, 0 100%);
+}
+.set-panes .set-sec h3 { margin-top: 12px; }
+.set-panes .set-sec h3 .sec-ic { display: none; }
+.set-panes .set-sec h3 + *, .set-panes .set-sub-h + * { border-top: 1px solid var(--line-2); }
+.set-panes .set-sec h3 + .set-note { border-top: 0; }
+.set-sub-h { margin-top: 18px !important; }
+html[dir="rtl"] .set-panes .set-sec h3, html[dir="rtl"] .set-panes .set-sub-h {
+  clip-path: polygon(16px 0, 100% 0, 100% 100%, 0 100%); padding: 5px 12px 5px 30px;
+}
+/* the rows: a gradient bar under the pointer, the label left white */
+.set-panes .set-row, .set-panes .set-check { margin: 0 -14px; padding-left: 14px; padding-right: 14px; }
+.set-panes .set-row.sub > label { padding-inline-start: 22px; }
+.set-panes .set-check.sub { padding-inline-start: 36px; }
+.set-panes .set-row:hover, .set-panes .set-check:hover { background: var(--spot); box-shadow: var(--spot-edge); }
+.set-panes .set-row:hover > label, .set-panes .set-check:hover { color: var(--text); }
+.set-panes .set-row > label { font-size: 13.5px; }
+.set-panes .set-btns { padding-top: 10px; }
+.keys { gap: 0 28px; }
+.key-row kbd { font-family: var(--face-label); }
+
+/* ---- the corner marks a modal carries ---- */
+.sheet:not(.set-sheet), .pal-shell, .cap-shell, .studio-shell { position: relative; }
+.sheet:not(.set-sheet)::before, .pal-shell::before, .cap-shell::before {
+  content: ""; position: absolute; top: 0; left: 0; width: 20px; height: 20px; pointer-events: none;
+  border-top: 2px solid var(--text); border-left: 2px solid var(--text);
+}
+.sheet:not(.set-sheet)::after, .pal-shell::after, .cap-shell::after {
+  content: ""; position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; pointer-events: none;
+  border-bottom: 2px solid var(--text); border-right: 2px solid var(--text);
+}
+.sheet.small .sheet-head { padding-top: 16px; }
+/* the buttons of a small dialog sit centred, like a prompt row */
+.sheet.small .set-btns.end { justify-content: center; gap: 12px; }
+
+/* ---- the title menu: a typewriter face for a board's name ---- */
+.pg-btn .pg-name, .pm-title, .br-name, .br-trash .br-name, .eh-card h2, .pal-tx b {
+  font-family: var(--face-type); font-weight: 700; letter-spacing: .01em;
+}
+.pg-btn .pg-name { font-size: 12.5px; }
+.br-name { font-size: 13px; }
+.eh-card h2 { text-transform: none; letter-spacing: .02em; font-size: 20px; }
+.tb-title { font-family: var(--face-type); font-weight: 700; letter-spacing: .2em; font-size: 12px; }
+/* Arabic has no typewriter face; the board names fall through to the normal stack */
+html[lang="ar"] .pg-btn .pg-name, html[lang="ar"] .pm-title, html[lang="ar"] .br-name, html[lang="ar"] .eh-card h2, html[lang="ar"] .pal-tx b {
+  font-family: inherit; font-weight: 650;
+}
+
+/* ---- the titlebar reads the same way in every language ----
+   The three window buttons stay at the right and the gear at the left, as
+   every other window on the desktop has them. Only the canvas and the panels
+   mirror. */
+html[dir="rtl"] .titlebar { direction: ltr; }
+html[dir="rtl"] .titlebar .tb-hint { direction: rtl; unicode-bidi: plaintext; }
+/* The typewriter face is Latin-only. A monospaced Arabic fallback spaces the
+   letters apart, so the face is declared with a unicode-range covering Latin
+   and punctuation and nothing else — an Arabic board name in an English
+   window falls through to the normal stack by itself, and no lang rule has
+   to guess which script a name is in. */
+@font-face {
+  font-family: "MB Typewriter";
+  src: local("American Typewriter"), local("Courier Prime"), local("Courier New");
+  font-weight: 400;
+  unicode-range: U+0020-024F, U+2000-206F, U+20A0-20CF;
+}
+@font-face {
+  font-family: "MB Typewriter";
+  src: local("American Typewriter Bold"), local("Courier Prime Bold"), local("Courier New Bold"), local("CourierNewPS-BoldMT");
+  font-weight: 700;
+  unicode-range: U+0020-024F, U+2000-206F, U+20A0-20CF;
+}
+:root { --face-type: "MB Typewriter", "Noto Sans Arabic", "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+html[lang="ar"] .pg-btn .pg-name, html[lang="ar"] .pm-title, html[lang="ar"] .br-name, html[lang="ar"] .eh-card h2, html[lang="ar"] .pal-tx b {
+  font-family: var(--face-type); font-weight: 700;
+}

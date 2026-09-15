@@ -1,7 +1,7 @@
 /* Mental Board — links.js
    The ropes between notes.
 
-   Part 6 of 15. These files are plain scripts sharing one global
+   Part 6 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */

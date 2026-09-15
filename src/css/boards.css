@@ -1,7 +1,7 @@
 /* Mental Board — boards.css
    The board rail, tables in notes, the empty-board onboarding, and everything added after 1.1.
 
-   Sheet 7 of 8. styles.css was one append-only file and these are
+   Sheet 7 of 9. styles.css was one append-only file and these are
    its slices in the same order, so **later files still beat earlier ones** —
    the <link> order in index.html is load-bearing, not decoration. Adding a
    rule at the end of the last sheet is still how you win an argument with

@@ -1,7 +1,7 @@
 /* Mental Board — media.js
    The icon picker, and images: select, size, align, and the crop/annotate studio.
 
-   Part 10 of 15. These files are plain scripts sharing one global
+   Part 10 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -196,6 +196,7 @@ function wireImgBar() {
       case 'narrower': setImgWidth(imgWidthPx() / 1.15 - 8); break;
       case 'full': if (selImg) { selImg.style.width = ''; selImg.style.height = ''; persistEdit(); placeImgChrome(); } break;
       case 'studio': openStudio(); break;
+      case 'out': if (selImg) { const im = selImg; clearImageSel(); pictureOutOfNote(im); } break;
       case 'delete': if (selImg) { const im = selImg; clearImageSel(); im.remove(); persistEdit(); } break;
     }
   }));
@@ -226,10 +227,11 @@ async function toDataUrl(src) {
   return src;
 }
 
-async function openStudio() {
-  if (!selImg) return;
-  ST.target = selImg;
-  const src = selImg.dataset.orig || selImg.src;
+async function openStudio(target) {
+  const img0 = target || selImg;
+  if (!img0) return;
+  ST.target = img0;
+  const src = img0.dataset.orig || img0.src;
   const dataUrl = await toDataUrl(src);
   const img = new Image();
   img.onload = () => {
@@ -481,18 +483,31 @@ function applyStudio() {
   const img = ST.target;
   // remember where it came from so a second edit starts from the original
   if (!img.dataset.orig && !/^data:/i.test(img.src)) img.dataset.orig = img.src;
-  img.src = url;
   closeStudio();
-  persistEdit();
-  setTimeout(placeImgChrome, 60);
-  toast(t('msg.imageUpdated'));
+  /* The result is a file in the board's own folder, not a data URL in the
+     note: a 6 MB base64 string inside the markup is what made big boards slow
+     to save in 1.x, and a picture on disk is what a board folder can carry to
+     another machine. The data URL is only the fallback for a plain browser. */
+  const done = (finalUrl) => {
+    img.src = finalUrl;
+    if (img.closest('.note-body')) persistEdit();
+    else if (typeof pictureEdited === 'function') pictureEdited(img, finalUrl);
+    setTimeout(placeImgChrome, 60);
+    toast(t('msg.imageUpdated'));
+  };
+  if (FILES && FILES.attachBytes && state.activeBoard) {
+    const base = (img.dataset.name || 'picture').replace(/\.[a-z0-9]+$/i, '');
+    FILES.attachBytes(url, state.activeBoard, base + ' (edited).png').then((r) => {
+      done(r && r.url ? r.url : url);
+    }).catch(() => done(url));
+  } else done(url);
 }
 
 /* ─────────────── 11b. the files a board carries ───────────────
    Drop a video, a picture or a document on a board and the file becomes part of
-   the board: preload copies it into `files/<boardId>/` and the note stores the
-   URL of *that* copy. See the block at the top of preload.js for why, and for
-   what it reverses.
+   the board: the store copies it into the board's own `files\` folder and the
+   note stores `mbf://<boardId>/<name>` — the URL of *that* copy, never a path.
+   See the block at the top of src/store.js for why.
 
    Everything below is the renderer's half — deciding what a dropped file is,
    asking preload to take it in, and building the markup that goes in the note.
@@ -617,13 +632,33 @@ function attachmentUrls(board) {
   const scan = (html) => {
     const d = document.createElement('div');
     d.innerHTML = html || '';
-    d.querySelectorAll('[src], [href]').forEach((el) => {
-      const v = el.getAttribute('src') || el.getAttribute('href') || '';
-      if (/^file:/i.test(v)) out.add(v);
+    d.querySelectorAll('[src], [href], [data-thumb]').forEach((el) => {
+      const v = el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('data-thumb') || '';
+      if (isFileUrl(v)) out.add(v);
     });
   };
-  (board && board.notes ? board.notes : []).forEach((n) => scan(n.body));
+  (board && board.notes ? board.notes : []).forEach((n) => {
+    scan(n.body);
+    (n.hist || []).forEach((h) => scan(h.body));
+  });
   return [...out];
+}
+/* The same, for a handful of notes rather than a board — what travels with a
+   drag onto another board, or a delete into the bin. */
+function notesFileUrls(notes) {
+  return attachmentUrls({ notes: notes || [] });
+}
+/* Copy the files these notes point at into another board's folder and point
+   the notes at the copies. Returns how many were carried. Nothing is removed
+   from the source board — another note there may show the same picture; the
+   clean-up in Settings is what reclaims it later. */
+async function carryNotesTo(notes, toId) {
+  if (!FILES || !FILES.carry || !notes || !notes.length) return 0;
+  const urls = notesFileUrls(notes).filter((u) => /^mbf:/i.test(u) && !u.toLowerCase().startsWith(`mbf://${String(toId).toLowerCase()}/`));
+  if (!urls.length) return 0;
+  const got = await FILES.carry(urls, toId);
+  if (got && got.map) relinkAttachments({ notes }, got.map);
+  return (got && got.copied) || 0;
 }
 
 /* Rewrite the file: URLs in a board's notes, for a board that has just arrived
@@ -658,7 +693,7 @@ function relinkAttachments(board, map) {
    showItemInFolder and nothing else. */
 function revealFile(url) {
   if (!FILES || !FILES.revealLocal) { toast(t('msg.needDesktop')); return; }
-  if (!/^file:/i.test(String(url || ''))) { toast(t('msg.notALocalFile')); return; }
+  if (!isFileUrl(url)) { toast(t('msg.notALocalFile')); return; }
   FILES.revealLocal(url);
 }
 
@@ -669,7 +704,7 @@ function firstFileUrl(n) {
   d.innerHTML = n.body || '';
   for (const el of d.querySelectorAll('[src], [href]')) {
     const v = el.getAttribute('src') || el.getAttribute('href') || '';
-    if (/^file:/i.test(v)) return v;
+    if (isFileUrl(v)) return v;
   }
   return '';
 }

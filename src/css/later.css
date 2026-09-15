@@ -1,7 +1,7 @@
 /* Mental Board — later.css
    Everything after that, in the order it was added — big boards, the launcher, templates, shape and density, columns, statuses, alignment, embeds, the settings nav, and the bin.
 
-   Sheet 8 of 8. styles.css was one append-only file and these are
+   Sheet 8 of 9. styles.css was one append-only file and these are
    its slices in the same order, so **later files still beat earlier ones** —
    the <link> order in index.html is load-bearing, not decoration. Adding a
    rule at the end of the last sheet is still how you win an argument with
@@ -731,7 +731,7 @@ body.on-trash .note:hover, body.on-trash .note.selected { opacity: 1; }
 /* ─────────────── 40. fewer colours, better shown ───────────────
 
    Two problems, one cause: the appearance pane was a wall of colour with no
-   structure. Twelve theme cards in one grid and fourteen accent circles in one
+   structure. A dozen theme cards in one grid and fourteen accent circles in one
    row read as a swatch book rather than as two choices — and half the accents
    were a shade apart from their neighbour, so the row was mostly asking you to
    tell apart colours you cannot.
@@ -1125,8 +1125,11 @@ body[data-perf="lite"] .note.dragging { box-shadow: 0 0 0 2px var(--accent); }
 /* Honour the OS switch as well, whatever the app's own setting says — someone
    who has asked Windows for less motion has asked every app, not just this one. */
 @media (prefers-reduced-motion: reduce) {
-  .note, .frame, .note *, .frame * { transition: none !important; }
-  .note.link-target { animation: none; }
+  body:not([data-motion="full"]) .note,
+  body:not([data-motion="full"]) .frame,
+  body:not([data-motion="full"]) .note *,
+  body:not([data-motion="full"]) .frame * { transition: none !important; }
+  body:not([data-motion="full"]) .note.link-target { animation: none; }
 }
 
 /* ─────────────── 32. your day theme and your night theme ───────────────
@@ -1234,3 +1237,373 @@ body.focusing .note.focus-hit { opacity: 1; filter: none; }
    that can be in a note, so it is the one that most needs taking out of the
    layout. */
 body.far-zoom .note-body .mb-file { display: none; }
+
+/* ─────────────── 44. the themes added in 1.5 ───────────────
+
+   Same variable set as §2 and §32, in the same order. A theme only ever
+   restates the *surface* tokens — the nine note colours hang off `data-mode`,
+   so a new one declares itself light or dark and inherits all nine. The only
+   note colour a theme touches is `--c-default-b`, and only when its own surface
+   would otherwise let an untinted note disappear into the canvas.
+
+   Six, and each answers something the eleven before them could not:
+
+     Meadow    a light theme that is not grey, white or beige
+     Blossom   the warm end of the same idea
+     Contrast  edges you cannot miss — heavy hairlines, black on white, a grid
+               you can actually see. Not a hue, a legibility choice.
+     Nordic    a *mid* dark: lighter than Dark, cooler than Dim
+     Ember     the only warm dark; every other one is blue, green or purple
+     Graphite  Mono's dark twin — no hue anywhere, so colour-coded notes have
+               nothing competing with them */
+
+/* Meadow — green paper */
+:root[data-theme="meadow"] {
+  --bg:        #edf4ee;
+  --grid-dot:  rgba(30,70,45,.16);
+  --grid-line: rgba(30,70,45,.07);
+  --surface:   #fbfdfb;
+  --surface-2: #f1f7f2;
+  --surface-3: #e2ece4;
+  --text:      #16261b;
+  --dim:       #4f6456;
+  --dimmer:    #7e9285;
+  --line:      rgba(30,70,45,.14);
+  --line-2:    rgba(30,70,45,.25);
+  --shadow:    0 14px 34px rgba(20,50,32,.13), 0 2px 6px rgba(20,50,32,.08);
+  --shadow-sm: 0 4px 14px rgba(20,50,32,.09);
+  --overlay:   rgba(22,45,30,.30);
+  --hi:        rgba(150,230,110,.42);
+  --danger:    #c9453e;
+  --code-bg:   rgba(30,70,45,.06);
+  --scroll:    rgba(30,70,45,.22);
+}
+:root[data-theme="meadow"] { --c-default-b: #fbfdfb; }
+
+/* Blossom — warm rose paper */
+:root[data-theme="blossom"] {
+  --bg:        #faf0f2;
+  --grid-dot:  rgba(90,35,50,.15);
+  --grid-line: rgba(90,35,50,.06);
+  --surface:   #fffbfc;
+  --surface-2: #fbf1f4;
+  --surface-3: #f3e2e7;
+  --text:      #2d1d23;
+  --dim:       #6b545c;
+  --dimmer:    #9c8189;
+  --line:      rgba(90,35,50,.13);
+  --line-2:    rgba(90,35,50,.24);
+  --shadow:    0 14px 34px rgba(70,25,40,.12), 0 2px 6px rgba(70,25,40,.08);
+  --shadow-sm: 0 4px 14px rgba(70,25,40,.09);
+  --overlay:   rgba(60,25,36,.30);
+  --hi:        rgba(255,170,190,.5);
+  --danger:    #c33b52;
+  --code-bg:   rgba(90,35,50,.055);
+  --scroll:    rgba(90,35,50,.2);
+}
+:root[data-theme="blossom"] { --c-default-b: #fffbfc; }
+
+/* Contrast — for eyes that need the edges to be obvious.
+
+   The one theme whose numbers are chosen for separation rather than for looks:
+   hairlines at .42 rather than .13, a canvas a clear step darker than the notes
+   sitting on it, pure black text, and a grid strong enough to read at a glance.
+   It is deliberately *not* pure white behind pure white — a note has to be
+   findable against the paper, and that is the whole job here. */
+:root[data-theme="contrast"] {
+  --bg:        #f4f4f4;
+  --grid-dot:  rgba(0,0,0,.30);
+  --grid-line: rgba(0,0,0,.15);
+  --surface:   #ffffff;
+  --surface-2: #f0f0f0;
+  --surface-3: #dcdcdc;
+  --text:      #000000;
+  --dim:       #303030;
+  --dimmer:    #545454;
+  --line:      rgba(0,0,0,.42);
+  --line-2:    rgba(0,0,0,.72);
+  --shadow:    0 10px 24px rgba(0,0,0,.22), 0 2px 4px rgba(0,0,0,.18);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.2);
+  --overlay:   rgba(0,0,0,.5);
+  --hi:        rgba(255,232,0,.6);
+  --danger:    #b00000;
+  --code-bg:   rgba(0,0,0,.07);
+  --scroll:    rgba(0,0,0,.45);
+}
+:root[data-theme="contrast"] { --c-default-b: #ffffff; --c-default-l: rgba(0,0,0,.5); }
+
+/* Nordic — a mid dark: lighter than Dark, cooler and bluer than Dim */
+:root[data-theme="nordic"] {
+  --bg:        #2b323d;
+  --grid-dot:  rgba(190,215,240,.12);
+  --grid-line: rgba(190,215,240,.06);
+  --surface:   #333b48;
+  --surface-2: #3b4453;
+  --surface-3: #47515f;
+  --text:      #e6ecf3;
+  --dim:       #a6b2c2;
+  --dimmer:    #7b8797;
+  --line:      rgba(190,215,240,.12);
+  --line-2:    rgba(190,215,240,.22);
+  --shadow:    0 12px 30px rgba(10,16,26,.42), 0 2px 6px rgba(10,16,26,.34);
+  --shadow-sm: 0 3px 12px rgba(10,16,26,.3);
+  --overlay:   rgba(20,26,36,.58);
+  --hi:        rgba(150,200,255,.28);
+  --danger:    #ff8080;
+  --code-bg:   rgba(190,215,240,.07);
+  --scroll:    rgba(190,215,240,.2);
+}
+:root[data-theme="nordic"] { --c-default-b: #333b48; }
+
+/* Ember — the only warm dark. Every other one is blue, green or purple. */
+:root[data-theme="ember"] {
+  --bg:        #191210;
+  --grid-dot:  rgba(255,190,140,.13);
+  --grid-line: rgba(255,190,140,.06);
+  --surface:   #231a16;
+  --surface-2: #2d211b;
+  --surface-3: #3a2b23;
+  --text:      #f2e5db;
+  --dim:       #b3a094;
+  --dimmer:    #85736a;
+  --line:      rgba(255,190,140,.12);
+  --line-2:    rgba(255,190,140,.23);
+  --shadow:    0 14px 34px rgba(14,6,2,.62), 0 2px 6px rgba(14,6,2,.46);
+  --shadow-sm: 0 4px 14px rgba(14,6,2,.42);
+  --overlay:   rgba(14,8,5,.62);
+  --hi:        rgba(255,180,90,.28);
+  --danger:    #ff7d6b;
+  --code-bg:   rgba(255,190,140,.07);
+  --scroll:    rgba(255,190,140,.2);
+}
+:root[data-theme="ember"] { --c-default-b: #241b16; }
+
+/* Graphite — Mono's dark twin. No hue anywhere, on purpose. */
+:root[data-theme="graphite"] {
+  --bg:        #131313;
+  --grid-dot:  rgba(255,255,255,.10);
+  --grid-line: rgba(255,255,255,.05);
+  --surface:   #1c1c1c;
+  --surface-2: #242424;
+  --surface-3: #303030;
+  --text:      #ededed;
+  --dim:       #a0a0a0;
+  --dimmer:    #6f6f6f;
+  --line:      rgba(255,255,255,.11);
+  --line-2:    rgba(255,255,255,.20);
+  --shadow:    0 14px 34px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.55);
+  --shadow-sm: 0 4px 16px rgba(0,0,0,.5);
+  --overlay:   rgba(0,0,0,.66);
+  --hi:        rgba(255,255,255,.16);
+  --danger:    #ff6b6b;
+  --code-bg:   rgba(255,255,255,.06);
+  --scroll:    rgba(255,255,255,.18);
+}
+:root[data-theme="graphite"] { --c-default-b: #1c1c1c; }
+
+/* ─────────────── 45. what a note is set in, and how far off the page ───────────────
+
+   Two settings, both pure presentation and both `data-` attributes on <body>
+   written by applySettings(). Neither touches a note's stored geometry, so
+   switching either one can never move or resize anything on the board — the
+   same rule §29 follows, and the reason a setting like this is safe to try.
+
+   The font stacks all keep "Noto Sans Arabic" in front. That face carries a
+   unicode-range covering only Arabic, so it costs Latin text nothing, and it is
+   the only thing between an Arabic note and whatever the system happens to
+   have. Leave it out of one stack and Arabic notes silently change face when
+   the setting changes — see css/lang.css, which is the rule this beats.
+
+   `.note-body` is what carries the writing; `.frame-title` is deliberately not
+   in here. A workflow's name is a label on the chrome, not part of the note
+   text, and setting a whole board's frame titles in a monospace because
+   somebody wanted their code notes in one is the wrong reading of the setting.
+
+   Code inside a note is not re-set either: `.note-body pre.mb-code` has its own
+   stack in lang.css and stays monospace whatever this says, which is what
+   anybody who has written code in a proportional font would ask for. */
+body[data-notefont="serif"] .note-body {
+  font-family: "Noto Sans Arabic", Constantia, Georgia, Cambria, "Times New Roman", serif;
+}
+body[data-notefont="wide"] .note-body {
+  font-family: "Noto Sans Arabic", Verdana, Tahoma, "DejaVu Sans", Geneva, sans-serif;
+}
+body[data-notefont="mono"] .note-body {
+  font-family: "Noto Sans Arabic", "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
+}
+/* The example line under the picker is set in the face it names, so the row is
+   its own preview and there is no second copy of the stacks to keep in step. */
+body[data-notefont="serif"] #fontEg { font-family: Constantia, Georgia, Cambria, serif; }
+body[data-notefont="wide"]  #fontEg { font-family: Verdana, Tahoma, sans-serif; }
+body[data-notefont="mono"]  #fontEg { font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; }
+/* It sits between two rows of controls and is a specimen, not a footnote, so it
+   gets air on both sides rather than the tight margin a hint under a slider
+   wants. Without this it reads as a caption belonging to the row below it. */
+#fontEg { margin: 4px 0 14px; font-size: 13px; }
+
+/* ---- how far a note sits off the paper ----
+
+   Two variables rather than a rule per state. `.note` and its hover, selected
+   and editing states all read them (notes.css §4), so the four stay in the
+   order they were written in and only the value under them changes — restating
+   those four rules down here instead would have quietly promoted `.selected`
+   above `.dragging`, which is every note that is being dragged.
+
+   `--shadow-sm` and `--shadow` are not redefined directly, because half the
+   chrome reads them too: the rail tiles, the menus, the theme cards and the
+   toast. This is a setting about notes. */
+body { --note-shadow: var(--shadow-sm); --note-shadow-hover: var(--shadow); }
+body[data-noteshadow="flat"] {
+  --note-shadow: none;
+  --note-shadow-hover: 0 0 0 1px var(--line-2);
+}
+body[data-noteshadow="lift"] {
+  --note-shadow: var(--shadow);
+  --note-shadow-hover: 0 20px 44px rgba(0,0,0,.28), 0 4px 10px rgba(0,0,0,.18);
+}
+/* Flat leans on the note's own border to say where it ends, so that border has
+   to be worth something. Without this a default-coloured note on a light theme
+   is a white rectangle on a near-white canvas with nothing marking the edge. */
+body[data-noteshadow="flat"] .note { border-color: var(--line-2); }
+
+/* ---- whether the app moves ----
+
+   `auto` writes no attribute at all and lets the two media queries above
+   answer — that is deliberate, and it is why those queries are scoped
+   `body:not([data-motion="full"])`: an explicit "full" has to be able to beat
+   the operating system for this app, and an explicit "reduced" has to work on a
+   desktop that never asked for it. */
+body[data-motion="reduced"] *,
+body[data-motion="reduced"] *::before,
+body[data-motion="reduced"] *::after {
+  animation-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ─────────────── 46. lining a note up with its neighbours ───────────────
+
+   Drawn into #world, so the lines are in world coordinates and sit still
+   against the board while it is dragged. `non-scaling-stroke` keeps them one
+   pixel wide at every zoom, the way the ropes do — a guide that got fatter as
+   you zoomed in would stop being a line and start being a bar.
+
+   `.off` rather than removing the element: the two <line>s are made once and
+   moved thereafter (see drawGuides()), because assigning them again every frame
+   restarts the fade and the guide would never actually appear. */
+/* Above everything, including the note being dragged.
+
+   `#notesLayer` sets no z-index, so it creates no stacking context and every
+   note is a positioned sibling in `#world` carrying its own `n.z` — which is an
+   ever-growing counter (`bringToFront`), and `.note.dragging` is pinned at
+   `999 !important` on top of that. A guide at any modest z-index therefore ends
+   up *behind* the notes it is measuring, which is the one place it is no use.
+   1000 clears the drag pin, and nothing else on the canvas goes near it. */
+#guidesSvg {
+  position: absolute; left: 0; top: 0; width: 1px; height: 1px;
+  overflow: visible; pointer-events: none; z-index: 1000;
+}
+.guide-line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  opacity: .85;
+  vector-effect: non-scaling-stroke;
+}
+.guide-line.off { display: none; }
+
+/* ─────────────── 47. the canvas, and nothing else ───────────────
+
+   Focus mode. Everything that is *about* the board rather than *on* it goes:
+   the rail, the + dial, the zoom bar and the edge signposts. The titlebar
+   stays — it carries the window's own minimise, maximise and close, and a
+   frameless window with no way to close it is not a focus mode, it is a hostage
+   situation.
+
+   The rail is not hidden here. renderBoardRail() reads focusMode and treats it
+   as `off`, which also drops `has-rail` from <body> — and that class is what
+   insets #stage, so hiding the nav from CSS alone would leave a rail's width of
+   empty margin down the side of a canvas with no rail in it. */
+body.focus-mode #fabWrap,
+body.focus-mode #zoombar,
+body.focus-mode #compass { display: none; }
+/* The one thing that stays: the marker saying how to get back out, for as long
+   as the toast that says it is on screen. Nothing is left behind afterwards —
+   the shortcut is in the list under Settings → Shortcuts, and the checkbox that
+   turned this on is still where it was. */
+
+/* ─────────────── 48. a sub-heading inside a settings pane ───────────────
+
+   The Notes pane now holds two groups: how every note looks, and what a new one
+   starts as. They are different questions — the first restyles the board you
+   have, the second only affects what you make next — and running them together
+   under one heading is how somebody changes the default colour expecting every
+   note to follow.
+
+   Smaller than the pane's own h3 and without its top rule, so it reads as a
+   division inside the section rather than as a second section. */
+.set-sub-h {
+  display: flex; align-items: center; gap: 8px;
+  margin: 22px 0 2px; padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 600; color: var(--dim);
+  letter-spacing: .01em;
+}
+.set-sub-h .sec-ic { display: grid; place-items: center; color: var(--dimmer); }
+.set-sub-h .sec-ic .mi { width: 15px; height: 15px; }
+
+/* ─────────────── 49. finding a setting ───────────────
+
+   The box at the top of the nav, and the state the panel goes into while it has
+   something in it. See filterSettings() in js/settings.js for the grouping —
+   what happens here is only the hiding.
+
+   `sf-off` is its own class rather than `.hidden`, because `.hidden` is the
+   panel's own channel for "this control does not apply right now" (`pairRow`,
+   `clockRow`, `customBox`, `dailyBoardRow`) and two mechanisms writing to one
+   flag is how a control ends up invisible for good. `!important` for the same
+   reason `.hidden` has it: these elements are `display: flex` / `grid` / `block`
+   from a dozen different rules and the filter has to beat all of them without
+   knowing which. */
+.set-find {
+  display: flex; align-items: center; gap: 7px;
+  margin: 0 0 10px; padding: 6px 8px;
+  border-radius: 9px; background: var(--surface); border: 1px solid var(--line);
+  transition: border-color .14s, box-shadow .14s;
+}
+.set-find:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent); }
+.set-find .sf-ic { display: grid; place-items: center; color: var(--dimmer); flex: 0 0 16px; }
+.set-find .sf-ic .mi { width: 15px; height: 15px; }
+.set-find input {
+  flex: 1; min-width: 0; background: none; border: 0; outline: none;
+  font-size: 12.5px; color: var(--text); user-select: text;
+}
+.set-find input::placeholder { color: var(--dimmer); }
+/* The clear button is only worth its width once there is something to clear;
+   an always-on × next to an empty box reads as a control that does nothing. */
+.sf-x { display: none; width: 17px; height: 17px; border-radius: 5px; color: var(--dimmer); place-items: center; }
+.set-find:focus-within .sf-x, body.set-searching .sf-x { display: grid; }
+.sf-x:hover { background: var(--surface-3); color: var(--text); }
+.sf-x .mi { width: 13px; height: 13px; }
+
+#setPanes .sf-off { display: none !important; }
+
+/* Results, not a pane. Every matching pane is on screen at once, so each needs
+   its own top rule to say where one group of results ends and the next begins —
+   the tab that would otherwise have said so is not doing that job here. */
+body.set-searching .set-panes > [data-pane] { padding-top: 4px; }
+body.set-searching .set-panes > [data-pane] + [data-pane] {
+  margin-top: 6px; border-top: 1px solid var(--line);
+}
+body.set-searching .set-panes .set-sec h3 { margin-bottom: 10px; }
+/* The tab that happened to be open is not the answer any more, so it stops
+   being marked as one. The nav still works — clicking a tab clears the box. */
+body.set-searching .set-tab.on { background: none; font-weight: 400; box-shadow: none; color: var(--dim); }
+body.set-searching .set-tab.on::before { display: none; }
+
+.set-none {
+  margin: 24px 2px; font-size: 13px; color: var(--dim);
+  padding: 14px 16px; border-radius: 11px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}

@@ -1,7 +1,7 @@
 /* Mental Board — menus.css
    Floating bars, the slash and context menus, the fab, the zoom bar, overlays, motion, and the late-overrides block.
 
-   Sheet 4 of 8. styles.css was one append-only file and these are
+   Sheet 4 of 9. styles.css was one append-only file and these are
    its slices in the same order, so **later files still beat earlier ones** —
    the <link> order in index.html is load-bearing, not decoration. Adding a
    rule at the end of the last sheet is still how you win an argument with

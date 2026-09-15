@@ -1,7 +1,7 @@
 /* Mental Board — notes.css
    Notes, their eight handles, workflow frames, ropes, and rich text inside a note.
 
-   Sheet 3 of 8. styles.css was one append-only file and these are
+   Sheet 3 of 9. styles.css was one append-only file and these are
    its slices in the same order, so **later files still beat earlier ones** —
    the <link> order in index.html is load-bearing, not decoration. Adding a
    rule at the end of the last sheet is still how you win an argument with
@@ -10,7 +10,7 @@
 .note {
   position: absolute; display: flex; flex-direction: column;
   background: var(--nb); border: 1px solid var(--nl);
-  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  border-radius: var(--radius); box-shadow: var(--note-shadow, var(--shadow-sm));
   transition: box-shadow .16s, border-color .16s;
 }
 /* Only hint the compositor while the view is actually moving. Leaving
@@ -24,9 +24,9 @@ body.view-moving #world { will-change: transform; }
   border-radius: 3px; background: var(--nc); opacity: .0; transition: opacity .18s;
 }
 .note[data-color]:not([data-color="default"])::before { opacity: .85; }
-.note:hover { box-shadow: var(--shadow); border-color: var(--line-2); }
-.note.selected { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
-.note.editing { box-shadow: 0 0 0 2px var(--accent), var(--shadow); cursor: text; }
+.note:hover { box-shadow: var(--note-shadow-hover, var(--shadow)); border-color: var(--line-2); }
+.note.selected { box-shadow: 0 0 0 2px var(--accent), var(--note-shadow-hover, var(--shadow)); }
+.note.editing { box-shadow: 0 0 0 2px var(--accent), var(--note-shadow-hover, var(--shadow)); cursor: text; }
 .note.dragging { box-shadow: 0 22px 46px rgba(0,0,0,.45); z-index: 999 !important; }
 .note.link-target { box-shadow: 0 0 0 2px var(--accent); animation: pulse 1.1s infinite; }
 .note.find-hit { box-shadow: 0 0 0 2px #f0cc5a, var(--shadow); }

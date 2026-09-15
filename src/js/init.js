@@ -1,7 +1,7 @@
 /* Mental Board — init.js
    Pointer routing, the keyboard map, init(), and STATIC_ICONS — every listener in one place.
 
-   Part 15 of 15. These files are plain scripts sharing one global
+   Part 17 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -137,7 +137,9 @@ function onDblClick(e) {
   const noteEl = hit.closest('.note');
   if (noteEl) {
     const n = state.notes.find((x) => x.id === noteEl.dataset.id);
-    if (n) enterEdit(n);
+    // a picture has no text to edit; its double-click opens the studio
+    if (n && n.pic) editPicture(n.id);
+    else if (n) enterEdit(n);
     return;
   }
   if (hit.closest('.rz')) return;
@@ -178,6 +180,8 @@ function onKeyDown(e) {
     if (!$('settings').classList.contains('hidden')) { closeSettings(); return; }
     if (!$('ctxMenu').classList.contains('hidden')) { closeCtxMenu(); return; }
     if (!$('boardMenu').classList.contains('hidden')) { closeBoardMenu(); return; }
+    if (!$('pageMenu').classList.contains('hidden')) { closePageMenu(); return; }
+    if (!$('moveDlg').classList.contains('hidden')) { closeMoveTo(); return; }
     // a latched boards window closes before anything on the canvas does
     if (document.body.classList.contains('rail-open')) { holdRail(false); return; }
     if (palette.open) { closePalette(); return; }
@@ -198,40 +202,53 @@ function onKeyDown(e) {
   }
 
   const ctrl = e.ctrlKey || e.metaKey;
+  /* Both of these read the physical key when the layout produced something
+     that is not a Latin letter, so the shortcuts survive an Arabic, Russian,
+     Greek or Hebrew keyboard — see letterKey() in §1. Nothing changes for a
+     Latin layout, AZERTY and QWERTZ included. */
+  const key = letterKey(e);
+  const ch = chordKey(e);
 
-  if (ctrl && e.key === ',') { e.preventDefault(); openSettings(); return; }
-  if (ctrl && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); return; }
+  if (ctrl && ch === ',') { e.preventDefault(); openSettings(); return; }
+  /* Ctrl+. beside Ctrl+, on purpose: the two keys sit next to each other and
+     the two things they do are a pair — one opens everything, the other puts
+     everything away. It works while typing as well, because clearing the screen
+     is a thing you do mid-sentence and nothing in a note needs this chord. */
+  if (ctrl && ch === '.') { e.preventDefault(); toggleFocusMode(); return; }
+  if (ctrl && key === 'f') { e.preventDefault(); openFind(); return; }
   // Ctrl+P works while typing too — jumping somewhere else is a thing you do
   // mid-sentence, and nothing in a note needs that chord
-  if (ctrl && e.key.toLowerCase() === 'p') { e.preventDefault(); openPalette(); return; }
+  if (ctrl && key === 'p') { e.preventDefault(); openPalette(); return; }
 
   if (typing) return;   // everything below is canvas-level
 
   // after the `typing` guard, so Ctrl+B stays bold inside a note
-  if (ctrl && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleBoardWindow(); return; }
+  if (ctrl && key === 'b') { e.preventDefault(); toggleBoardWindow(); return; }
 
-  if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
-  if (ctrl && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
-  if (ctrl && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAll(); return; }
-  if (ctrl && e.key.toLowerCase() === 'd') { e.preventDefault(); if (selection.size) duplicate([...selection]); return; }
+  if (ctrl && key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (ctrl && key === 'y') { e.preventDefault(); redo(); return; }
+  if (ctrl && key === 'a') { e.preventDefault(); selectAll(); return; }
+  if (ctrl && key === 'd') { e.preventDefault(); if (selection.size) duplicate([...selection]); return; }
   /* Ctrl+Shift+G, not Ctrl+R: Ctrl+R reloads the window and that is how this
      app is developed. Group and arrange are the two things you do to a
      selection of several, so they share a letter and differ by Shift. */
-  if (ctrl && e.shiftKey && e.key.toLowerCase() === 'g') { e.preventDefault(); arrangeSelection('grid'); return; }
-  if (ctrl && e.key.toLowerCase() === 'g') { e.preventDefault(); groupSelection(); return; }
-  if (ctrl && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelection(false); return; }
-  if (ctrl && e.key.toLowerCase() === 'x') { e.preventDefault(); copySelection(true); return; }
-  if (ctrl && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
-  if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); flushSave(); toast(t('msg.saved')); return; }
-  if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomCentre(1.2); return; }
-  if (ctrl && e.key === '-') { e.preventDefault(); zoomCentre(1 / 1.2); return; }
-  if (ctrl && e.key === '0') { e.preventDefault(); resetZoom(); return; }
-  if (e.key === '!' || (e.shiftKey && e.key === '1')) { e.preventDefault(); zoomToFitAll(); return; }
+  if (ctrl && e.shiftKey && key === 'g') { e.preventDefault(); arrangeSelection('grid'); return; }
+  if (ctrl && key === 'g') { e.preventDefault(); groupSelection(); return; }
+  // the whole board, not the selection — see copyBoardContent()
+  if (ctrl && e.shiftKey && key === 'c') { e.preventDefault(); copyBoardContent(); return; }
+  if (ctrl && key === 'c') { e.preventDefault(); copySelection(false); return; }
+  if (ctrl && key === 'x') { e.preventDefault(); copySelection(true); return; }
+  if (ctrl && key === 'v') { e.preventDefault(); pasteClipboard(); return; }
+  if (ctrl && key === 's') { e.preventDefault(); flushSave(); toast(t('msg.saved')); return; }
+  if (ctrl && (ch === '=' || ch === '+')) { e.preventDefault(); zoomCentre(1.2); return; }
+  if (ctrl && ch === '-') { e.preventDefault(); zoomCentre(1 / 1.2); return; }
+  if (ctrl && ch === '0') { e.preventDefault(); resetZoom(); return; }
+  if (ch === '!' || (e.shiftKey && ch === '1')) { e.preventDefault(); zoomToFitAll(); return; }
 
   if (e.key === ' ' && !spaceHeld) { spaceHeld = true; $('viewport').classList.add('pan-ready'); e.preventDefault(); return; }
 
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (selection.size) { e.preventDefault(); pushUndo(); deleteItems([...selection]); }
+    if (selection.size) { e.preventDefault(); askThenDelete([...selection]); }
     return;
   }
   if (e.key === 'Enter' && selection.size === 1) {
@@ -255,10 +272,9 @@ function onKeyDown(e) {
     return;
   }
 
-  const k = e.key.toLowerCase();
-  if (k === 'n') { e.preventDefault(); addNote(); return; }
-  if (k === 'g') { e.preventDefault(); selection.size ? groupSelection() : addFrame(); return; }
-  if (k === 'l') {
+  if (key === 'n') { e.preventDefault(); addNote(); return; }
+  if (key === 'g') { e.preventDefault(); selection.size ? groupSelection() : addFrame(); return; }
+  if (key === 'l') {
     const one = [...selection].find((id) => !isFrame(id));
     if (one) { e.preventDefault(); startLinking(one); }
     return;
@@ -267,6 +283,26 @@ function onKeyDown(e) {
 
 function onKeyUp(e) {
   if (e.key === ' ') { spaceHeld = false; $('viewport').classList.remove('pan-ready'); }
+}
+
+/* The canvas with nothing on top of it: no rail, no + dial, no zoom bar, no
+   edge signposts. Stored in settings, so it survives a restart.
+
+   Storing it is what makes the toast obligatory rather than a nicety. Every
+   visible way back out of this mode is one of the things it just hid, so a user
+   who turns it on, forgets the key and restarts would open the app to a canvas
+   with no controls and nothing saying why. The toast names the key each time it
+   goes on, and init() says it again on any launch that starts in it — the same
+   reasoning as flashRail(): a control that is invisible at rest has to
+   introduce itself. */
+function toggleFocusMode(on) {
+  const s = state.settings;
+  s.focusMode = (on == null) ? !s.focusMode : !!on;
+  applySettings();
+  if (!$('settings').classList.contains('hidden')) syncSettingsUI();
+  saveSoon();
+  if (s.focusMode) toast(t('msg.focusOn'), 5200);
+  else { toast(t('msg.focusOff')); flashRail(2600); }
 }
 
 /* --- canvas-level image drop ------------------------------------------- */
@@ -345,12 +381,11 @@ async function noteFromDroppedFile(f, at) {
 async function tryImportDroppedBoard(f) {
   let parsed;
   try { parsed = JSON.parse(await f.text()); } catch (_) { return false; }
-  if (!parsed || typeof parsed !== 'object') return false;
-  const one = parsed.mbBoard && parsed.board;
-  const many = Array.isArray(parsed.boards) && parsed.boards.length;
-  if (!one && !many) return false;
+  if (!looksLikeBoards(parsed)) return false;
   const path = FILES && FILES.pathOf ? FILES.pathOf(f) : '';
-  await importBoardsFrom(parsed, path, f.name);
+  // the folder the file sits in is where its pictures are
+  const beside = path ? path.replace(/[\\/][^\\/]*$/, '') : '';
+  await importBoardsFrom(parsed, beside, f.name);
   return true;
 }
 
@@ -369,6 +404,50 @@ function onMouseMoveGhost(e) {
   document.querySelectorAll('.note.link-target').forEach((el) => el.classList.remove('link-target'));
   if (over && over.dataset.id !== linkFrom) over.classList.add('link-target');
 }
+
+/* ─────────────── the net under everything ───────────────
+   There was no global error handler anywhere in this app — no `onerror`, no
+   `unhandledrejection`, and nothing in main for a renderer that dies. Which
+   sits oddly beside the rest of it: this is a codebase where a preload call
+   that returns a status must have that status acted on, and where a failed
+   write raises a dialog. An exception thrown three frames into a drag got none
+   of that. It unwound the handler, left the gesture half-applied, and said
+   nothing — the app just stopped responding to the mouse until you clicked
+   again, which reads as flakiness rather than as a bug anyone could report.
+
+   So: every uncaught error is logged with its stack, and the user is told at
+   least once. Told, not interrogated — this is a toast, not the modal
+   reportSaveFailure() raises, because an exception in a paint function is not
+   the same news as work failing to reach the disk.
+
+   **Throttled on purpose, and hard.** The one place an error is most likely is
+   a pointermove handler, which fires sixty times a second; without a limit the
+   first bug found would bury the window in toasts and take the app down more
+   thoroughly than the bug did. Three, then silence, with the count still going
+   to the console so a devtools session sees everything.
+
+   It deliberately does not save. `state` is not corrupted by a render throwing,
+   the debounce is still armed, and a save triggered from an unknown failure is
+   a write nobody asked for at the exact moment least is known about what just
+   happened. */
+const ERR_MAX = 3;
+const ERR_GAP = 30000;
+let errCount = 0, errLast = 0;
+function reportUncaught(what, err) {
+  errCount++;
+  console.error(`uncaught ${what}:`, err);
+  if (errCount > ERR_MAX) return;
+  const now = Date.now();
+  if (now - errLast < ERR_GAP) return;
+  errLast = now;
+  try {
+    const msg = String((err && (err.message || err.reason && err.reason.message)) || err || '?').slice(0, 120);
+    toast(t('msg.oops', { err: msg }), 6000);
+    if (errCount === ERR_MAX) console.error('further uncaught errors will be logged but not shown');
+  } catch (_) { /* the toast machinery itself is down; the console line stands */ }
+}
+window.addEventListener('error', (e) => reportUncaught('error', e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => reportUncaught('promise rejection', e.reason));
 
 /* ─────────────── init ─────────────── */
 function init() {
@@ -527,6 +606,24 @@ function init() {
     saveSoon();
   });
   wireSetTabs();
+  /* No debounce: the filter is one pass over about sixty elements already in
+     the document, which is well under a frame. Debouncing a search that fast
+     only makes it feel slower than it is. */
+  $('setSearch').addEventListener('input', () => filterSettings($('setSearch').value));
+  $('setSearch').addEventListener('keydown', (e) => {
+    e.stopPropagation();          // the canvas shortcuts must not see these keys
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      // first Escape empties the box, a second one closes the panel
+      if ($('setSearch').value) { $('setSearch').value = ''; clearSettingsFilter(); }
+      else closeSettings();
+    }
+  });
+  $('setSearchClear').addEventListener('click', () => {
+    $('setSearch').value = '';
+    clearSettingsFilter();
+    $('setSearch').focus();
+  });
 
   /* What picks the theme. `matchSystem` is kept in step because it is still
      what an older build reads out of the file — the two are one setting
@@ -641,12 +738,32 @@ function init() {
   $('wheelSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.settings.wheel = b.dataset.wheel; syncSettingsUI(); saveSoon();
   }));
+  $('zoomSpeed').addEventListener('input', () => {
+    state.settings.zoomSpeed = clamp(+$('zoomSpeed').value || 100, 40, 220);
+    $('zoomSpeedVal').textContent = pct(state.settings.zoomSpeed);
+    saveSoon();
+  });
+  /* Nothing to re-render: the guides are computed at the start of the next
+     drag and there is no drag in progress with Settings open. */
+  $('setGuides').addEventListener('change', () => {
+    state.settings.guides = $('setGuides').checked; saveSoon();
+  });
+  $('setFocusMode').addEventListener('change', () => toggleFocusMode($('setFocusMode').checked));
   $('perfSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.settings.perf = PERF_MODES.includes(b.dataset.perf) ? b.dataset.perf : 'auto';
     /* applySettings() sets the attribute the stylesheet keys off; render()
        because the culling threshold moved, so which notes are mounted may have
        changed even though nothing about the board did. */
     applySettings(); render(); syncSettingsUI(); saveSoon();
+  }));
+  $('setSoftware').addEventListener('change', () => {
+    state.settings.softwareRender = $('setSoftware').checked;
+    saveSoon();
+    toast(t('msg.restartNeeded'), 5000);
+  });
+  $('motionSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    state.settings.motion = MOTION_MODES.includes(b.dataset.motion) ? b.dataset.motion : 'auto';
+    applySettings(); syncSettingsUI(); saveSoon();
   }));
   $('fontScale').addEventListener('input', () => {
     state.settings.fontScale = +$('fontScale').value;
@@ -656,12 +773,13 @@ function init() {
   $('setSnap').addEventListener('change', () => { state.settings.snap = $('setSnap').checked; saveSoon(); });
   $('setCompass').addEventListener('change', () => { state.settings.compass = $('setCompass').checked; drawCompass(); saveSoon(); });
   $('setSpell').addEventListener('change', () => { state.settings.spell = $('setSpell').checked; applySettings(); saveSoon(); });
-  $('btnExport').addEventListener('click', exportBoard);
   $('btnExportImage').addEventListener('click', () => exportBoardImage());
   $('btnOpenTrash').addEventListener('click', () => { const tb = trashOf(); if (tb) { closeSettings(); switchBoard(tb.id); } });
   $('btnEmptyTrash').addEventListener('click', () => emptyTrash());
   $('btnImport').addEventListener('click', importBoard);
   $('btnBackupNow').addEventListener('click', () => backupNow());
+  $('btnBackupAll').addEventListener('click', backupAll);
+  $('btnEraseAll').addEventListener('click', eraseEverything);
   $('btnCleanFiles').addEventListener('click', cleanUpFiles);
   $('btnBackupFolder').addEventListener('click', chooseBackupFolder);
   $('setBackupAuto').addEventListener('change', () => {
@@ -697,6 +815,7 @@ function init() {
     exitEdit();
     pushUndo();
     state.notes = []; state.frames = []; state.links = [];
+    markStatsStale();
     render(); drawCompass(); renderBoardRail(); save(); closeSettings(); toast(t('msg.cleared'));
   });
   buildAccentSwatches();
@@ -735,6 +854,8 @@ function init() {
 
   wireSelBar();
   wireImgBar();
+  wirePageMenu();
+  wireSettingsDesc();
   wireTableBar();
   wireColsBar();
   wireExtras();
@@ -778,6 +899,10 @@ function init() {
   $('viewport').focus();
   // the launcher is invisible at rest, so it says hello once and then goes
   flashRail(2800);
+  /* Started in focus mode. Everything that would tell you how to get out of it
+     is one of the things focus mode hides, so this is the only place it can be
+     said. Once, on the launch, and then out of the way. */
+  if (state.settings.focusMode) setTimeout(() => toast(t('msg.focusOn'), 6000), 900);
 
   /* Say which build this is, the first time each one runs.
      Without it there is no way from inside the app to tell a new build from the
@@ -789,13 +914,22 @@ function init() {
     save();                    // record the version so this is genuinely once
   }
 
+  /* The pre-upgrade copy could not be written, and this is the only moment it
+     will ever be attempted — the build it was protecting against has already
+     opened the board. Said plainly rather than logged, because the thing the
+     user has lost is not visible: the app looks completely normal, and the
+     safety net simply is not there. */
+  if (versionSnapshotError) {
+    setTimeout(() => hint(t('msg.versionSnapshotFailed')), 1400);
+  }
+
   /* A board file exists but would not parse. Saving is already blocked; the
      one thing left that matters is that the user finds out now, from the app,
      rather than discovering it a week later. An empty canvas with no
      explanation looks exactly like "the update deleted my work". */
   if (loadFailed) {
     hint(t('msg.loadFailedShort'));
-    const where = (DATA && DATA.paths) ? DATA.paths().userData : '';
+    const where = (DATA && DATA.paths) ? (DATA.paths().root || DATA.paths().userData) : '';
     /* The path goes on its own line, not inside the sentence. Threaded through
        RTL prose it wraps mid-path and reorders around the backslashes, which
        makes the one piece of information the user has to act on the hardest
@@ -905,6 +1039,31 @@ function wireExtras() {
   $('densitySeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.settings.noteDensity = b.dataset.density; applySettings(); syncSettingsUI(); saveSoon();
   }));
+  $('fontSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    state.settings.noteFont = NOTE_FONTS.includes(b.dataset.font) ? b.dataset.font : 'system';
+    applySettings(); syncSettingsUI(); saveSoon();
+  }));
+  $('shadowSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    state.settings.noteShadow = NOTE_SHADOWS.includes(b.dataset.shadow) ? b.dataset.shadow : 'soft';
+    applySettings(); syncSettingsUI(); saveSoon();
+  }));
+  /* What a new note starts as. `input`, not `change`: the number beside the
+     slider is the only preview these two have, so it has to follow the thumb. */
+  buildNoteColorSwatches();
+  $('noteW').addEventListener('input', () => {
+    state.settings.noteW = clamp(+$('noteW').value || 280, NOTE_MIN_W, 900);
+    $('noteWVal').textContent = num(state.settings.noteW);
+    saveSoon();
+  });
+  $('noteH').addEventListener('input', () => {
+    state.settings.noteH = clamp(+$('noteH').value || 190, NOTE_MIN_H, 900);
+    $('noteHVal').textContent = num(state.settings.noteH);
+    saveSoon();
+  });
+  $('setConfirmDelete').addEventListener('change', () => {
+    state.settings.confirmDelete = $('setConfirmDelete').checked; saveSoon();
+  });
+  $('btnResetSettings').addEventListener('click', resetSettings);
   $('statusAdd').addEventListener('click', addStatus);
   $('setNoteChrome').addEventListener('change', () => {
     state.settings.noteChrome = $('setNoteChrome').checked;
@@ -933,7 +1092,6 @@ function wireExtras() {
   $('setCapture').addEventListener('change', () => {
     state.settings.capture = $('setCapture').checked; saveSoon();
   });
-  $('btnImportBoard').addEventListener('click', importOneBoard);
 }
 
 /* Fill the icons that live in static markup. Keeping the glyph names here
@@ -994,6 +1152,13 @@ const STATIC_ICONS = [
   ['#palette .pal-head-ic', 'search'],
   ['#capture .cap-ic', 'bolt'],
   ['#capSave .b-ic', 'add'],
+  ['#btnBackupAll .b-ic', 'inventory_2'],
+  ['#btnEraseAll .b-ic', 'delete_forever'],
+  ['h3:has([data-t="set.backupHead"]) .sec-ic', 'cloud'],
+  ['h3:has([data-t="set.filesHead"]) .sec-ic', 'folder'],
+  ['h3:has([data-t="set.startAgain"]) .sec-ic', 'restart_alt'],
+  ['#moveNewOk .b-ic', 'folder'],
+  ['#moveClose', 'close'],
   ['#rmSet .b-ic', 'alarm'],
   ['#rmClear .b-ic', 'alarm_off'],
   ['#remindClose', 'close'],
@@ -1014,6 +1179,11 @@ const STATIC_ICONS = [
   ['#setCapture + .row-ic', 'bolt'],
   ['#setBackground + .row-ic', 'restart_alt'],
   ['label:has([data-t="set.backup"]) .row-ic', 'shield'],
+  ['label:has([data-t="set.backupAll"]) .row-ic', 'inventory_2'],
+  ['label:has([data-t="set.import"]) .row-ic', 'upload'],
+  ['label:has([data-t="set.exportImage"]) .row-ic', 'image'],
+  ['label:has([data-t="set.wipeRow"]) .row-ic', 'delete'],
+  ['label:has([data-t="set.eraseAll"]) .row-ic', 'delete_forever'],
   ['#btnBackupNow .b-ic', 'cloud'],
   ['#btnCleanFiles .b-ic', 'cleaning_services'],
   ['#btnBackupFolder .b-ic', 'folder_open'],
@@ -1038,6 +1208,7 @@ const STATIC_ICONS = [
   ['#imgBar [data-align="right"]', 'format_align_right'],
   ['#imgBar [data-img="studio"]', 'crop'],
   ['#imgBar [data-img="full"]', 'open_in_full'],
+  ['#imgBar [data-img="out"]', 'north_east'],
   ['#imgBar [data-img="delete"]', 'delete'],
   ['#stTools [data-tool="crop"]', 'crop'],
   ['#stTools [data-tool="pen"]', 'draw'],
@@ -1048,6 +1219,9 @@ const STATIC_ICONS = [
   ['#stReset .b-ic', 'restart_alt'],
   ['#stCancel .b-ic', 'close'],
   ['#stApply .b-ic', 'check'],
+
+  ['.set-find .sf-ic', 'search'],
+  ['#setSearchClear', 'close'],
 
   /* settings — section headings */
   ['h3:has([data-t="set.appearance"]) .sec-ic', 'palette'],
@@ -1094,7 +1268,26 @@ const STATIC_ICONS = [
   ['label:has([data-t="set.gridSize"]) .row-ic', 'grid_view'],
   ['label:has([data-t="set.gridFade"]) .row-ic', 'blur_on'],
   ['label:has([data-t="set.textSize"]) .row-ic', 'text_fields'],
+  /* The Graphics row shipped with an empty slot — the label is icon-and-text
+     like every other row here, and the icon simply had no line in this table.
+     Nothing errors when that happens: the slot is a <span> with nothing in it,
+     so the row is a few pixels of blank where every neighbour has a glyph. */
+  ['label:has([data-t="set.perf"]) .row-ic', 'memory'],
   ['label:has([data-t="set.wheel"]) .row-ic', 'mouse'],
+  ['label:has([data-t="set.zoomSpeed"]) .row-ic', 'av_timer'],
+  ['label:has([data-t="set.motion"]) .row-ic', 'waves'],
+  ['#setGuides + .row-ic', 'straighten'],
+  ['#setSoftware + .row-ic', 'memory'],
+  ['#setFocusMode + .row-ic', 'visibility_off'],
+  ['label:has([data-t="set.noteFont"]) .row-ic', 'text_fields'],
+  ['label:has([data-t="set.noteShadow"]) .row-ic', 'layers'],
+  ['h3:has([data-t="set.newNote"]) .sec-ic', 'add'],
+  ['label:has([data-t="set.newNoteColor"]) .row-ic', 'palette'],
+  ['label:has([data-t="set.newNoteW"]) .row-ic', 'straighten'],
+  ['label:has([data-t="set.newNoteH"]) .row-ic', 'square_foot'],
+  ['#setConfirmDelete + .row-ic', 'help'],
+  ['label:has([data-t="set.resetSettings"]) .row-ic', 'restart_alt'],
+  ['#btnResetSettings .b-ic', 'refresh'],
   ['#setSnap + .row-ic', 'grid_on'],
   ['#setCompass + .row-ic', 'my_location'],
   ['#setSpell + .row-ic', 'checklist'],

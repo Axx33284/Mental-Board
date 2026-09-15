@@ -31,7 +31,12 @@ const fail = (msg) => { console.error('  ✗ ' + msg); bad++; };
 if (!en) { console.error('no en.js — nothing to check against'); process.exit(1); }
 
 /* ---- 1. every key the code asks for exists in English ------------------- */
-const src = SOURCE.appJs() + '\n' + SOURCE.html();
+/* main.js and preload.js are in here too. They are not in index.html's load
+   order — they do not run in the page — but main.js is where the tray labels,
+   the notification and every native dialog title live, and until they were
+   added this check passed happily while an Arabic window showed an English
+   tray and an English "Insert image" dialog. */
+const src = SOURCE.appJs() + '\n' + SOURCE.mainJs() + '\n' + SOURCE.html();
 const used = new Set();
 for (const m of src.matchAll(/\bte?\(\s*'([a-zA-Z0-9_.]+)'/g)) used.add(m[1]);
 for (const m of src.matchAll(/data-t(?:-title|-ph|-aria)?="([a-zA-Z0-9_.]+)"/g)) used.add(m[1]);
@@ -39,8 +44,9 @@ for (const m of src.matchAll(/data-t(?:-title|-ph|-aria)?="([a-zA-Z0-9_.]+)"/g))
    the prefixes here is the price of not having a compiler. */
 const PREFIXES = ['block.', 'icons.', 'colour.', 'accent.', 'theme.', 'hilite.',
                   'studio.hint.', 'count.', 'key.', 'kb.', 'msg.', 'status.',
-                  'set.grid.', 'pos.'];
-console.log(`checking ${used.size} literal keys across ${SOURCE.scriptFiles().length} script(s) + index.html`);
+                  'set.grid.', 'pos.', 'page.fit.'];
+console.log(`checking ${used.size} literal keys across ${SOURCE.scriptFiles().length} script(s) + ` +
+            `${SOURCE.mainFiles().length} main-process file(s) + index.html`);
 for (const k of [...used].sort()) {
   if (!(k in en) && !PREFIXES.some((p) => k.startsWith(p))) fail(`used but not in en.js: ${k}`);
 }

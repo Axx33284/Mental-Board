@@ -54,4 +54,25 @@ function appCss() {
     .join('\n');
 }
 
-module.exports = { ROOT, SRC, html, scriptFiles, styleFiles, appJs, appCss };
+/* The two files that are *not* in index.html's load order, because they do not
+   run in the page: Electron main, and the preload bridge.
+
+   Named here rather than parsed out of something, and that is not the drift the
+   rest of this file exists to prevent — there is no order to keep in step with,
+   only two fixed paths that MUST_SHIP in tools/build-app.js already names. What
+   they are, though, is *user-visible*: main.js draws the tray, the "still
+   running" notification and the title on every native file dialog. Leaving them
+   out of the checkers meant every string in them was invisible to check-lang,
+   so the rule that no English may be hardcoded held everywhere except the one
+   process that talks to the operating system. */
+const MAIN_FILES = ['main.js', 'preload.js', 'store.js'];
+function mainFiles() {
+  return MAIN_FILES.filter((p) => fs.existsSync(path.join(SRC, p)));
+}
+function mainJs() {
+  return mainFiles()
+    .map((p) => `/* ===== ${p} ===== */\n` + fs.readFileSync(path.join(SRC, p), 'utf8'))
+    .join('\n');
+}
+
+module.exports = { ROOT, SRC, html, scriptFiles, styleFiles, appJs, appCss, mainFiles, mainJs };

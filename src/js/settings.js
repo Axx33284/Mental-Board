@@ -1,24 +1,72 @@
 /* Mental Board — settings.js
    The settings panel and every dialog behind it.
 
-   Part 14 of 15. These files are plain scripts sharing one global
+   Part 15 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
 /* ─────────────── 15. settings UI + dialogs ─────────────── */
+/* ---- the line at the foot of the panel ----
+   The hint for whatever row the pointer or the focus is on. The hints are the
+   same `p.set-note` elements that used to sit under each control — they stay
+   in the DOM, hidden, so filterSettings() still searches them — and a unit is
+   a control plus every note that immediately follows it, exactly as the
+   search groups them. Nothing under the pointer: the footer says so, quietly. */
+const DESC_UNIT = '.set-row, .set-check, .theme-grid, .ct-box, .path-box, .set-btns, .paper-row, #statusList, #tplList, .keys';
+function settingsHintFor(el) {
+  const unit = el && el.closest ? el.closest(DESC_UNIT) : null;
+  if (!unit) return '';
+  const out = [];
+  let n = unit.nextElementSibling;
+  while (n && n.matches('p.set-note')) {
+    // the lines that stay inline are content, not commentary on the row above
+    if (n.id === 'setVersion' || n.id === 'setStats') break;
+    const txt = n.textContent.trim();
+    if (txt && !n.classList.contains('hidden')) out.push(txt);
+    n = n.nextElementSibling;
+  }
+  return out.join(' ');
+}
+function wireSettingsDesc() {
+  const panes = $('setPanes'), desc = $('setDesc');
+  if (!panes || !desc) return;
+  const show = (el) => {
+    const text = settingsHintFor(el);
+    desc.textContent = text;
+    desc.classList.toggle('on', !!text);
+  };
+  panes.addEventListener('mouseover', (e) => show(e.target));
+  panes.addEventListener('mouseleave', () => show(null));
+  panes.addEventListener('focusin', (e) => show(e.target));
+  desc.dataset.empty = t('set.descEmpty');
+}
+
 function openSettings() {
   $('settings').classList.remove('hidden');
+  /* A search left over from last time would open the panel on a filtered list
+     with a box the user has to notice before any of it makes sense. */
+  const box = $('setSearch');
+  if (box) box.value = '';
+  clearSettingsFilter();
+  /* Before syncSettingsUI(), which paints from the cache. This is the one place
+     the two expensive figures are worked out as a matter of course; everything
+     else that can change them says so explicitly. */
+  refreshSettingsStats();
   syncSettingsUI();
   renderTemplateList();
 }
 function closeSettings() { $('settings').classList.add('hidden'); }
 
-/* Twelve cards in one wall read as a swatch book, not as a choice: nothing
+/* Eighteen cards in one wall read as a swatch book, not as a choice: nothing
    tells you where the light ones stop and the dark ones start, so you scan the
    lot every time. Split under two headings and the half you are not in that
    moment stops competing for attention. Both halves are always shown — hiding
    one would make "swap between your light and dark picks" impossible to set
-   up, which is the whole point of the two modes above. */
+   up, which is the whole point of the two modes above.
+
+   Built from THEMES rather than from a list of its own, so adding a theme is
+   a row in that array and a token block in css/later.css and nothing here.
+   See MAP.md §3c. */
 function buildThemeGrid() {
   const grid = $('themeGrid');
   const card = (raw) => buildThemeCard(themeById(raw.id));
@@ -115,11 +163,117 @@ function showSetTab(id) {
   panes.querySelectorAll('[data-pane]').forEach((p) => p.classList.toggle('on', p.dataset.pane === setTab));
   panes.scrollTop = 0;
 }
+/* --- finding a setting ---------------------------------------------------
+
+   Nine tabs is a much better answer than one long scroll, and it is still the
+   wrong answer to "where is the thing that turns off the note buttons" — you
+   have to already know it lives under Notes. Typing in the box shows every
+   matching row from every pane at once.
+
+   How it groups, and why: the panes are a flat list of rows, checkboxes,
+   button strips and hint paragraphs, and a hint belongs to the control above
+   it. So a **unit** is one control plus every `p.set-note` that immediately
+   follows it, matched on their combined text — which means searching for
+   "bin" finds the trash row through the wording of its own explanation, not
+   only through its label. Hiding a row and leaving its hint behind, or the
+   reverse, is what makes a filtered list look broken.
+
+   Three rules keep it honest:
+
+   - **Headings follow their content.** A pane's `h3` is shown when anything in
+     that pane matched, and a `.set-sub-h` when anything under it did. Results
+     with no heading over them are a list of controls with no idea which part of
+     the app they belong to.
+   - **A row the panel itself has hidden stays hidden.** `pairRow`, `clockRow`,
+     `customBox` and the rest carry `.hidden` when they do not apply, and that
+     class is `!important`, so search cannot reveal one — but it could still
+     count it as a match and draw a heading over nothing. They are skipped.
+   - **Nothing is matched against markup.** The text comes from `textContent`
+     and goes through `foldSearch()` on both sides, so the box finds Arabic the
+     way Ctrl+F does — see §4a.
+
+   `sf-off` and not `.hidden`, deliberately: `.hidden` is the panel's own
+   channel for "this control does not apply right now", and one mechanism
+   writing to another's flag is how a control ends up permanently invisible. */
+const SF_OFF = 'sf-off';
+
+function settingsUnits(pane) {
+  const paneHead = pane.querySelector(':scope > h3');
+  const units = [];
+  let sub = null, unit = null;
+  [...pane.children].forEach((el) => {
+    if (el.tagName === 'H3') { sub = (el === paneHead) ? null : el; unit = null; return; }
+    // a hint belongs to the control above it
+    if (unit && el.matches('p.set-note')) {
+      unit.els.push(el);
+      unit.text += ' ' + (el.textContent || '');
+      return;
+    }
+    unit = { sub, els: [el], text: el.textContent || '' };
+    units.push(unit);
+  });
+  return { paneHead, units };
+}
+
+function clearSettingsFilter() {
+  const panes = $('setPanes');
+  if (!panes) return;
+  panes.querySelectorAll('.' + SF_OFF).forEach((el) => el.classList.remove(SF_OFF));
+  $('setNoMatch').classList.add('hidden');
+  document.body.classList.remove('set-searching');
+  showSetTab(setTab);            // back to whichever tab was open
+}
+
+function filterSettings(raw) {
+  const q = foldSearch(String(raw == null ? '' : raw).trim());
+  const panes = $('setPanes');
+  if (!panes) return;
+  if (!q) { clearSettingsFilter(); return; }
+
+  document.body.classList.add('set-searching');
+  let total = 0;
+  panes.querySelectorAll('[data-pane]').forEach((pane) => {
+    /* Every pane on screen at once. `.on` is what makes a pane visible and the
+       tabs are what normally set it; while the box has something in it the
+       tabs mean nothing, which is why clicking one clears the box. */
+    pane.classList.add('on');
+    const { paneHead, units } = settingsUnits(pane);
+    const subs = new Set();
+    let hit = false;
+    units.forEach((u) => {
+      // a control the panel has switched off is not a result, hidden or not
+      const off = u.els[0].classList.contains('hidden');
+      const on = !off && foldSearch(u.text).includes(q);
+      u.els.forEach((el) => el.classList.toggle(SF_OFF, !on));
+      if (!on) return;
+      total++; hit = true;
+      if (u.sub) subs.add(u.sub);
+    });
+    pane.querySelectorAll(':scope > h3').forEach((h) => {
+      const keep = (h === paneHead) ? hit : subs.has(h);
+      h.classList.toggle(SF_OFF, !keep);
+    });
+    pane.classList.toggle(SF_OFF, !hit);
+  });
+
+  const none = $('setNoMatch');
+  none.textContent = t('set.searchNone', { q: String(raw).trim() });
+  none.classList.toggle('hidden', total > 0);
+}
+
 function wireSetTabs() {
   const nav = $('setNav');
   if (!nav) return;
-  nav.querySelectorAll('.set-tab').forEach((b) =>
-    b.addEventListener('click', () => showSetTab(b.dataset.tab)));
+  /* Picking a tab is picking a place, and the search is the other way of
+     finding one — so a click here empties the box rather than fighting it.
+     `setTab` is assigned first so clearSettingsFilter()'s own showSetTab()
+     lands on the tab that was just asked for. */
+  nav.querySelectorAll('.set-tab').forEach((b) => b.addEventListener('click', () => {
+    setTab = b.dataset.tab;
+    const box = $('setSearch');
+    if (box && box.value) { box.value = ''; clearSettingsFilter(); return; }
+    showSetTab(b.dataset.tab);
+  }));
   showSetTab(setTab);
 }
 
@@ -157,6 +311,132 @@ function buildLinkSwatches() {
     state.settings.linkColor = b.dataset.lkc;
     applyLinkStyle(); syncSettingsUI(); saveSoon();
   }));
+}
+
+/* --- the two figures that are expensive to work out ----------------------
+
+   The word count walks every note on every board, and the file count is a
+   readdir + a stat per file, per board, straight through the preload bridge on
+   the UI thread. Both used to be inside syncSettingsUI(), which runs on *every*
+   control in the panel: clicking a theme card, nudging the rope thickness or
+   switching a tab paid for a full directory scan of the attachment store and a
+   pass over every word the user has ever written. On a handful of boards with a
+   few hundred files that is a visible hitch on a control that should feel
+   instant — and the clock tick in §3 called it once a minute for free.
+
+   Neither figure can change while the panel sits open unless something in here
+   changed it, so they are computed when the panel opens and re-computed by the
+   handful of actions that move them. Everything else paints the cached text.
+
+   Cached as the finished strings rather than as numbers: they are translated,
+   and applyLang() calls refreshSettingsStats() anyway. */
+let statsCache = null;
+/* Something that moves one of the two figures has happened. Nulling the cache
+   rather than recomputing here means the cost is paid once, on the next paint,
+   however many of these fire in a row. */
+function markStatsStale() { statsCache = null; }
+function computeSettingsStats() {
+  /* Count across every board, not just the open one. "Your board" in Settings
+     is about the file on disk, and the file holds all of them — a word count
+     that silently ignored four boards would be worse than none. */
+  syncActiveBoard();
+  let notes = 0, frames = 0, links = 0, words = 0;
+  state.boards.forEach((b) => {
+    notes += b.notes.length; frames += b.frames.length; links += b.links.length;
+    b.notes.forEach((n) => { words += noteText(n).split(/\s+/).filter(Boolean).length; });
+  });
+  /* What the boards are actually carrying. Counted from the folder, not from
+     the notes — the whole point of the row next to it is the gap between the
+     two, and a figure derived from the notes could never show one. */
+  let fileN = 0, bytes = 0;
+  if (FILES && FILES.listAttachments) {
+    state.boards.forEach((b) => {
+      (FILES.listAttachments(b.id) || []).forEach((f) => { fileN++; bytes += f.size || 0; });
+    });
+  }
+  statsCache = {
+    stats: t('set.stats', {
+      boards: t('count.boards', { n: state.boards.length }),
+      notes: t('count.notes', { n: notes }),
+      frames: t('count.frames', { n: frames }),
+      links: t('count.links', { n: links }),
+      words: t('count.words', { n: words })
+    }),
+    files: fileN ? t('set.filesCount', { n: fileN, size: fmtBytes(bytes) }) : t('set.filesNone'),
+    fileN
+  };
+}
+function refreshSettingsStats() { computeSettingsStats(); paintSettingsStats(); }
+function paintSettingsStats() {
+  if (!statsCache) computeSettingsStats();
+  const files = $('filesCount');
+  if (files) {
+    files.textContent = statsCache.files;
+    $('btnCleanFiles').disabled = !statsCache.fileN || !canCleanFiles();
+  }
+  const st = $('setStats');
+  if (st) st.textContent = statsCache.stats;
+}
+
+/* --- what a new note starts as -----------------------------------------
+   The same nine swatches the right-click menu offers, painted from the same
+   custom properties, so the colour you pick here is visibly the colour a note
+   will arrive in. Deliberately not a dropdown of names: "amber" and "orange"
+   are two words for the same idea until you see them side by side.
+
+   Nothing here reaches an existing note. That is the whole reason this row can
+   sit under a heading of its own — see .set-sub-h in css/later.css §48. */
+function buildNoteColorSwatches() {
+  const wrap = $('noteColorSwatches');
+  if (!wrap) return;
+  wrap.innerHTML = COLORS.map((c) =>
+    `<button data-nc="${c}" title="${esc(te('colour.' + c))}" style="background:var(--c-${c}-c)"></button>`).join('');
+  wrap.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    state.settings.noteColor = b.dataset.nc;
+    syncSettingsUI(); saveSoon();
+  }));
+}
+
+/* --- back to how the app arrived ----------------------------------------
+
+   Settings only. Not one note, board, template or status is touched, and the
+   dialog says so in those words — "reset" is a word people have been burned by
+   in other apps, and somebody who reads it as "delete everything" will never
+   press it even when it is the thing they need.
+
+   Three fields survive, and each for a different reason:
+
+     backupDir / lastBackup  a folder the user chose on this machine, and the
+                             record of what has been written to it. Forgetting
+                             it would silently stop the off-disk copies while
+                             the checkbox still said they were on.
+     lang                    because the toast confirming what just happened is
+                             written in it. Resetting the language as part of a
+                             reset means the one sentence explaining the change
+                             arrives in a language the user may not read.
+
+   Everything else, including the theme, goes back to the defaults. Only
+   `state.settings` is replaced — `appVersion`, `boards`, `templates` and
+   `statuses` all live one level up and are not touched, which is what the
+   confirm dialog promises in those words. */
+async function resetSettings() {
+  const ok = await confirmDlg(t('confirm.resetTitle'), t('confirm.resetBody'), t('confirm.resetOk'));
+  if (!ok) return;
+  const keep = state.settings;
+  const fresh = defaults().settings;
+  fresh.lang = keep.lang;
+  fresh.backupDir = keep.backupDir;
+  fresh.lastBackup = keep.lastBackup;
+  state.settings = fresh;
+  /* applySettings() before the rebuilders: it writes every `data-` attribute
+     the panel's own previews read, so a swatch or a paper sample built first
+     would be drawn against the old theme for one frame. */
+  applySettings();
+  buildThemeGrid(); buildAccentSwatches(); buildGridPicker();
+  buildLinkSwatches(); buildNoteColorSwatches();
+  syncSettingsUI();
+  save();
+  toast(t('msg.settingsReset'), 4200);
 }
 
 function syncSettingsUI() {
@@ -235,13 +515,19 @@ function syncSettingsUI() {
   $('gridSize').disabled = !paper;
   $('gridFade').disabled = !paper;
   $('wheelSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.wheel === s.wheel));
+  $('zoomSpeed').value = s.zoomSpeed;
+  $('zoomSpeedVal').textContent = pct(s.zoomSpeed);
+  $('setGuides').checked = !!s.guides;
+  $('setFocusMode').checked = !!s.focusMode;
   $('perfSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.perf === s.perf));
   /* Say which one Auto landed on, and why. "Auto" that will not tell you its
      answer is a setting you cannot reason about — and the whole question this
      control exists to settle is "is my machine being treated as the slow one?" */
-  $('perfHint').textContent = s.perf === 'auto'
+  $('perfHint').textContent = (s.perf === 'auto'
     ? t('set.perfAutoHint', { mode: t(detectPerf() === 'lite' ? 'set.perfLite' : 'set.perfFull') })
-    : t(s.perf === 'lite' ? 'set.perfLiteHint' : 'set.perfFullHint');
+    : t(s.perf === 'lite' ? 'set.perfLiteHint' : 'set.perfFullHint')) +
+    (noGpu ? ' ' + t('set.perfNoGpu') : '');
+  $('setSoftware').checked = !!s.softwareRender;
   /* Rebuilt rather than re-marked: the row's contents depend on which accent
      is selected — a preset outside the shown nine is appended so it can still
      be seen as chosen — so there is nothing to re-mark until it is rebuilt.
@@ -255,7 +541,19 @@ function syncSettingsUI() {
   $('railSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.rail === s.railMode));
   $('shapeSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.shape === s.noteShape));
   $('densitySeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.density === s.noteDensity));
+  $('fontSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.font === s.noteFont));
+  $('shadowSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.shadow === s.noteShadow));
+  $('motionSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.motion === s.motion));
   $('setNoteChrome').checked = !!s.noteChrome;
+  /* What a new note starts as. Rebuilt rather than re-marked, for the same
+     reason the accent row is: the marked swatch is decided while it is built. */
+  buildNoteColorSwatches();
+  $('noteColorSwatches').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.nc === s.noteColor));
+  $('noteW').value = s.noteW;
+  $('noteWVal').textContent = num(s.noteW);
+  $('noteH').value = s.noteH;
+  $('noteHVal').textContent = num(s.noteH);
+  $('setConfirmDelete').checked = !!s.confirmDelete;
   renderStatusList();
   $('setShowArchived').checked = !!s.showArchived;
   /* Where the off-disk copies go, and when the last one landed. A backup
@@ -268,20 +566,7 @@ function syncSettingsUI() {
     ? t('set.backupWhere', { dir: s.backupDir }) +
       (s.lastBackup ? ' · ' + t('set.backupLast', { when: fmtWhen(s.lastBackup) }) : ' · ' + t('set.backupNever'))
     : t('set.backupNone');
-  /* What the boards are actually carrying. Counted from the folder, not from
-     the notes — the whole point of the row next to it is the gap between the
-     two, and a figure derived from the notes could never show one. */
-  const files = $('filesCount');
-  if (files) {
-    let n = 0, bytes = 0;
-    if (FILES && FILES.listAttachments) {
-      state.boards.forEach((b) => {
-        (FILES.listAttachments(b.id) || []).forEach((f) => { n++; bytes += f.size || 0; });
-      });
-    }
-    files.textContent = n ? t('set.filesCount', { n, size: fmtBytes(bytes) }) : t('set.filesNone');
-    $('btnCleanFiles').disabled = !n || !canCleanFiles();
-  }
+  paintSettingsStats();
   // a picture of the board is for somewhere else, so it gets its own theme
   $('setExportTheme').innerHTML =
     `<option value="app"${s.exportTheme === 'app' ? ' selected' : ''}>${te('set.pictureApp')}</option>` +
@@ -296,26 +581,10 @@ function syncSettingsUI() {
     .map((b) => `<option value="${esc(b.id)}">${esc(boardLabel(b))}</option>`).join('');
   if (s.dailyBoard) $('setDailyBoard').value = s.dailyBoard;
   if (!$('setDailyBoard').value && state.boards.length) $('setDailyBoard').value = state.activeBoard;
-  /* Count across every board, not just the open one. "Your board" in Settings
-     is about the file on disk, and the file holds all of them — a word count
-     that silently ignored four boards would be worse than none. */
-  syncActiveBoard();
-  let notes = 0, frames = 0, links = 0, words = 0;
-  state.boards.forEach((b) => {
-    notes += b.notes.length; frames += b.frames.length; links += b.links.length;
-    b.notes.forEach((n) => { words += noteText(n).split(/\s+/).filter(Boolean).length; });
-  });
-  $('setStats').textContent = t('set.stats', {
-    boards: t('count.boards', { n: state.boards.length }),
-    notes: t('count.notes', { n: notes }),
-    frames: t('count.frames', { n: frames }),
-    links: t('count.links', { n: links }),
-    words: t('count.words', { n: words })
-  });
   if (DATA && DATA.paths) {
     try {
       const p = DATA.paths();
-      $('setPath').textContent = p.userData;
+      $('setPath').textContent = p.root || p.userData;
       $('setVersion').textContent = p.version ? t('set.version', { v: p.version }) : '';
     } catch (_) {}
   } else {
@@ -479,10 +748,10 @@ const SHORTCUTS = [
   ['kb.scroll', 'key.zoom'], ['Ctrl + 0', 'key.zoom100'], ['Shift + 1', 'key.fit'],
   ['Ctrl + D', 'key.duplicate'], ['Ctrl + G', 'key.group'],
   ['Ctrl + Shift + G', 'key.arrange'],
-  ['Ctrl + C / V / X', 'key.copy'], ['Delete', 'key.delete'],
+  ['Ctrl + C / V / X', 'key.copy'], ['Ctrl + Shift + C', 'kb.copyBoard'], ['Delete', 'key.delete'],
   ['Ctrl + Z', 'key.undo'], ['Ctrl + Shift + Z', 'key.redo'],
   ['Ctrl + F', 'key.find'], ['Ctrl + B', 'key.boards'], ['Ctrl + P', 'key.palette'],
-  ['Ctrl + ,', 'key.settings'],
+  ['Ctrl + ,', 'key.settings'], ['Ctrl + .', 'key.focusMode'],
   ['/', 'key.blocks'], ['Ctrl + K', 'key.link']
 ];
 function buildKeyList() {
@@ -537,14 +806,14 @@ function boardRowHtml(b) {
   const label = esc(boardLabel(b));
   const locked = isLocked(b);
   // a locked board's contents are ciphertext, so there is nothing to count
-  const count = locked ? 0 : b.notes.length + b.frames.length;
+  const count = (locked || b.unreadable) ? 0 : b.notes.length + b.frames.length;
   const act = (a, ic, tip) =>
     `<button class="br-act" data-act="${a}" title="${tip}" aria-label="${tip}">${icon(ic)}</button>`;
-  return `<div class="br-row${b.id === state.activeBoard ? ' on' : ''}" data-board="${esc(b.id)}">
+  return `<div class="br-row${b.id === state.activeBoard ? ' on' : ''}${b.unreadable ? ' unreadable' : ''}" data-board="${esc(b.id)}">
             <button class="br-tile${b.id === state.activeBoard ? ' on' : ''}${b.archived ? ' archived' : ''}"
                     data-board="${esc(b.id)}"
-                    data-color="${esc(b.iconColor === 'auto' ? 'default' : b.iconColor)}" title="${label}">
-              <span class="br-ic" style="color:${iconColorVar(b.iconColor)}">${icon(locked ? 'lock' : (b.icon || 'sticky_note_2'))}</span>
+                    data-color="${esc(b.iconColor === 'auto' ? 'default' : b.iconColor)}" title="${b.unreadable ? te('msg.boardUnreadable') : label}">
+              <span class="br-ic" style="color:${iconColorVar(b.iconColor)}">${icon(b.unreadable ? 'warning' : (locked ? 'lock' : (b.icon || 'sticky_note_2')))}</span>
               <span class="br-name">${label}</span>
               ${b.archived ? `<span class="br-flag">${icon('archive')}</span>` : ''}
               <span class="br-count">${count ? num(count) : ''}</span>
@@ -557,10 +826,32 @@ function boardRowHtml(b) {
           </div>`;
 }
 
+/* The rows, with a heading over each group. Ungrouped boards first, then
+   each group in the order it first appears — the same order the boards are
+   kept in, because moveBoardToGroup() keeps them contiguous. */
+function railRowsHtml() {
+  const shown = state.boards.filter((b) => !b.trash && (!b.archived || state.settings.showArchived));
+  let out = '', cur = null;
+  shown.filter((b) => !b.group).forEach((b) => { out += boardRowHtml(b); });
+  shown.filter((b) => b.group).forEach((b) => {
+    if (b.group !== cur) {
+      cur = b.group;
+      out += `<div class="br-group">${icon('folder')}<span>${esc(cur)}</span></div>`;
+    }
+    out += boardRowHtml(b);
+  });
+  return out;
+}
+
 function renderBoardRail() {
   const rail = $('boardRail');
   if (!rail) return;
-  const mode = RAIL_MODES.includes(state.settings.railMode) ? state.settings.railMode : 'pinned';
+  /* Focus mode reads as 'off' here rather than being a second thing to handle
+     everywhere else. That is not only the nav going away: `has-rail` is what
+     insets #stage, so leaving it on would hold a rail's width of empty margin
+     against the edge of a canvas that has no rail in it. One place, one rule. */
+  const mode = state.settings.focusMode ? 'off'
+             : (RAIL_MODES.includes(state.settings.railMode) ? state.settings.railMode : 'pinned');
   const on = mode !== 'off';
   /* Only `pinned` insets the canvas. In hover mode the rail floats over it —
      insetting on hover would shift every note sideways each time the pointer
@@ -596,8 +887,7 @@ function renderBoardRail() {
     `<div class="br-head">${icon('space_dashboard')}<span>${te('board.switch')}</span>` +
       `<span class="br-head-n">${num(liveBoards().length)}</span></div>` +
     `<div class="br-list" id="brList">` +
-    state.boards.filter((b) => !b.trash && (!b.archived || state.settings.showArchived))
-      .map(boardRowHtml).join('') +
+    railRowsHtml() +
     `</div>` +
     `<button class="br-add" id="brAdd" title="${te('board.add')}">${icon('add')}<span>${te('board.add')}</span></button>` +
     /* The bin appears when it has something in it and goes away when it does
@@ -742,6 +1032,8 @@ function finishBoardDrop(g) {
   save();
   holdRail(false);
   toast(t('msg.movedToBoard', { n: notes.length + frames.length, name: boardLabel(target) }));
+  // the pictures go with them — see carryNotesTo()
+  carryNotesTo(notes, target.id).then((n) => { if (n) saveSoon(); });
   return true;
 }
 
@@ -815,7 +1107,7 @@ function setPeek(on) {
    top, and the window edge on the side the launcher is on. */
 const TITLEBAR_H = 38;
 function trackRailPeek(e) {
-  if (state.settings.railMode !== 'hover') { setPeek(false); return; }
+  if (state.settings.focusMode || state.settings.railMode !== 'hover') { setPeek(false); return; }
   // a latched flyout, a rename or a drag is already keeping it up
   if (document.body.classList.contains('rail-open')) return;
   const y = e.clientY - TITLEBAR_H;
@@ -832,7 +1124,7 @@ function trackRailPeek(e) {
 let railFlashTimer = null;
 function flashRail(ms) {
   clearTimeout(railFlashTimer);
-  if (state.settings.railMode !== 'hover') { setPeek(false); return; }
+  if (state.settings.focusMode || state.settings.railMode !== 'hover') { setPeek(false); return; }
   setPeek(true);
   railFlashTimer = setTimeout(() => setPeek(false), ms || 2600);
 }
@@ -871,6 +1163,20 @@ function openBoardMenu(clientX, clientY, id) {
       closeBoardMenu();
       if (act === 'open') switchBoard(id); else emptyTrash();
     }));
+    return;
+  }
+  /* A board the store could not read: the one useful thing is to look at
+     the folder. Nothing here may write to it. */
+  if (b.unreadable) {
+    menu.innerHTML =
+      `<div class="cm-label">${icon('warning')}<span>${esc(boardLabel(b))}</span></div>` +
+      `<p class="cm-hint">${te('msg.boardUnreadable')}</p>` +
+      item('folder', 'folder_open', te('page.openFolder'));
+    menu.classList.remove('hidden');
+    const w1 = menu.offsetWidth, h1 = menu.offsetHeight;
+    menu.style.left = clamp(RTL ? clientX - w1 : clientX, 6, innerWidth - w1 - 6) + 'px';
+    menu.style.top = clamp(clientY, 44, innerHeight - h1 - 6) + 'px';
+    menu.querySelector('.cm-item').addEventListener('click', () => { closeBoardMenu(); if (DATA && DATA.openBoardFolder) DATA.openBoardFolder(id); });
     return;
   }
   menu.innerHTML =
@@ -989,20 +1295,27 @@ function hint(msg) {
 }
 
 /* --- backups somewhere else -------------------------------------------
-   Everything the app already does to protect a board — the .bak, twenty dated
-   snapshots, a copy before every version — lands in %APPDATA%, on the same disk
-   as the board. That is the right answer to "I deleted the wrong thing" and no
-   answer at all to a dead drive or a stolen laptop, which for anyone keeping
-   real work in here is the bigger of the two risks. Nothing in the interface
-   used to mention it.
+   Everything the app already does to protect a board — the .bak, the dated
+   copies in Backups\, a copy before every version — lands inside My Boards,
+   on the same disk as the boards. That is the right answer to "I deleted the
+   wrong thing" and no answer at all to a dead drive or a stolen laptop, which
+   for anyone keeping real work in here is the bigger of the two risks.
 
-   One folder, chosen once. A synced drive, a stick, a share — the app does not
-   care and deliberately does not try to be a sync service. It writes the same
-   JSON Export writes, dated, and keeps the newest ten.
+   Two ways out, and they answer different questions:
+   - **Back up now** mirrors the whole My Boards folder into a folder chosen
+     once — a synced drive, a stick, a share — copying only what is new or
+     changed, and never deleting anything there. Cheap enough to run every day
+     on launch, which it does when `backupAuto` is on.
+   - **Save a full copy…** writes a complete, dated copy of My Boards wherever
+     you point, every time. For "before I try something".
 
    `lastBackup` is stored so the row can say when, and so the automatic copy
    knows whether today's has already been written. */
-const backupName = () => `mental-board-${new Date().toISOString().slice(0, 10)}.json`;
+/* todayKey(), not toISOString(): the second one is today in UTC, which rolls
+   over at 03:00 in Riyadh and 20:00 in Los Angeles. maybeAutoBackup() compares
+   this name against the day it last ran, so a mismatched calendar meant the
+   automatic copy could fire twice on one local day or skip one entirely. */
+const backupName = () => `mental-board-${todayKey()}.json`;
 
 async function chooseBackupFolder() {
   if (!DATA || !DATA.pickBackupDir) { toast(t('msg.needDesktop')); return; }
@@ -1021,11 +1334,10 @@ async function backupNow(quiet) {
   const dir = state.settings.backupDir;
   if (!dir) { chooseBackupFolder(); return; }
   if (!DATA || !DATA.backupTo) { toast(t('msg.needDesktop')); return; }
-  /* The board *and* the files it carries. Only the boards whose plaintext we
-     actually hold: a locked board is ciphertext, so there is no file list to
-     read out of it and nothing to copy. */
-  const ids = state.boards.filter((b) => !isLocked(b)).map((b) => b.id);
-  const r = await DATA.backupTo(dir, serialise(true), backupName(), ids);
+  /* The whole My Boards folder, mirrored: every board, every file it carries,
+     the settings. Written to disk first so the mirror is of *now*. */
+  await saveNow();
+  const r = await DATA.backupTo(dir);
   if (!r || r.error) {
     toast(t('msg.backupFailed', { err: (r && r.error) || '?' }), 7000);
     return;
@@ -1033,12 +1345,44 @@ async function backupNow(quiet) {
   state.settings.lastBackup = Date.now();
   save();
   syncSettingsUI();
-  /* A failure copying the files does not undo the JSON that already landed, so
-     it is said separately rather than turning the whole backup into a failure —
-     and it is said even on the automatic one, for the same reason a failed
-     backup is: a backup you have stopped checking is worse than none. */
-  if (r.filesError) { toast(t('msg.backupFilesFailed', { err: r.filesError }), 7000); return; }
   if (!quiet) toast(r.files ? t('msg.backedUpFiles', { n: r.files }) : t('msg.backedUp'));
+}
+
+/* A complete, dated copy wherever the user points — a new folder every time.
+   Written to disk first so the copy is of *now*. */
+async function backupAll() {
+  if (!DATA || !DATA.backupAll) { toast(t('msg.needDesktop')); return; }
+  await saveNow();
+  const r = await DATA.backupAll();
+  if (!r) return;                       // cancelled
+  if (r.error) { toast(t('msg.backupFailed', { err: r.error }), 7000); return; }
+  toast(t('msg.backedUpAllTo', { n: r.files, path: r.path }), 7000);
+}
+
+/* Everything, gone — to the Recycle Bin. Asked twice: once with the count of
+   what is about to go, once more with the way out named. The window reloads
+   afterwards so nothing held in memory is written over the fresh start, and
+   `loadFailed` is set first so the debounce cannot get a write in between. */
+async function eraseEverything() {
+  if (!DATA || !DATA.eraseAll || !DATA.tally) { toast(t('msg.needDesktop')); return; }
+  const n = DATA.tally();
+  const ok1 = await confirmDlg(
+    t('confirm.eraseAllTitle'),
+    t('confirm.eraseAllBody', { boards: n.boards, files: n.files, size: fmtBytes(n.bytes) }),
+    t('confirm.eraseAllOk'));
+  if (!ok1) return;
+  const ok2 = await confirmDlg(t('confirm.eraseAllTitle2'), t('confirm.eraseAllBody2'), t('confirm.eraseAllOk2'));
+  if (!ok2) return;
+  clearTimeout(saveTimer); saveTimer = null;
+  loadFailed = true;                     // no write may land from here on
+  exitEdit();
+  const r = await DATA.eraseAll();
+  if (!r || !r.ok) {
+    loadFailed = false;
+    toast(t('msg.eraseAllFailed', { err: (r && r.error) || '?' }), 8000);
+    return;
+  }
+  location.reload();
 }
 
 /* Once a day, on launch, if a folder has been chosen. Deliberately not on a
@@ -1082,12 +1426,12 @@ const canCleanFiles = () => !!(FILES && FILES.unusedFiles && FILES.removeUnusedF
 function referencedFileUrls() {
   const out = new Set();
   const scan = (html) => {
-    if (!html || html.indexOf('file:') < 0) return;
+    if (!html || (html.indexOf('mbf:') < 0 && html.indexOf('file:') < 0)) return;
     const d = document.createElement('div');
     d.innerHTML = html;
-    d.querySelectorAll('[src], [href]').forEach((el) => {
-      const v = el.getAttribute('src') || el.getAttribute('href') || '';
-      if (/^file:/i.test(v)) out.add(v);
+    d.querySelectorAll('[src], [href], [data-thumb]').forEach((el) => {
+      const v = el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('data-thumb') || '';
+      if (isFileUrl(v)) out.add(v);
     });
   };
   syncActiveBoard();
@@ -1098,13 +1442,15 @@ function referencedFileUrls() {
     });
   });
   (state.templates || []).forEach((tpl) => scan(tpl && tpl.body));
+  // a board's background is a file in its folder that no note mentions
+  state.boards.forEach((b) => { if (b.bg && b.bg.file) out.add(`mbf://${b.id}/${encodeURIComponent(b.bg.file)}`); });
   /* The undo steps are raw JSON, not markup, so they are read with a regex
      rather than parsed into a document. A geom step holds only numbers and has
      no `json` at all, hence the filter. `&amp;` comes back to `&` because the
      URL was written through esc() on its way into the markup. */
   [...undoStack, ...redoStack].forEach((step) => {
     [step.json, step.other && step.other.json].filter(Boolean).forEach((json) => {
-      (json.match(/file:[^"\\]+/g) || []).forEach((u) => out.add(u.replace(/&amp;/g, '&')));
+      (json.match(/(?:mbf|file):[^"\\]+/g) || []).forEach((u) => out.add(u.replace(/&amp;/g, '&')));
     });
   });
   return [...out];
@@ -1150,62 +1496,26 @@ async function cleanUpFiles() {
   const done = await FILES.removeUnusedFiles(referencedFileUrls());
   if (!done || done.error) { toast(t('msg.cleanFailed', { err: (done && done.error) || '?' }), 6000); return; }
   toast(t('msg.cleaned', { n: done.files, size: fmtBytes(done.bytes) }), 4500);
+  markStatsStale();          // files just left the folder this row counts
   syncSettingsUI();
 }
 
-/* --- export / import --------------------------------------------------- */
-async function exportBoard() {
-  const json = serialise(true);      // every board, not just the open one
-  if (DATA && DATA.exportTo) {
-    const r = await DATA.exportTo(json, `mental-board-${new Date().toISOString().slice(0, 10)}.json`);
-    if (r && r.error) toast(t('msg.exportFailed')); else if (r) toast(t('msg.exported'));
-    return;
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-  a.download = 'mental-board.json'; a.click();
-}
+/* --- import --------------------------------------------------------------- */
+/* Import *adds*. It used to replace every board with the file's — which made
+   sense when the file was the whole store and does not now that each board
+   is its own folder. A 2.0 board.json, a 1.x single-board export and a 1.x
+   everything-export all arrive as boards added beside the ones here; a 1.0.x
+   file with notes at the top level is read as one board. */
 async function importBoard() {
-  if (!DATA || !DATA.importFrom) { toast(t('msg.needDesktop')); return; }
-  const r = await DATA.importFrom();
-  if (!r || r.error) { if (r) toast(t('msg.readFailed')); return; }
-  let parsed;
-  try { parsed = JSON.parse(r.json); } catch (_) { toast(t('msg.notOurFile')); return; }
-  // a 1.0.x export has notes/frames at the top level; a newer one has boards
-  const looksOurs = Array.isArray(parsed.boards) || Array.isArray(parsed.notes) || Array.isArray(parsed.frames);
-  if (!parsed || !looksOurs) { toast(t('msg.notOurFile')); return; }
-  const ok = await confirmDlg(t('confirm.importTitle'), t('confirm.importBody'), t('confirm.importOk'));
-  if (!ok) return;
-  /* An import is the one thing that should lift the no-write latch. `loadFailed`
-     exists so an unreadable file is never overwritten by an empty board the app
-     invented — but the user has just chosen, in a confirm dialog, to replace
-     the board with a file they picked. Leaving the latch on made Import the
-     dead end at the end of the recovery instructions: it redrew the canvas,
-     said "Imported", and wrote nothing. */
-  if (loadFailed) { loadFailed = false; hint(''); lastWritten = ''; }
-  const keepSettings = state.settings;
-  adopt(parsed, keepSettings);      // heal the imported shape, keep my settings
-  /* The pictures and clips, if they came with it. `r.path` is where the file
-     was; its attachments are in a `files/` folder beside it, which is the shape
-     backupNow() writes — so restoring a backup folder restores the media too,
-     not just the words. Board ids survive an import of a whole export, so the
-     copy lands in the folder the notes already point at. */
-  if (r.path && FILES && FILES.adoptAttachments) {
-    for (const b of state.boards) {
-      if (b.enc) continue;
-      const urls = attachmentUrls(b);
-      if (!urls.length) continue;
-      const got = await FILES.adoptAttachments(r.path, urls, b.id);
-      if (got && got.map) relinkAttachments(b, got.map);
-    }
+  if (!DATA || !DATA.importBoard) { toast(t('msg.needDesktop')); return; }
+  const r = await DATA.importBoard();
+  if (!r) return;
+  if (r.error) { toast(t('msg.readFailed')); return; }
+  let parsed = r.data;
+  if (parsed && !looksLikeBoards(parsed) && (Array.isArray(parsed.notes) || Array.isArray(parsed.frames))) {
+    parsed = { boards: [{ name: '', icon: 'sticky_note_2', notes: parsed.notes, frames: parsed.frames, links: parsed.links, view: parsed.view, nextZ: parsed.nextZ }] };
   }
-  /* Undo cannot reach across an import any more: the stack holds notes and
-     frames, and after this the board they belonged to may not exist. Clearing
-     it is honest — offering an undo that would restore one board's contents on
-     top of another's is worse than offering none. */
-  clearHistory();
-  renderBoardRail(); render(); applySettings(); applyLang();
-  save();
+  if (!looksLikeBoards(parsed)) { toast(t('msg.notOurFile')); return; }
   closeSettings();
-  toast(t('msg.imported'));
+  await importBoardsFrom(parsed, r.beside || '', '');
 }

@@ -1,7 +1,7 @@
 /* Mental Board — boards.js
    Several boards, one rail: switching, the flyout, locking, and drag-to-board.
 
-   Part 13 of 15. These files are plain scripts sharing one global
+   Part 14 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -14,6 +14,10 @@ async function switchBoard(id) {
   if (id === state.activeBoard) { closeBoardMenu(); return; }
   const next = boardById(id);
   if (!next) return;
+  /* A board whose file would not parse is listed so the user knows it is
+     there, and refused so nothing can be written over it. The toast names
+     the folder to look in. */
+  if (next.unreadable) { closeBoardMenu(); toast(t('msg.boardUnreadable'), 5000); return; }
   // a locked board asks for its passphrase before it will open
   if (isLocked(next) && !(await unlockBoard(next))) return;
   /* exitEdit() first, for the same reason applyLang() has to: render() throws
@@ -48,14 +52,24 @@ function addBoard() {
   renameBoard(b.id);
 }
 
-function duplicateBoard(id) {
+async function duplicateBoard(id) {
   const src = boardById(id);
-  if (!src) return;
+  if (!src || src.unreadable) return;
   syncActiveBoard();
   const copy = JSON.parse(JSON.stringify(src));
+  delete copy.unreadable;
   copy.id = uid();
   copy.name = t('board.copy', { name: boardLabel(src) });
   copy.updatedAt = Date.now();
+  /* The pictures go with it. The store copies the source folder's files\ into
+     a folder for the new board, and every `mbf://<src>/…` in the copy is
+     re-addressed to the new id — so the two boards are two whole boards, not
+     one board and a set of links into it. */
+  if (DATA && DATA.duplicateFiles) {
+    const r = await DATA.duplicateFiles(src.id, copy.id, boardDirName(copy), copy.group || '');
+    if (r && r.error) { toast(t('msg.boardDupFailed', { err: r.error }), 6000); return; }
+  }
+  relinkBoardHost(copy, src.id, copy.id);
   state.boards.splice(state.boards.indexOf(src) + 1, 0, copy);
   closeBoardMenu();
   renderBoardRail();
@@ -94,35 +108,43 @@ async function exportOneBoard(id) {
   const b = boardById(id);
   if (!b) return;
   closeBoardMenu();
-  if (isLocked(b) && !(await unlockBoard(b))) return;
-  if (b.id === state.activeBoard) syncActiveBoard();
-  const payload = JSON.stringify({
-    mbBoard: 1,
-    app: 'Mental Board',
-    exportedAt: new Date().toISOString(),
-    board: Object.assign({}, b, { enc: null, archived: false })
-  }, null, 2);
-  const name = (boardLabel(b).replace(/[^\w؀-ۿ -]+/g, '').trim() || 'board').slice(0, 40);
-  if (DATA && DATA.exportTo) {
-    const r = await DATA.exportTo(payload, `${name}.mentalboard.json`);
-    if (r && r.error) toast(t('msg.exportFailed')); else if (r) toast(t('msg.boardExported'));
+  /* A board is a folder, and its export is a copy of that folder — board.json
+     and every file it carries — wherever the user points. Drop the copy into
+     anyone's My Boards, or Import it, and it is the whole board. A locked
+     board travels locked: its folder holds the ciphertext, and it opens with
+     the passphrase it was locked with. */
+  if (!DATA || !DATA.exportBoard) {
+    // a plain browser: the one-document JSON, as before
+    const payload = JSON.stringify({ mbBoard: 1, app: 'Mental Board', board: boardPayload(b) }, null, 2);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+    a.download = `${boardDirName(b)}.json`; a.click();
     return;
   }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
-  a.download = `${name}.mentalboard.json`; a.click();
+  await saveNow();                    // the folder has to be current before it is copied
+  const r = await DATA.exportBoard(b.id, boardDirName(b));
+  if (!r) return;                     // cancelled
+  if (r.error) { toast(t('msg.exportFailed'), 5000); return; }
+  toast(t('msg.boardExportedTo', { path: r.path }), 6000);
 }
 
 /* Adds a board rather than replacing everything, which is the difference
    between this and Import in Settings. */
 async function importOneBoard() {
-  if (!DATA || !DATA.importFrom) { toast(t('msg.needDesktop')); return; }
-  const r = await DATA.importFrom();
-  if (!r || r.error) { if (r) toast(t('msg.readFailed')); return; }
-  let parsed;
-  try { parsed = JSON.parse(r.json); } catch (_) { toast(t('msg.notOurFile')); return; }
-  if (!parsed || !parsed.mbBoard || !parsed.board) { toast(t('msg.notABoardFile')); return; }
-  await importBoardsFrom(parsed, r.path || '', '');
+  if (!DATA || !DATA.importBoard) { toast(t('msg.needDesktop')); return; }
+  const r = await DATA.importBoard();
+  if (!r) return;                     // cancelled
+  if (r.error) { toast(t('msg.readFailed')); return; }
+  if (!looksLikeBoards(r.data)) { toast(t('msg.notOurFile')); return; }
+  await importBoardsFrom(r.data, r.beside || '', '');
+}
+/* The three shapes a board arrives in: a 2.0 board.json, a 1.x single-board
+   export, or a 1.x everything-export. */
+function looksLikeBoards(p) {
+  if (!p || typeof p !== 'object') return false;
+  if (p.mbBoard === 2 && Array.isArray(p.notes)) return true;
+  if (p.mbBoard && p.board) return true;
+  return Array.isArray(p.boards) && p.boards.length > 0;
 }
 
 /* Somebody else's boards, added to yours.
@@ -144,33 +166,53 @@ async function importOneBoard() {
    the user dropped a file on a canvas — Settings → Import is where "replace
    everything" lives, and it asks first. */
 async function importBoardsFrom(parsed, beside, label) {
-  const raws = parsed.mbBoard && parsed.board ? [parsed.board]
-             : (Array.isArray(parsed.boards) ? parsed.boards : []);
+  const raws = (parsed.mbBoard === 2 && Array.isArray(parsed.notes)) ? [parsed]
+             : (parsed.mbBoard && parsed.board ? [parsed.board]
+             : (Array.isArray(parsed.boards) ? parsed.boards : []));
   if (!raws.length) { toast(t('msg.notABoardFile')); return; }
 
   const made = [];
   let files = 0;
   for (const raw of raws) {
     const b = adoptBoard(raw);
-    if (!b) continue;
-    b.id = uid();                     // never collide with a board already here
+    if (!b || b.unreadable) continue;
+    /* Its own id, if nothing here has it — then the URLs inside it are already
+       right and only the files need copying. A fresh id otherwise, and the
+       relink below re-addresses everything. */
+    const oldId = b.id;
+    if (!oldId || boardById(oldId)) b.id = uid();
     b.archived = false;
+    b.trash = false;
     b.updatedAt = Date.now();
-    /* A locked board arrives as an envelope and stays one. There is nothing to
-       relink — its notes are ciphertext — and it opens with the passphrase it
-       was locked with, on whichever machine it lands. */
-    if (!b.enc && beside && FILES && FILES.adoptAttachments) {
-      const urls = attachmentUrls(b);
-      if (urls.length) {
-        const got = await FILES.adoptAttachments(beside, urls, b.id);
-        if (got && got.map) { relinkAttachments(b, got.map); files += got.copied || 0; }
-      }
-    }
     state.boards.push(b);
     made.push(b);
+    if (b.enc) continue;             // an envelope: nothing to relink, nothing to read
+    if (oldId !== b.id) relinkBoardHost(b, oldId, b.id);
+    /* The pictures. The board's folder has to exist before anything can be
+       copied into it, and the store makes it on the first save. */
+    if (beside && DATA && DATA.adoptFiles) {
+      await saveNow();
+      const urls = attachmentUrls(b);
+      // the background is a file no note mentions
+      const bgUrl = b.bg && b.bg.file ? `mbf://${b.id}/${encodeURIComponent(b.bg.file)}` : '';
+      if (bgUrl) urls.push(bgUrl);
+      if (urls.length) {
+        const got = await DATA.adoptFiles(beside, urls, b.id);
+        if (got && got.map) {
+          relinkAttachments(b, got.map);
+          files += got.copied || 0;
+          // the copy may have landed under a free name
+          if (bgUrl && got.map[bgUrl]) {
+            const m = /\/([^/]+)$/.exec(got.map[bgUrl]);
+            if (m) { try { b.bg.file = decodeURIComponent(m[1]); } catch (_) {} }
+          }
+        }
+      }
+    }
   }
   if (!made.length) { toast(t('msg.notOurFile')); return; }
 
+  markStatsStale();          // more boards, more notes, and possibly more files
   renderBoardRail();
   save();
   const name = made.length === 1 ? boardLabel(made[0]) : (label || '');
@@ -184,6 +226,10 @@ async function deleteBoard(id) {
   const b = boardById(id);
   if (!b) return;
   closeBoardMenu();
+  /* A board whose file would not parse may still be recoverable by hand;
+     deleting its folder from here would end that. It is refused, and the
+     toast says where to look. */
+  if (b.unreadable) { toast(t('msg.boardUnreadable'), 5000); return; }
   /* Emptying the bin is the one delete that means it. */
   if (b.trash) { emptyTrash(); return; }
   /* The last board cannot go. An app with no board has nowhere to put a note,
@@ -213,6 +259,14 @@ async function deleteBoard(id) {
       it.x = at2.x; it.y = at2.y;
       if (b.frames.includes(it)) tb.frames.push(it); else { it.z = ++tb.nextZ; tb.notes.push(it); }
     });
+    /* The board's folder is about to go, and its pictures with it — so they
+       are copied into the bin's own folder first and the trashed notes are
+       pointed at the copies. The bin has to exist on disk to receive them,
+       hence the save in between. */
+    if (b.notes.length) {
+      await saveNow();
+      await carryNotesTo(b.notes, tb.id);
+    }
   }
   const wasActive = b.id === state.activeBoard;
   const at = state.boards.indexOf(b);
@@ -231,7 +285,15 @@ async function deleteBoard(id) {
     drawCompass();
   }
   renderBoardRail();
-  save();
+  /* The bin is written *before* the folder is removed. A crash between the two
+     leaves an orphan folder, which the next launch simply lists as a board
+     again — the opposite order could lose the pictures the bin now points at. */
+  await saveNow();
+  forgetWritten(b.id);
+  if (DATA && DATA.removeBoardDir) {
+    const r = await DATA.removeBoardDir(b.id);
+    if (r && r.ok === false) toast(t('msg.boardDirStuck', { err: r.error || '?' }), 6000);
+  }
   toast(keepable ? t('msg.boardDeletedKept', { n }) : t('msg.boardDeleted'));
 }
 
@@ -466,8 +528,19 @@ function pasteClipboard(worldPt) {
     else { copy.z = ++state.nextZ; state.notes.push(copy); const el = makeNote(copy); $('notesLayer').appendChild(el); els.set(copy.id, el); }
     made.push(copy.id);
   });
-  refreshFrameCounts(); updateEmpty(); save();
+  updateCulling();          // a paste of many notes can cross the threshold
+  refreshFrameCounts(); updateEmpty(); drawCompass(); save();
   setSelection(made, false);
+  /* Notes copied off another board still point at that board's pictures.
+     They show straight away — the other board's folder is still there — and
+     are re-addressed to copies in this board's folder as soon as those land,
+     so this board stays a whole board. */
+  const notes = made.map((id) => state.notes.find((n) => n.id === id)).filter(Boolean);
+  carryNotesTo(notes, state.activeBoard).then((n) => {
+    if (!n) return;
+    notes.forEach((nt) => { const el = els.get(nt.id); if (el && !el.classList.contains('editing')) repaintNoteBody(el, nt); });
+    saveSoon();
+  });
 }
 
 /* --- find -------------------------------------------------------------- */
@@ -493,6 +566,9 @@ function closeFind() {
    Locked boards are skipped. There is nothing to search — the plaintext is not
    in memory — and silently returning nothing from them is honest, because the
    count says how many boards were looked at. */
+/* `q` arrives already folded — see runFind() and openPalette(). Both sides of
+   the comparison have to go through foldSearch() or an Arabic search is
+   comparing two spellings of the same word and finding neither. */
 function searchBoards(q) {
   if (!q) return [];
   const here = [], elsewhere = [];
@@ -500,7 +576,7 @@ function searchBoards(q) {
   state.boards.forEach((b) => {
     if (isLocked(b) || (b.archived && !state.settings.showArchived)) return;
     b.notes.forEach((n) => {
-      if (!noteTextLower(n).includes(q)) return;
+      if (!noteTextFolded(n).includes(q)) return;
       (b.id === state.activeBoard ? here : elsewhere).push({ note: n, board: b });
     });
   });
@@ -508,7 +584,7 @@ function searchBoards(q) {
 }
 
 function runFind() {
-  const q = $('findInput').value.trim().toLowerCase();
+  const q = foldSearch($('findInput').value.trim());
   document.querySelectorAll('.note.find-hit').forEach((e) => e.classList.remove('find-hit'));
   findHits = searchBoards(q);
   findHits.forEach((h) => { if (h.board.id === state.activeBoard) els.get(h.note.id)?.classList.add('find-hit'); });
@@ -585,7 +661,10 @@ function restoreHistory(i) {
   const current = n.body;
   n.body = n.hist[i].body;
   pushHistory(n, current);
-  const el = els.get(n.id);
+  /* ensureMounted(), not els.get(): this writes straight into the .note-body,
+     and a note can be mounted without one — culled notes have no element at all
+     and far-zoom ones are stubs. Both are answered by the same call. */
+  const el = ensureMounted(n.id);
   if (el) {
     const body = el.querySelector('.note-body');
     body.innerHTML = n.body;
@@ -830,7 +909,6 @@ function cancelPass() {
    arrived after the filter was set would otherwise come in bright. */
 let focusKind = '';        // '' | 'colour' | 'status'
 let focusValue = '';
-const colourFocus = () => (focusKind === 'colour' ? focusValue : '');
 
 function noteMatchesFocus(n) {
   if (!focusKind) return true;
@@ -1121,7 +1199,7 @@ function maybeDailyNote() {
      starts, so they do not land on top of yesterday's. */
   const others = notes.filter((x) => x.daily);
   n.x = others.length ? others[0].x : 60;
-  n.y = others.length ? Math.max(...others.map((o) => o.y + o.h)) + 24 : 60;
+  n.y = others.length ? maxOf(others, (o) => o.y + o.h) + 24 : 60;
   notes.push(n);
   b.updatedAt = Date.now();
   if (b.id === state.activeBoard) { render(); drawCompass(); }
@@ -1131,7 +1209,7 @@ function maybeDailyNote() {
 
 /* --- quick capture ------------------------------------------------------
    A global hotkey (registered in main.js) shows the window and opens this. It
-   deliberately routes through the renderer rather than writing to board.json
+   deliberately routes through the renderer rather than writing to the store
    from the main process: the renderer holds `state` in memory, and a second
    writer would race the debounced save and lose whichever side wrote last. */
 function openCapture() {
@@ -1193,30 +1271,38 @@ function paletteCommands() {
   ];
 }
 
-function scoreHit(hay, q) {
-  const s = hay.toLowerCase();
+/* **Both arguments are already folded.** Folding here instead would mean
+   re-folding every note's text on every keystroke, which is the work
+   noteTextFolded()'s cache exists to avoid — so the contract is that callers
+   hand over comparison keys, not raw text. See foldSearch() in §1. */
+function scoreHit(s, q) {
   if (s === q) return 0;
   if (s.startsWith(q)) return 1;
-  // a word inside it starting with the query beats the same letters mid-word
+  /* A word inside it starting with the query beats the same letters mid-word.
+     `\b` is ASCII-only in JavaScript, so between two Arabic letters there is no
+     boundary and this rung never fires for Arabic — the includes() below still
+     matches, the hit just sorts one place lower. Correct enough, and the fix
+     would be a lookbehind that Chromium supports and nothing else needs. */
   if (new RegExp('\\b' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(s)) return 2;
   return s.includes(q) ? 3 : -1;
 }
 
 function paletteItems(raw) {
-  const q = raw.trim().toLowerCase();
+  const q = foldSearch(raw.trim());
   const out = [];
   syncActiveBoard();
 
   state.boards.forEach((b) => {
     if (b.archived && !state.settings.showArchived) return;
     const label = boardLabel(b);
-    const sc = q ? scoreHit(label, q) : 2;
+    const sc = q ? scoreHit(foldSearch(label), q) : 2;
     if (sc >= 0) out.push({ kind: 'board', ic: isLocked(b) ? 'lock' : (b.icon || 'sticky_note_2'), label, sub: t('pal.board'), score: sc, board: b });
     if (isLocked(b)) return;                       // nothing readable inside
     b.notes.forEach((n) => {
       const text = noteText(n);
       if (!text) return;
-      const sc2 = q ? scoreHit(text, q) : -1;
+      // the folded copy is already cached beside the text, so this is a lookup
+      const sc2 = q ? scoreHit(noteTextFolded(n), q) : -1;
       if (sc2 < 0) return;
       out.push({
         kind: 'note', ic: n.icon || 'sticky_note_2',
@@ -1228,7 +1314,7 @@ function paletteItems(raw) {
   });
 
   paletteCommands().forEach((c) => {
-    const sc = q ? scoreHit(c.label, q) : 1.5;
+    const sc = q ? scoreHit(foldSearch(c.label), q) : 1.5;
     if (sc >= 0) out.push(Object.assign({ sub: t('pal.command'), score: sc + 0.2 }, c));
   });
 

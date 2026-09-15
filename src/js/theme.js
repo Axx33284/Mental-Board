@@ -1,7 +1,7 @@
 /* Mental Board — theme.js
    What the app looks like: themes, the clock, the custom palette, and applySettings().
 
-   Part 3 of 15. These files are plain scripts sharing one global
+   Part 3 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -145,6 +145,36 @@ function pickTheme(id) {
 /* Repaint every string in the app for the current language. Called once at
    boot and again whenever the picker changes — nothing here reloads the page,
    so an in-progress edit survives a language switch. */
+/* The strings main needs, resolved through t() and handed over.
+
+   Main owns the tray, the "still running" notification and every native file
+   dialog, and it has no catalogue — so it would show English whatever the
+   window was set to, and check-lang could not see the literals to complain.
+   The renderer has the catalogue, so the renderer supplies them.
+
+   The key list lives here rather than in main because these are `t()` calls and
+   check-lang reads t() call sites: written out literally, every one of them is
+   checked like any other string in the app. Main keeps the same list as its
+   English fallback for the moment before this arrives — the tray is built in
+   whenReady(), which is earlier than any of this. */
+const MAIN_KEYS = [
+  'main.trayOpen', 'main.trayCapture', 'main.trayQuit',
+  'main.stillRunningTitle', 'main.stillRunningBody',
+  'main.exportBoard', 'main.importBoard', 'main.exportImage',
+  'main.backupFolder', 'main.insertImage',
+  'main.filterJson', 'main.filterPng', 'main.filterImages',
+  'main.crashTitle', 'main.crashBody', 'main.crashOk'
+];
+function sendMainStrings() {
+  if (!WIN || !WIN.setStrings) return;
+  const out = {};
+  /* `{key}` in main.trayCapture is filled in *there*, from the accelerator main
+     owns — so it is passed through unresolved on purpose. t() leaves a
+     placeholder it has no variable for exactly as it found it. */
+  MAIN_KEYS.forEach((k) => { out[k] = t(k); });
+  try { WIN.setStrings(out); } catch (_) {}
+}
+
 function applyLang() {
   /* render() below throws away every note element and builds them again. If a
      note is open for editing, `editing` would be left pointing at a detached
@@ -166,8 +196,11 @@ function applyLang() {
   render();                 // note/frame chrome carries translated titles
   applyView();              // the zoom readout uses the language's digits
   drawCompass();
+  markStatsStale();         // both figures in the Board tab are translated strings
   syncSettingsUI();
   renderTemplateList();     // the empty-state hint is a translated string
+  if ($('setDesc')) $('setDesc').dataset.empty = t('set.descEmpty');
+  sendMainStrings();        // the tray and the file dialogs follow the window
 
   if (wasEditing) {
     const n = state.notes.find((x) => x.id === wasEditing);
@@ -187,6 +220,7 @@ function applyLang() {
    `lite` wrongly makes a good machine look flatter than it should for no
    reason; guessing `full` wrongly costs a user who can flip one switch. */
 let autoPerf = null;
+let noGpu = false;       // Chromium is drawing this window in software
 function detectPerf() {
   if (autoPerf) return autoPerf;
   let lite = false;
@@ -195,6 +229,14 @@ function detectPerf() {
     const cpu = navigator.hardwareConcurrency;
     if (typeof mem === 'number' && mem > 0 && mem <= 4) lite = true;
     if (typeof cpu === 'number' && cpu > 0 && cpu <= 2) lite = true;
+  } catch (_) {}
+  /* No usable graphics driver is the strongest signal of all: without a GPU
+     every blurred shadow, every backdrop filter and every animated transform
+     is rasterised on the CPU, and that — not the JavaScript — is what makes
+     the app feel like mud on such a machine. Main asks Chromium once. */
+  try {
+    const info = SYS && SYS.info ? SYS.info() : null;
+    if (info && info.software) { lite = true; noGpu = true; }
   } catch (_) {}
   autoPerf = lite ? 'lite' : 'full';
   return autoPerf;
@@ -213,11 +255,25 @@ function applySettings() {
   document.body.dataset.perf = resolvedPerf();
   // main decides what the close button does, and this is the only thing telling it
   if (WIN && WIN.setBackground) WIN.setBackground(s.background);
+  sendMainStrings();
   document.body.dataset.grid = s.grid;
   document.documentElement.style.setProperty('--grid-fade', (s.gridFade / 100).toFixed(2));
   document.body.dataset.shape = s.noteShape;
   document.body.dataset.density = s.noteDensity;
+  document.body.dataset.notefont = s.noteFont;   // applyBoardLook() below lets the board override it
+  document.body.dataset.noteshadow = s.noteShadow;
+  /* 'auto' deliberately writes *nothing*. The stylesheet already answers it
+     with an ordinary `@media (prefers-reduced-motion: reduce)` block, which is
+     the operating system's own answer — resolving it here instead would mean
+     re-resolving it whenever Windows changed its mind, and this attribute is
+     only read at paint time. So: an explicit choice overrides the media query,
+     and no choice leaves the media query to it. */
+  if (s.motion === 'auto') delete document.body.dataset.motion;
+  else document.body.dataset.motion = s.motion;
   document.body.classList.toggle('no-note-chrome', !s.noteChrome);
+  /* The canvas on its own. A class rather than an attribute because it is a
+     mode, not a value, and because every rule it drives is a `display: none`. */
+  document.body.classList.toggle('focus-mode', !!s.focusMode);
   document.documentElement.style.setProperty('--fs', (s.fontScale / 100).toFixed(2));
   document.querySelectorAll('.note-body').forEach((b) => b.spellcheck = !!s.spell);
   applyTheme();
@@ -227,4 +283,5 @@ function applySettings() {
   renderBoardRail();
   applyView();
   drawCompass();
+  applyBoardLook();
 }

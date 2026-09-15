@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- lang/dir are placeholders: setLang() in js/helpers.js rewrites both on boot
      and again whenever the language picker changes. -->
-<html lang="en" dir="ltr" data-theme="dark">
+<html lang="en" dir="ltr" data-theme="mental" data-mode="dark">
 <head>
 <meta charset="utf-8">
 <!-- This page never loads anything from the internet. No remote scripts, no
@@ -15,7 +15,7 @@
      Nothing is contacted until the play button on a card is pressed. See
      js/embeds.js and the player server in main.js. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob: file:; media-src 'self' data: blob: file:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; frame-src http://127.0.0.1:*">
+      content="default-src 'self'; img-src 'self' data: blob: file: mbf:; media-src 'self' data: blob: file: mbf:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; frame-src http://127.0.0.1:*">
 <title>Mental Board</title>
 <link rel="stylesheet" href="assets/fonts.css">
 <!-- styles.css was one append-only file; these are its slices, and **the order
@@ -31,6 +31,7 @@
 <link rel="stylesheet" href="css/lang.css">
 <link rel="stylesheet" href="css/boards.css">
 <link rel="stylesheet" href="css/later.css">
+<link rel="stylesheet" href="css/mental.css">
 </head>
 <body>
 
@@ -76,11 +77,21 @@
          pattern can be faded without touching the page colour and so a style
          made of several layers can carry several background-sizes. paintGrid()
          in js/view.js writes all of them; nothing here is styled per theme. -->
+    <!-- A board's own background picture, if it chose one — see page.js. Under
+         the paper and fixed to the viewport, so panning costs nothing: it is
+         one composited layer that never repaints. -->
+    <div id="bgImage" class="hidden" aria-hidden="true"></div>
     <div id="grid" aria-hidden="true"></div>
     <div id="world">
       <div id="framesLayer"></div>
       <svg id="linksSvg" xmlns="http://www.w3.org/2000/svg"><g id="linksInner"></g></svg>
       <div id="notesLayer"></div>
+      <!-- Alignment guides, drawn while something is dragged. Above the notes
+           rather than below them, because a line hidden behind the note it is
+           lining up is a line nobody can use. Its own <svg> and not a second <g>
+           in #linksSvg: resetLinks() empties that one on every render, and
+           these outlive it. See the guide engine in js/items.js. -->
+      <svg id="guidesSvg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
     </div>
     <div id="marquee" class="hidden"></div>
     <svg id="linkGhost" class="hidden" xmlns="http://www.w3.org/2000/svg"><path id="linkGhostPath"/></svg>
@@ -88,6 +99,14 @@
 
   <!-- off-screen workflow signposts live here -->
   <div id="compass" aria-live="polite" dir="ltr"></div>
+
+  <!-- ───────────────────────── the page menu ─────────────────────────
+       The board's name at the top right, and behind it everything about
+       *this* board: its font, its text size, its background, copy, duplicate,
+       move to a group, trash, import, export. Filled by openPageMenu() in
+       js/page.js; the button by paintPageBtn(). -->
+  <button id="pageBtn" class="pg-btn" data-t-title="page.menu" data-t-aria="page.menu"></button>
+  <div id="pageMenu" class="hidden" role="menu"></div>
 
   <!-- Empty-board hint. It is also the onboarding: rather than telling a new
        user what the app can do, it hands them a filled-in board to poke at.
@@ -226,11 +245,24 @@
   <div class="sheet set-sheet" role="dialog" data-t-aria="set.title">
     <header class="sheet-head">
       <h2 data-t="set.title"></h2>
+      <!-- Forty-odd controls behind nine tabs means knowing which tab a thing
+           is in, and nobody learns that for a panel they open twice a month.
+           Typing here shows every matching row from every pane at once, with
+           its heading above it so you can still see where it lives. Clicking
+           a tab clears it — see filterSettings() in js/settings.js. -->
+      <div class="set-find">
+        <span class="sf-ic"></span>
+        <input type="text" id="setSearch" data-t-ph="set.search" data-t-aria="set.search" spellcheck="false">
+        <button class="sf-x" id="setSearchClear" data-t-title="set.searchClear"></button>
+      </div>
       <button class="sheet-x" id="settingsClose" data-t-aria="tb.close"></button>
     </header>
 
-    <div class="set-shell">
-      <nav class="set-nav" id="setNav" role="tablist">
+    <!-- The tabs run across the top and the panes sit under them, with the
+         description of whatever row the pointer is on in a column to the
+         side — the shape of an options screen. Every pane stays in the DOM;
+         switching only toggles a class. -->
+    <nav class="set-nav" id="setNav" role="tablist">
         <button class="set-tab on" data-tab="appearance" role="tab"><span class="tab-ic"></span><span data-t="set.appearance"></span></button>
         <button class="set-tab" data-tab="canvas" role="tab"><span class="tab-ic"></span><span data-t="set.canvas"></span></button>
         <button class="set-tab" data-tab="notes" role="tab"><span class="tab-ic"></span><span data-t="set.notes"></span></button>
@@ -240,9 +272,14 @@
         <button class="set-tab" data-tab="habits" role="tab"><span class="tab-ic"></span><span data-t="set.habits"></span></button>
         <button class="set-tab" data-tab="board" role="tab"><span class="tab-ic"></span><span data-t="set.board"></span></button>
         <button class="set-tab" data-tab="shortcuts" role="tab"><span class="tab-ic"></span><span data-t="set.shortcuts"></span></button>
-      </nav>
+    </nav>
 
+    <div class="set-shell">
       <div class="sheet-body set-panes" id="setPanes">
+
+        <!-- Only ever shown while the search box has something in it and every
+             pane came back empty. Filled by filterSettings(). -->
+        <p class="set-none hidden" id="setNoMatch"></p>
 
         <section class="set-sec" data-pane="appearance">
           <h3><span class="sec-ic"></span><span data-t="set.appearance"></span></h3>
@@ -329,6 +366,22 @@
             <label><span class="row-ic"></span><span data-t="set.textSize"></span> <span class="set-val" id="fontScaleVal">100%</span></label>
             <input type="range" id="fontScale" min="85" max="130" step="5" data-t-aria="set.textSize">
           </div>
+
+          <!-- Whether the app moves. "Match Windows" is the default and is the
+               only one of the three that can be right without being told:
+               the stylesheet answers it with prefers-reduced-motion, which is
+               the operating system switch itself. The other two override that
+               in either direction, because an app that moves is not the same
+               question as a desktop that moves. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.motion"></span></label>
+            <div class="seg" id="motionSeg">
+              <button data-motion="auto" data-t="set.motionAuto"></button>
+              <button data-motion="full" data-t="set.motionFull"></button>
+              <button data-motion="reduced" data-t="set.motionReduced"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.motionHint"></p>
         </section>
 
         <section class="set-sec" data-pane="canvas">
@@ -357,6 +410,14 @@
               <button data-wheel="pan" data-t="set.pans"></button>
             </div>
           </div>
+          <!-- How far one notch of the wheel goes. A trackpad and a mouse send
+               very different deltas for the same intention and there is no way
+               to tell them apart from in here, so this is the control that
+               makes either one comfortable. -->
+          <div class="set-row sub">
+            <label><span class="row-ic"></span><span data-t="set.zoomSpeed"></span> <span class="set-val" id="zoomSpeedVal">100%</span></label>
+            <input type="range" id="zoomSpeed" min="40" max="220" step="10" data-t-aria="set.zoomSpeed">
+          </div>
           <!-- How much the canvas is allowed to spend on looking good. See
                resolvedPerf() in js/theme.js and body[data-perf] in later.css. -->
           <div class="set-row">
@@ -368,6 +429,13 @@
             </div>
           </div>
           <p class="set-note dim sub" id="perfHint"></p>
+          <!-- Draw without the GPU at all. For the machine whose graphics
+               driver makes Chromium worse than no driver; read by main before
+               the window exists, so it takes a restart. -->
+          <label class="set-check sub"><input type="checkbox" id="setSoftware"><span class="row-ic"></span><span data-t="set.software"></span></label>
+          <p class="set-note dim sub" data-t="set.softwareHint"></p>
+          <label class="set-check"><input type="checkbox" id="setGuides"><span class="row-ic"></span><span data-t="set.guides"></span></label>
+          <p class="set-note dim sub" data-t="set.guidesHint"></p>
           <label class="set-check"><input type="checkbox" id="setSnap"><span class="row-ic"></span><span data-t="set.snap"></span></label>
           <label class="set-check"><input type="checkbox" id="setCompass"><span class="row-ic"></span><span data-t="set.compass"></span></label>
           <label class="set-check"><input type="checkbox" id="setSpell"><span class="row-ic"></span><span data-t="set.spell"></span></label>
@@ -380,6 +448,12 @@
             </div>
           </div>
           <label class="set-check"><input type="checkbox" id="setShowArchived"><span class="row-ic"></span><span data-t="set.showArchived"></span></label>
+
+          <!-- The canvas and nothing else on top of it. Here as well as on a key
+               because a mode you can only leave with a shortcut nobody told you
+               about is a trap; the hint under it names the key. -->
+          <label class="set-check"><input type="checkbox" id="setFocusMode"><span class="row-ic"></span><span data-t="set.focusMode"></span></label>
+          <p class="set-note dim sub" data-t="set.focusModeHint"></p>
         </section>
 
         <!-- How a note looks. Presentation only — nothing here moves or resizes
@@ -402,8 +476,55 @@
               <button data-density="roomy" data-t="set.densityRoomy"></button>
             </div>
           </div>
+          <!-- What the writing is set in. The interface keeps its own face
+               whatever this says: this is about the notes, not the app. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.noteFont"></span></label>
+            <div class="seg wrap" id="fontSeg">
+              <button data-font="system" data-t="set.fontSystem"></button>
+              <button data-font="serif" data-t="set.fontSerif"></button>
+              <button data-font="wide" data-t="set.fontWide"></button>
+              <button data-font="mono" data-t="set.fontMono"></button>
+              <button data-font="rounded" data-t="set.fontRounded"></button>
+              <button data-font="narrow" data-t="set.fontNarrow"></button>
+              <button data-font="hand" data-t="set.fontHand"></button>
+            </div>
+          </div>
+          <!-- Set in the face it names, so the row is its own preview -->
+          <p class="set-note dim sub" id="fontEg" data-t="set.fontEg"></p>
+
+          <!-- How far a note sits off the paper. Flat is a hairline and not
+               nothing: a note with neither a shadow nor an edge stops being an
+               object on a surface and becomes a patch of the surface. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.noteShadow"></span></label>
+            <div class="seg" id="shadowSeg">
+              <button data-shadow="flat" data-t="set.shadowFlat"></button>
+              <button data-shadow="soft" data-t="set.shadowSoft"></button>
+              <button data-shadow="lift" data-t="set.shadowLift"></button>
+            </div>
+          </div>
+
           <label class="set-check"><input type="checkbox" id="setNoteChrome"><span class="row-ic"></span><span data-t="set.noteChrome"></span></label>
           <p class="set-note" data-t="set.noteChromeHint"></p>
+
+          <!-- What a NEW note starts as. Nothing here touches a note that
+               already exists, which is what makes it safe to change freely. -->
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.newNote"></span></h3>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.newNoteColor"></span></label>
+            <div class="swatches" id="noteColorSwatches"></div>
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.newNoteW"></span> <span class="set-val" id="noteWVal">280</span></label>
+            <input type="range" id="noteW" min="160" max="720" step="10" data-t-aria="set.newNoteW">
+          </div>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.newNoteH"></span> <span class="set-val" id="noteHVal">190</span></label>
+            <input type="range" id="noteH" min="100" max="720" step="10" data-t-aria="set.newNoteH">
+          </div>
+          <label class="set-check"><input type="checkbox" id="setConfirmDelete"><span class="row-ic"></span><span data-t="set.confirmDelete"></span></label>
+          <p class="set-note dim sub" data-t="set.confirmDeleteHint"></p>
         </section>
 
         <!-- The ropes between notes, and what a pasted link turns into. Both are
@@ -491,7 +612,9 @@
           <p class="set-note dim" id="setSafety"></p>
 
           <!-- A copy somewhere that is not this disk. Everything above protects
-               a board from you; this protects it from the drive. -->
+               a board from you; this protects it from the drive. Two rows:
+               the mirror that runs by itself, and a full dated copy on demand. -->
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.backupHead"></span></h3>
           <div class="set-row">
             <label><span class="row-ic"></span><span data-t="set.backup"></span></label>
             <div class="set-btns end">
@@ -500,18 +623,35 @@
             </div>
           </div>
           <p class="set-note dim sub" id="backupWhere"></p>
+          <p class="set-note dim sub" data-t="set.backupHint"></p>
           <label class="set-check sub"><input type="checkbox" id="setBackupAuto"><span class="row-ic"></span><span data-t="set.backupAuto"></span></label>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.backupAll"></span></label>
+            <div class="set-btns end">
+              <button class="btn small" id="btnBackupAll"><span class="b-ic"></span><span data-t="set.backupAllNow"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.backupAllHint"></p>
 
           <!-- The files boards carry, and the one thing that clears the ones
                nothing points at any more. Here rather than on a board's own
                menu because it is a decision about the folder on disk, which is
                what this whole tab is about. -->
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.filesHead"></span></h3>
           <div class="set-row">
             <label><span class="row-ic"></span><span data-t="set.files"></span> <span class="set-val" id="filesCount"></span></label>
             <div class="set-btns end">
               <button class="btn small" id="btnCleanFiles"><span class="b-ic"></span><span data-t="set.cleanFiles"></span></button>
             </div>
           </div>
+          <p class="set-note dim sub" data-t="set.cleanHint"></p>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.import"></span></label>
+            <div class="set-btns end">
+              <button class="btn small" id="btnImport"><span class="b-ic"></span><span data-t="set.importNow"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.importHint"></p>
 
           <!-- What a picture of the board is drawn in. Separate from the theme
                you work in, because a picture is for somewhere else. -->
@@ -520,13 +660,38 @@
             <span class="sel-wrap"><select id="setExportTheme" class="sel"></select><span class="sel-chev"></span></span>
           </div>
 
-          <div class="set-btns">
-            <button class="btn" id="btnExport"><span class="b-ic"></span><span data-t="set.export"></span></button>
-            <button class="btn" id="btnImport"><span class="b-ic"></span><span data-t="set.import"></span></button>
-            <button class="btn" id="btnImportBoard"><span class="b-ic"></span><span data-t="set.importBoard"></span></button>
-            <button class="btn" id="btnExportImage"><span class="b-ic"></span><span data-t="set.exportImage"></span></button>
-            <button class="btn danger" id="btnWipe"><span class="b-ic"></span><span data-t="set.wipe"></span></button>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.exportImage"></span></label>
+            <div class="set-btns end">
+              <button class="btn small" id="btnExportImage"><span class="b-ic"></span><span data-t="set.exportImageNow"></span></button>
+            </div>
           </div>
+
+          <!-- Three ways back, from the mildest to the one that empties the
+               folder. Settings only; this board only; everything. The last one
+               goes to the Recycle Bin, and the confirm says how much. -->
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.startAgain"></span></h3>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.resetSettings"></span></label>
+            <div class="set-btns end">
+              <button class="btn small" id="btnResetSettings"><span class="b-ic"></span><span data-t="set.resetNow"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.resetHint"></p>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.wipeRow"></span></label>
+            <div class="set-btns end">
+              <button class="btn small danger" id="btnWipe"><span class="b-ic"></span><span data-t="set.wipe"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.wipeHint"></p>
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.eraseAll"></span></label>
+            <div class="set-btns end">
+              <button class="btn small danger" id="btnEraseAll"><span class="b-ic"></span><span data-t="set.eraseAllNow"></span></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.eraseAllHint"></p>
           <!-- no dir here: the label is translated, only the number is Latin and
                bidi already places that correctly -->
           <p class="set-note dim" id="setVersion"></p>
@@ -550,6 +715,11 @@
         </section>
 
       </div>
+      <!-- The column beside the panes. Every hint that used to sit under its
+           control shows here instead, for the row the pointer (or focus) is
+           on — the way an options screen explains the highlighted option.
+           Filled by wireSettingsDesc() in js/settings.js. -->
+      <aside class="set-desc" id="setDesc"></aside>
     </div>
   </div>
 </div>
@@ -582,6 +752,7 @@
   <span class="sb-sep"></span>
   <button data-img="studio" data-t-title="img.studio"></button>
   <button data-img="full" data-t-title="img.full"></button>
+  <button data-img="out" data-t-title="img.out"></button>
   <button data-img="delete" data-t-title="img.delete"></button>
 </div>
 
@@ -626,6 +797,22 @@
   <div class="sheet small" role="dialog" data-t-aria="bp.title">
     <header class="sheet-head"><h2 data-t="bp.title"></h2><button class="sheet-x" id="bpClose" data-t-aria="tb.close"></button></header>
     <div class="sheet-body"><div id="bpList" class="bp-list"></div></div>
+  </div>
+</div>
+
+<!-- ───────────────────────── move to a group ─────────────────────────
+     A group is a heading in the rail and a sub-folder of My Boards. -->
+<div id="moveDlg" class="overlay hidden">
+  <div class="sheet small" role="dialog" data-t-aria="page.moveTo">
+    <header class="sheet-head"><h2 data-t="page.moveTo"></h2><button class="sheet-x" id="moveClose" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <div id="moveList" class="mv-list"></div>
+      <div class="mv-new">
+        <input type="text" id="moveNew" data-t-ph="page.newGroupPh" dir="auto" spellcheck="false" maxlength="40">
+        <button class="btn primary" id="moveNewOk"><span class="b-ic"></span><span data-t="page.newGroup"></span></button>
+      </div>
+      <p class="set-note dim" data-t="page.moveHint"></p>
+    </div>
   </div>
 </div>
 
@@ -807,10 +994,12 @@
 <script src="js/embeds.js"></script>
 <script src="js/toolbars.js"></script>
 <script src="js/media.js"></script>
+<script src="js/pictures.js"></script>
 <script src="js/menus.js"></script>
 <script src="js/edit-ops.js"></script>
 <script src="js/boards.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/page.js"></script>
 <script src="js/init.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 /* Mental Board — edit-ops.js
    Create, delete, arrange, duplicate, the trash, undo, the clipboard, find, and the image export.
 
-   Part 12 of 15. These files are plain scripts sharing one global
+   Part 13 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -14,18 +14,24 @@ function addNote(worldPt, opts) {
   pushUndo();
   const o = opts || {};
   const c = worldPt || viewCenterWorld();
-  const w = Math.max(NOTE_MIN_W, +o.w || 280);
-  const h = Math.max(NOTE_MIN_H, +o.h || 190);
+  /* The caller's size wins, then the user's default, then the app's. A template
+     knows how big it needs to be — a seven-row table in a 280px note is a
+     scrollbar, not a table — so `opts` is never overruled here. */
+  const s = state.settings;
+  const w = Math.max(o.pic ? PIC_MIN : NOTE_MIN_W, +o.w || +s.noteW || 280);
+  const h = Math.max(o.pic ? PIC_MIN : NOTE_MIN_H, +o.h || +s.noteH || 190);
   const n = {
     id: uid(),
     x: Math.round(c.x - w / 2), y: Math.round(c.y - h / 2),
     w, h,
     body: o.body || '',
-    color: COLORS.includes(o.color) ? o.color : 'default',
+    color: COLORS.includes(o.color) ? o.color : (COLORS.includes(s.noteColor) ? s.noteColor : 'default'),
     icon: okIcon(o.icon), iconColor: 'auto',
     z: ++state.nextZ,
     remindAt: 0, reminded: false, repeat: '', hist: []
   };
+  // a picture on its own — see pictures.js
+  if (o.pic) { n.pic = true; n.ar = +o.ar > 0 ? +o.ar : w / h; }
   state.notes.push(n);
   const el = makeNote(n);
   $('notesLayer').appendChild(el);
@@ -33,7 +39,7 @@ function addNote(worldPt, opts) {
   updateCulling();
   updateEmpty(); refreshFrameCounts(); save();
   setSelection([n.id], false);
-  if (!opts || opts.edit !== false) setTimeout(() => enterEdit(n), 20);
+  if (!n.pic && (!opts || opts.edit !== false)) setTimeout(() => enterEdit(n), 20);
   return n;
 }
 
@@ -53,6 +59,7 @@ function addFrame(worldPt) {
   const el = makeFrame(f);
   $('framesLayer').appendChild(el);
   els.set(f.id, el);
+  updateCulling();          // this frame may be the one that crosses the threshold
   updateEmpty(); refreshFrameCounts(); save();
   setSelection([f.id], false);
   setTimeout(() => renameFrame(f.id), 30);
@@ -101,7 +108,6 @@ function groupSelection() {
    - **It anchors at the selection's own top-left**, so the block stays where
      it was rather than jumping to the middle of the screen. */
 const ARRANGE_GAP = 26;
-const ARRANGE_MODES = ['grid', 'row', 'column'];
 function arrangeSelection(mode) {
   if (!canEditHere()) return;
   const items = selectedItems().filter((it) => !isFrame(it.id));
@@ -113,8 +119,8 @@ function arrangeSelection(mode) {
     (Math.abs(a.y - b.y) > rowBand ? a.y - b.y : a.x - b.x));
 
   const b = bboxOf(ordered);
-  const cw = Math.max(...ordered.map((n) => n.w));
-  const ch = Math.max(...ordered.map((n) => n.h));
+  const cw = maxOf(ordered, (n) => n.w);
+  const ch = maxOf(ordered, (n) => n.h);
   const cols = mode === 'row' ? ordered.length
              : mode === 'column' ? 1
              : Math.max(1, Math.round(Math.sqrt(ordered.length)));
@@ -169,6 +175,35 @@ function trashSpot(tb, i) {
   return { x: (n % per) * 300, y: Math.floor(n / per) * 230 };
 }
 
+/* Delete, with the question in front of it if the user asked for one.
+
+   Every visible way to remove something — the key, the note's own close button,
+   the right-click menu — comes through here, so the setting is honoured
+   everywhere or nowhere rather than in two places out of three.
+
+   `pushUndo()` moved inside. It used to sit at each of the three call sites,
+   which meant adding an `await` in front of any of them would have pushed the
+   step *before* a dialog the user might cancel — an undo step for a delete that
+   never happened, and one press of Ctrl+Z that appears to do nothing.
+
+   Off by default, and it should stay off by default: deleting already goes to
+   the bin and Ctrl+Z already puts it back, so the ordinary case has two ways
+   out and does not need a third. Inside the bin it is a different question —
+   that delete is final — but emptyTrash() has always asked on its own account
+   and still does. */
+async function askThenDelete(ids) {
+  if (!ids || !ids.length) return;
+  if (state.settings.confirmDelete) {
+    const ok = await confirmDlg(
+      t('confirm.delItemsTitle', { n: ids.length }),
+      t(onTrashBoard() ? 'confirm.delItemsFinal' : 'confirm.delItemsBody'),
+      t('confirm.delItemsOk'));
+    if (!ok) return;
+  }
+  pushUndo();
+  deleteItems(ids);
+}
+
 function deleteItems(ids) {
   if (editing && ids.includes(editNote?.id)) { editing = null; editNote = null; }
   const set = new Set(ids);
@@ -186,8 +221,9 @@ function deleteItems(ids) {
     going.forEach((it, i) => {
       const copy = JSON.parse(JSON.stringify(it));
       /* Where it came from and when. `from` is what Put back reads; the board
-         may be gone by then, which is why putBack falls back to the board you
-         are standing on rather than refusing. */
+         may be gone, archived or locked by then, which is why putBack() has a
+         fallback — the first live, unlocked board, never the one in front of
+         you. See the note there for why that distinction is not cosmetic. */
       copy.trashedFrom = here ? here.id : '';
       copy.trashedAt = Date.now();
       const at = trashSpot(tb, i);
@@ -275,6 +311,21 @@ function putBack(ids) {
   moved.forEach((id) => { els.get(id)?.remove(); els.delete(id); selection.delete(id); });
   render(); drawCompass(); renderBoardRail(); save();
   toast(elsewhere ? t('msg.putBackBoards', { n: going.length }) : t('msg.putBack', { n: going.length }));
+  /* The pictures follow. A note that came out of a deleted board points at
+     the bin's copies; one going to a board that is not its own points at its
+     old board's. Either way the file is copied into the board it now sits on
+     and the note re-addressed, once the copy lands. */
+  const byBoard = new Map();
+  going.forEach((it) => {
+    if (isFrame(it.id)) return;
+    const target = homeOf(it);
+    if (!target) return;
+    if (!byBoard.has(target.id)) byBoard.set(target.id, []);
+    byBoard.get(target.id).push(it);
+  });
+  byBoard.forEach((notes, boardId) => {
+    carryNotesTo(notes, boardId).then((n) => { if (n) { if (boardId === state.activeBoard) render(); saveSoon(); } });
+  });
 }
 
 /* The only irreversible delete in the app, and the only one that asks. */
@@ -287,6 +338,7 @@ async function emptyTrash() {
   pushUndo();
   tb.notes = []; tb.frames = []; tb.links = []; tb.nextZ = 1;
   if (state.activeBoard === tb.id) { bindBoard(tb); clearSelection(); }
+  markStatsStale();
   render(); drawCompass(); renderBoardRail(); save();
   toast(t('msg.trashEmptied', { n }));
 }
@@ -311,7 +363,13 @@ function duplicate(ids) {
     }
     made.push(copy.id);
   });
-  refreshFrameCounts(); save();
+  /* Duplicating a selection can add dozens of items at once, so it is at least
+     as likely as addNote() to be the call that carries the board over the
+     culling threshold. Without this the items that should now be unmounted sit
+     in the document until the next pan. Same for updateEmpty() and the compass:
+     the board just changed shape. */
+  updateCulling();
+  refreshFrameCounts(); updateEmpty(); drawCompass(); save();
   setSelection(made, false);
 }
 
@@ -352,34 +410,15 @@ const PASTED_IMG_MAX = 620;
    everything else instead of being inlined as a six-megabyte data URL in the
    board file — which is what this used to do, and what made every keystroke
    re-serialise those six megabytes. */
+/* A picture dropped or pasted onto the canvas becomes a picture standing on
+   the board — not a note with a picture in it. Drag it onto a note to put it
+   inside one. See pictures.js. */
 async function noteFromImage(file, worldPt, taken) {
   if (!canEditHere()) return null;
   if (!file) return null;
   const got = taken || await takeFileIn(file);
   if (!got) return null;
-
-  /* Measure first, then make the note. Creating it at a default size and
-     resizing after the image decodes makes it jump, and a note that resizes
-     itself a beat after it appears reads as a glitch rather than as fitting. */
-  const size = await new Promise((res) => {
-    const probe = new Image();
-    probe.onload = () => {
-      const scale = Math.min(1, PASTED_IMG_MAX / Math.max(probe.width, 1));
-      res({
-        w: Math.max(NOTE_MIN_W, Math.round(probe.width * scale) + 34),
-        h: Math.min(Math.max(NOTE_MIN_H, Math.round(probe.height * scale) + 54), 900)
-      });
-    };
-    probe.onerror = () => res({ w: 320, h: 260 });     // not a picture we can measure
-    probe.src = got.url;
-  });
-
-  const n = addNote(worldPt, {
-    body: `<img class="mb-img" src="${esc(got.url)}"><p><br></p>`,
-    w: size.w, h: size.h, edit: false
-  });
-  if (n) toast(t('msg.imagePasted'));
-  return n;
+  return addPicture(worldPt, got);
 }
 
 /* The clipboard, whatever is on it. An image wins over the internal clipboard
@@ -652,16 +691,12 @@ function exportBlocks(html, max) {
   return out;
 }
 
-function roundRectPath(ctx, x, y, w, h, r) {
-  const k = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + k, y);
-  ctx.arcTo(x + w, y, x + w, y + h, k);
-  ctx.arcTo(x + w, y + h, x, y + h, k);
-  ctx.arcTo(x, y + h, x, y, k);
-  ctx.arcTo(x, y, x + w, y, k);
-  ctx.closePath();
-}
+/* roundRectPath() lives in media.js, which draws the other canvas in this app.
+   It used to be declared here as well, with an identical body — and these files
+   share one global scope, so the second declaration silently replaced the
+   first. Two copies of a function nobody could tell apart is only harmless
+   while they stay identical: fix a bug in the one you happen to be reading and
+   nothing changes, because the other one is the one that runs. One copy. */
 
 /* Draw one board onto a fresh canvas and hand back the element. Kept separate
    from the save so it can be called for a preview, or for a board that is not
@@ -721,6 +756,27 @@ function paintBoardCanvas(board, scale) {
 
   // and the notes on top, in z order so overlaps come out the same way
   notes.slice().sort((n1, n2) => (n1.z || 0) - (n2.z || 0)).forEach((n) => {
+    /* A picture on the board. The picture itself cannot be drawn — an image
+       from the board's own folder would taint the canvas and the export would
+       refuse to save — so its place is: a box in the paper's colour with a
+       frame, where the picture sits, at its size. */
+    if (n.pic) {
+      ctx.save();
+      ctx.fillStyle = pal.surface2 || pal.noteBg('default');
+      ctx.fillRect(n.x, n.y, n.w, n.h);
+      ctx.strokeStyle = pal.line; ctx.lineWidth = 1.5;
+      ctx.strokeRect(n.x + .75, n.y + .75, n.w - 1.5, n.h - 1.5);
+      if (ICONS.image) {
+        ctx.fillStyle = pal.dim;
+        const k = Math.min(48, n.w * .3, n.h * .3);
+        ctx.translate(n.x + n.w / 2 - k / 2, n.y + n.h / 2 - k / 2);
+        ctx.scale(k / 960, k / 960);
+        ctx.translate(0, 960);
+        try { ctx.fill(new Path2D(ICONS.image)); } catch (_) {}
+      }
+      ctx.restore();
+      return;
+    }
     ctx.save();
     ctx.fillStyle = pal.noteBg(n.color);
     roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.fill();

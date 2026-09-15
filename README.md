@@ -2,7 +2,16 @@
 
 An infinite canvas for your head. Drop a note anywhere, write in it properly,
 drag it about, rope it to another, and fence groups of them into named
-workflows you can jump between from anywhere on the board.
+workflows you can jump between from anywhere on the board. Drop a picture and
+it stands on the board by itself. Every board is a folder you can find, copy
+and share.
+
+**2.0** is a rework: a new look (the "Mental Board" theme — dark, hairlines,
+a settings panel that explains itself), a page menu at the top right of every
+board, pictures that live on the board and drop into notes, boards kept as
+folders in `Documents\My Boards`, groups, and a lighter touch on a slow
+machine. Your 1.x board is read into the new layout the first time 2.0 starts,
+and the old file is left where it was.
 
 ![the board](src/assets/icon.png)
 
@@ -24,8 +33,8 @@ npm run build
 ```
 
 That writes **`App\Mental Board.exe`**. Double-click it. No installer, no
-shortcut, nothing in Add/Remove Programs, and your board stays in
-`%APPDATA%\Mental Board`.
+shortcut, nothing in Add/Remove Programs, and your boards stay in
+`Documents\My Boards`.
 
 If you want it one click away, make a shortcut to that exe yourself — the build
 never creates, moves or overwrites one, so it stays yours.
@@ -65,6 +74,20 @@ release feed, and that is deliberate.
 > failing silently.
 
 ## What's in it
+
+**The page menu.** The board's name sits at the top right of the canvas; click
+it and everything about *this* board is there. The font its notes are set in
+(seven faces, shown as samples), small text, a background picture with a fit
+and a dimmer, copy everything on the board (`Ctrl+Shift+C`), duplicate, move
+it into a group, move it to the trash, import a board, export this one as a
+folder or as a picture, open its folder, lock, archive. Settings (`Ctrl+,`)
+stays the place for the app; this is the place for the page.
+
+**Pictures on the board.** Drop or paste a picture onto empty canvas and it is
+just the picture — no note around it. Drag it, rope it, group it, resize it
+from any handle and it keeps its shape, double-click it to crop or draw on
+it. Drag it onto a note and it goes inside; the image toolbar's arrow button
+takes it back out.
 
 **Boards.** A small window in the top-left corner holds one row per board — one
 for work, one for the gym, one that is nobody else's business. Click a row to
@@ -246,16 +269,26 @@ one again to hand it back.
 | `Ctrl P` | Jump to any note, board or command |
 | `Ctrl B` | Open the boards window |
 | `Ctrl ,` | Settings |
+| `Ctrl .` | Focus mode — the canvas and nothing else |
 | Arrow keys | Nudge selection (`Shift` for a bigger step) |
 
 ## Settings
 
-Top-left gear. **Language** — English, العربية, or *Match Windows*.
+Top-left gear. The panel is a list of sections on the left and rows on the
+right; point at any row and the line at the foot of the panel explains it.
+**Language** — English, العربية, or *Match Windows*.
 
-**Twelve themes** — Light, Paper, Sand, Mono and Mist on the light side; Dark,
-Dim, Ocean, Midnight (true black), Forest and Plum on the dark side; plus
+**Twenty themes** — **Mental Board** (the default: near-black, bone text, a
+mint accent) and **Mental Board Light**; Light, Paper, Sand, Mono, Mist,
+Meadow, Blossom and Contrast on the light side; Dark, Dim, Ocean, Midnight
+(true black), Forest, Plum, Nordic, Ember and Graphite on the dark side; plus
 **Custom**, where you choose three colours and the app derives the rest so you
 cannot build a palette whose text you cannot read.
+
+Two of them are there for a reason rather than for a colour.
+**Contrast** is the legibility one: heavy hairlines, black on white and a grid
+you can actually see. **Graphite** is Mono's dark twin — no hue anywhere, so a
+board whose notes are colour-coded has nothing competing with them.
 
 **Theme follows** is a three-way choice. *My pick* stays on the one you chose.
 *Windows* swaps with the OS. *Time of day* swaps on your own clock — you set
@@ -267,44 +300,95 @@ with its colours shown beside the name. Any theme can go in either slot — they
 mean *your* day one and *your* night one, so Dim by day and Midnight at 2am is a
 perfectly good answer and the app will not argue with it.
 
-Plus accent colour, canvas background, text size, graphics mode, whether the
-wheel zooms or pans, snap-to-grid, edge signposts and spell-check — and export,
-import, and a link straight to the data folder.
+**Animation** is a three-way choice too. *Match Windows* follows the system's
+own "show animations" switch and is the default; *Reduced* stops this app moving
+even where Windows allows it; *Full* keeps it animated even where Windows does
+not.
 
-## Where your board lives
+**Note text** picks the face your writing is set in — System, Serif, Wide,
+Mono, Rounded, Narrow or Handwritten — without touching the interface, which
+keeps its own face either way. A board can pick its own face in its page menu
+and override this. Code blocks stay monospace whatever you choose. **Shadow** sets how far a note sits
+off the paper: flat, soft or lifted.
+
+**A new note starts as** whatever colour and size you set, so if every note you
+make is a wide amber one you can stop resizing them. Nothing there touches a
+note that already exists.
+
+**Line notes up with their neighbours** puts a dashed guide on screen when the
+note you are dragging is nearly level with another one, and nudges the drag onto
+it — the thing snap-to-grid cannot do, because the note you want to match is
+wherever you put it rather than on the grid. Snap-to-grid wins if you turn both
+on.
+
+**Focus mode** (Ctrl + `.`) hides the board rail, the + button, the zoom bar and
+the edge signposts, and leaves you the canvas. The same key brings them back,
+and the app says so every time it goes on.
+
+There is a **search box** at the top of the settings nav. Type into it and every
+matching row from every tab appears at once, under its own heading — including
+rows whose *explanation* matches rather than their label, which is usually how
+you remember a setting you only half remember. Clicking a tab clears it.
+
+**Graphics** is *Auto*, *Full* or *Light*. Auto asks the machine — memory,
+cores, and whether Windows is drawing without a graphics card — and Light
+drops the shadows and animation while keeping the layout, colours and text.
+For a computer whose graphics driver makes the app flicker there is a
+**draw without the graphics card** switch that takes effect on the next start.
+
+Plus accent colour, canvas background, text size, zoom speed, whether the
+wheel zooms or pans, snap-to-grid, edge signposts, spell-check and whether
+deleting asks first.
+
+**Your boards** is the tab about the folder on disk: where it is, **Back up
+now** (a mirror of everything to a drive you choose, once a day by itself if
+you let it), **Save a full copy…** (a complete dated copy anywhere), clean up
+files nothing points at, import a board, save a picture of the open board —
+and, under *Start again*, reset every setting, erase the open board, or
+**Delete everything…**, which sends the whole `My Boards` folder to the
+Recycle Bin and restarts the app as if newly installed.
+
+## Where your boards live
 
 ```
-C:\Users\<you>\AppData\Roaming\Mental Board\
+C:\Users\<you>\Documents\My Boards\
 ```
 
-Settings shows you that path, with **Open folder** and **Copy path** next to
-it. Four files matter:
+Settings shows you that path, with **Open My Boards** and **Copy path** next
+to it. The layout is the whole idea:
 
 | | |
 |---|---|
-| `board.json` | Your board. This is the file. |
-| `board.bak.json` | The copy from before the last save. |
-| `backups\board-YYYY-MM-DD.json` | One a day, newest 20 kept. |
-| `backups\board-before-1.0.0.json` | Taken once, before a new version first writes anything. |
+| `settings.json` | How the app is set up, and the order of the boards. |
+| `<Board name>\board.json` | One folder per board. This is the board. |
+| `<Board name>\board.bak.json` | The copy from before the last save. |
+| `<Board name>\files\` | Every picture, clip and document the board carries. |
+| `<Group>\<Board name>\` | A board inside a group. |
+| `Trash\` | The bin. |
+| `Backups\<Board name>\2026-09-15.json` | One copy per board per day, newest 14 kept, plus one taken before each new version. |
 
-**Rebuilding never touches this folder.** The app writes to a fixed path that
-does not depend on the version or on what the app is called — so a new build
-opens the same board the old one left. Before a new version writes anything at
-all, it copies your board aside under the old version number.
+**A board's folder is the whole board.** Copy it to a stick, mail it, drop it
+into someone else's `My Boards` — the pictures are in it, and the notes point
+at them by name, never by a path on your disk. *Export this board* in the page
+menu makes that copy for you; *Import a board* takes one back. Delete the
+`My Boards` folder and the app starts as if it had just been installed.
 
-Writes are atomic: a temporary file, then the current board copied to
-`.bak.json`, then a rename over the top. Pulling the plug mid-save cannot leave
-a half-written board. If `board.json` is ever unreadable, the app falls back to
-`board.bak.json` by itself; if neither can be read, it **refuses to save
-anything at all** for that session rather than write over a file you might
-still recover, and tells you where to look.
+**Rebuilding never touches this folder.** Before a new version writes anything
+at all, it copies each board aside under the old version number.
 
-Chromium's own caches live in `%LOCALAPPDATA%\Mental Board\` instead, so the
-folder above holds nothing but your own files.
+Writes are atomic: a temporary file, then the current file copied to
+`.bak.json`, then a rename over the top. Pulling the plug mid-save cannot
+leave a half-written board. If a `board.json` is ever unreadable, the app
+falls back to its `.bak.json`; if neither can be read, that board is listed
+with a warning, never opened and never written — the file is left for you to
+look at, and its menu opens the folder.
 
-**Backing it up yourself:** *Export to file…* writes a plain JSON copy
-anywhere you like, and *Import from file…* brings it back — that is also how
-you move a board to another machine.
+Chromium's own caches live in `%LOCALAPPDATA%\Mental Board\`, and nothing
+of yours is anywhere but `My Boards`.
+
+**A copy somewhere else:** Settings → Your board → *Back up* mirrors the whole
+`My Boards` folder into a folder you choose — a stick, a synced drive — and
+copies only what changed since last time.
 
 ## Translating it
 

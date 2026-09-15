@@ -1,7 +1,7 @@
 /* Mental Board — view.js
    The world transform, render(), and viewport culling.
 
-   Part 4 of 15. These files are plain scripts sharing one global
+   Part 4 of 17. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -133,13 +133,18 @@ const els = new Map();   // id -> element, for the items that are MOUNTED
    changes. */
 const CULL_MIN_FULL = 60, CULL_MIN_LITE = 24;
 const cullMin = () => (document.body.dataset.perf === 'lite' ? CULL_MIN_LITE : CULL_MIN_FULL);
-const CULL_PAD = 700;      // screen px of margin kept mounted around the viewport
+/* Screen px of margin kept mounted around the viewport. Narrower on a machine
+   that needs the help: the margin is what makes a pan look seamless, and a
+   slow machine is better served by fewer notes in the document than by a
+   wider apron of them. */
+const CULL_PAD_FULL = 700, CULL_PAD_LITE = 380;
+const cullPad = () => (document.body.dataset.perf === 'lite' ? CULL_PAD_LITE : CULL_PAD_FULL);
 let culling = false;
 let cullRaf = 0;
 
 function visibleWorldRect() {
   const r = vpRect(), v = state.view;
-  const pad = CULL_PAD / v.z;
+  const pad = cullPad() / v.z;
   return {
     x0: (0 - v.x) / v.z - pad, y0: (0 - v.y) / v.z - pad,
     x1: (r.width - v.x) / v.z + pad, y1: (r.height - v.y) / v.z + pad
@@ -148,7 +153,8 @@ function visibleWorldRect() {
 const inRect = (it, R) => it.x < R.x1 && it.x + it.w > R.x0 && it.y < R.y1 && it.y + it.h > R.y0;
 
 function mountNote(n, layer) {
-  const el = makeNote(n);
+  // below FAR_Z this is a coloured rectangle and nothing else — see makeNote()
+  const el = makeNote(n, farMode);
   layer.appendChild(el);
   els.set(n.id, el);
   if (selection.has(n.id)) el.classList.add('selected');
@@ -167,10 +173,18 @@ function mountFrame(f, layer) {
 /* Bring one item into the document whatever the view is doing — used by
    anything that has to touch an element for an item the user cannot see, such
    as opening a note the find bar just landed on. */
+/* Bring one item into the document whatever the view is doing — and, since
+   far zoom mounts notes as stubs, make sure what comes back is a *finished*
+   note. Every caller that reaches for a `.note-body`, a head button or a resize
+   handle has to come through here; `els.get()` alone promises an element, this
+   promises a complete one. */
 function ensureMounted(id) {
-  if (els.has(id)) return els.get(id);
+  if (els.has(id)) {
+    const el = els.get(id);
+    return unstub(el, state.notes.find((x) => x.id === id));
+  }
   const n = state.notes.find((x) => x.id === id);
-  if (n) { mountNote(n, $('notesLayer')); return els.get(id); }
+  if (n) { mountNote(n, $('notesLayer')); return unstub(els.get(id), n); }
   const f = state.frames.find((x) => x.id === id);
   if (f) { mountFrame(f, $('framesLayer')); return els.get(id); }
   return null;
@@ -181,6 +195,7 @@ function syncMounted() {
   if (!culling) {
     state.frames.forEach((f) => { if (!els.has(f.id)) mountFrame(f, fl); });
     state.notes.forEach((n) => { if (!els.has(n.id)) mountNote(n, nl); });
+    if (!farMode) state.notes.forEach((n) => unstub(els.get(n.id), n));
     return;
   }
   const R = visibleWorldRect();
@@ -194,6 +209,13 @@ function syncMounted() {
   els.forEach((el, id) => { if (!want.has(id)) { el.remove(); els.delete(id); } });
   state.frames.forEach((f) => { if (want.has(f.id) && !els.has(f.id)) mountFrame(f, fl); });
   state.notes.forEach((n) => { if (want.has(n.id) && !els.has(n.id)) mountNote(n, nl); });
+  /* Any stub that survived the cull becomes a real note now that the text is
+     going to be readable again — **after** the removals above, which is the
+     whole point of doing it here rather than in applyFarMode(). Zooming out to
+     the whole board and back in mounts thousands of stubs and keeps a
+     screenful; filling them before the cull built every one of them for
+     nothing. */
+  if (!farMode) want.forEach((id) => unstub(els.get(id), state.notes.find((x) => x.id === id)));
   /* The ropes are culled to the same rectangle, so panning has to sweep them
      too or a rope stays mounted for a note that left the document — or worse,
      never appears for one that arrived. Cheap: the test is four comparisons per
@@ -225,6 +247,12 @@ function applyFarMode() {
   if (far === farMode) return;
   farMode = far;
   document.body.classList.toggle('far-zoom', far);
+  /* Filling the stubs back in is deliberately **not** done here. Leaving far
+     zoom means going from the whole board on screen to a screenful of it, so
+     almost every mounted stub is about to be culled — finishing them all first
+     was 600ms of building notes to throw most of them away on the very next
+     line. syncMounted() does it instead, after the cull, to the handful that
+     survive. Every path that changes the zoom already ends there. */
 }
 
 /* Adding or deleting can carry a board across the threshold in either
@@ -262,6 +290,7 @@ function render() {
   updateEmpty();
   syncSelectionClasses();
   syncFocusClasses();          // a render throws the classes away with the elements
+  applyBoardLook();            // this board's own font, text size and background
 }
 function updateEmpty() {
   const empty = state.notes.length + state.frames.length === 0;
