@@ -235,6 +235,11 @@ function defaults() {
       // menu sounds (2.1, js/sound.js): off unless asked for, and how loud
       sounds: false,
       soundVol: 60,
+      /* Extra (2.1): a mechanical keyboard under your typing (KEY_SOUNDS, off by
+         default) and notes as paper pinned to a board (CORK_MODES). */
+      keySounds: 'off',
+      keyVol: 60,
+      cork: 'off',
       spell: true,
       railMode: 'hover',    // 'pinned' | 'hover' | 'off' — see RAIL_MODES
       noteShape: 'soft',    // 'round' | 'soft' | 'square' — see NOTE_SHAPES
@@ -362,6 +367,9 @@ const THEME_MODES = ['fixed', 'system', 'clock'];
    nobody should be able to tell which one they are looking at without being
    told. A "low quality mode" that looks low quality is a mode people turn off
    and then blame the app for being slow. */
+// the switches a typing sound can be (js/sound.js), and the board under pinned notes
+const KEY_SOUNDS = ['off', 'blue', 'brown', 'red', 'black', 'membrane', 'typewriter'];
+const CORK_MODES = ['off', 'cork', 'wood'];
 const PERF_MODES = ['auto', 'full', 'balanced', 'lite'];
 /* How a rope between two notes is drawn.
      curve    — the S-bend it has always been
@@ -722,7 +730,7 @@ function adoptBoard(raw) {
   const ids = new Set(b.notes.map((n) => n.id));
   b.links = (Array.isArray(raw.links) ? raw.links : [])
     .filter((l) => l && ids.has(String(l.from)) && ids.has(String(l.to)))
-    .map((l) => ({ id: String(l.id || uid()), from: String(l.from), to: String(l.to) }));
+    .map((l) => ({ id: String(l.id || uid()), from: String(l.from), to: String(l.to), color: okItemColor(l.color, undefined) }));
 
   const v = raw.view && typeof raw.view === 'object' ? raw.view : {};
   b.view = { x: +v.x || 0, y: +v.y || 0, z: clamp(+v.z || 1, ZOOM_MIN, ZOOM_MAX) };
@@ -819,6 +827,9 @@ function adopt(raw, keepSettings) {
   st.pen = healPen(st.pen);
   st.sounds = !!st.sounds;
   st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);
+  if (!KEY_SOUNDS.includes(st.keySounds)) st.keySounds = 'off';
+  st.keyVol = clamp(Math.round(+st.keyVol || 60), 5, 100);
+  if (!CORK_MODES.includes(st.cork)) st.cork = 'off';
   if (!COLORS.includes(st.noteColor)) st.noteColor = 'default';
   st.noteW = clamp(Math.round(+st.noteW || 280), NOTE_MIN_W, 900);
   st.noteH = clamp(Math.round(+st.noteH || 190), NOTE_MIN_H, 900);

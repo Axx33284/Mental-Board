@@ -622,6 +622,73 @@ module.exports = [
       ok(r.link !== r.text && lb > lr + 60 && lb > lg, 'link ' + r.link + ' vs text ' + r.text);
     });
 
+    await test('2.1 a rope takes its own colour from its menu, and keeps it on disk', async () => {
+      const r = await page(async () => {
+        // a rope of its own: the earlier tests cut and re-paste the notes r1/r2 were tied to
+        state.notes.push({ id: 'rx1', x: 0, y: 1200, w: 240, h: 140, z: 1, color: 'default', body: '<p>x1</p>' },
+                         { id: 'rx2', x: 400, y: 1200, w: 240, h: 140, z: 1, color: 'default', body: '<p>x2</p>' });
+        state.links.push({ id: 'r2', from: 'rx1', to: 'rx2' });
+        render(); drawLinks();
+        openRopeMenu(300, 300, 'r2');
+        document.querySelector('#ctxMenu [data-rope-color="green"]').click();
+        const painted = linkEls.get('r2')._rope.line.style.stroke;
+        openRopeMenu(300, 300, 'r2');
+        const pick = document.querySelector('#ctxMenu .cm-custom input');
+        pick.value = '#123456'; pick.dispatchEvent(new Event('change', { bubbles: true }));
+        await saveNow();
+        const back = adoptBoard(JSON.parse(serialiseBoard(activeBoard()))).links.find((l) => l.id === 'r2').color;
+        openRopeMenu(300, 300, 'r2');
+        document.querySelector('#ctxMenu [data-rope-color=""]').click();      // back to the setting
+        return { painted, back, after: state.links.find((l) => l.id === 'r2').color, line: linkEls.get('r2')._rope.line.style.stroke };
+      });
+      ok(r.painted === 'var(--c-green-c)', 'painted ' + r.painted);
+      ok(r.back === '#123456', 'kept through a save and a load: ' + r.back);
+      ok(r.after === undefined && r.line === '', 'as set in Settings again');
+    });
+
+    await test('2.1 Extra: typing sounds only while typing, pinned paper ties ropes to the pins', async () => {
+      const r = await page(() => {
+        const heard = [];
+        const real = keySfx;
+        keySfx = (k, up) => heard.push((up ? '^' : 'v') + k);
+        state.settings.keySounds = 'red';
+        const n = state.notes.find((x) => x.id === 'rx1');
+        enterEdit(n);
+        editing.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+        editing.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', repeat: true, bubbles: true }));
+        exitEdit();
+        $('viewport').dispatchEvent(new KeyboardEvent('keydown', { key: 'q', bubbles: true }));
+        keySfx = real; state.settings.keySounds = 'off';
+        const def = defaults().settings;
+        state.settings.cork = 'cork'; applySettings(); resetLinks(); drawLinks();
+        const p = anchor(n, { x: 0, y: 0 });
+        const z = getComputedStyle($('linksSvg')).zIndex;
+        const pin = getComputedStyle(ensureMounted('rx1'), '::after').content;
+        state.settings.cork = 'off'; applySettings(); resetLinks(); drawLinks();
+        return { heard, def: [def.keySounds, def.cork], p, x: n.x + n.w / 2, y: n.y, z, pin };
+      });
+      ok(JSON.stringify(r.heard) === JSON.stringify(['vx']), 'heard ' + r.heard);
+      ok(r.def[0] === 'off' && r.def[1] === 'off', 'both off by default');
+      ok(r.p.x === r.x && r.p.y === r.y + 11, 'rope tied at the pin: ' + JSON.stringify(r));
+      ok(+r.z > 1000000 && r.pin !== 'none', 'string over the paper, and a pin: ' + JSON.stringify(r));
+    });
+
+    await test('2.1 the footer puts every setting back, keeping language', async () => {
+      const r = await page(async () => {
+        const lang = state.settings.lang;
+        Object.assign(state.settings, { sounds: true, keySounds: 'blue', cork: 'wood', accent: 'rose', snap: true });
+        openSettings();
+        const visible = $('btnResetAll').getBoundingClientRect().height > 0;
+        $('btnResetAll').click();
+        await new Promise((res) => setTimeout(res, 50));
+        closeSettings();
+        const s = state.settings;
+        return { visible, now: [s.sounds, s.keySounds, s.cork, s.accent, s.snap], lang: s.lang === lang };
+      });
+      ok(r.visible, 'the button is on screen');
+      ok(JSON.stringify(r.now) === JSON.stringify([false, 'off', 'off', 'mono', false]) && r.lang, JSON.stringify(r));
+    });
+
     await test('2.1 the wheel scrolls a note with more to read, and pans everywhere else', async () => {
       const r = await page(async () => {
         const n = state.notes.find((x) => x.id === 'rb');

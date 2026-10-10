@@ -891,6 +891,26 @@ function init() {
     saveSoon();
   });
   $('soundVol').addEventListener('change', () => sfx('move'));   // a sample at the new level
+  $('setKeySounds').addEventListener('change', () => {
+    const v = $('setKeySounds').value;
+    state.settings.keySounds = KEY_SOUNDS.includes(v) ? v : 'off';
+    syncSettingsUI(); saveSoon();
+    // a sample of the switch just picked: a key, then the space bar
+    keySfx('a', false); setTimeout(() => keySfx('a', true), 90);
+    setTimeout(() => keySfx(' ', false), 220); setTimeout(() => keySfx(' ', true), 310);
+  });
+  $('keyVol').addEventListener('input', () => {
+    state.settings.keyVol = +$('keyVol').value;
+    $('keyVolVal').textContent = pct(state.settings.keyVol);
+    saveSoon();
+  });
+  $('keyVol').addEventListener('change', () => keySfx('a', false));
+  $('corkSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    state.settings.cork = CORK_MODES.includes(b.dataset.cork) ? b.dataset.cork : 'off';
+    // the ropes move to the pins, so they are drawn again
+    applySettings(); resetLinks(); drawLinks(); syncSettingsUI(); saveSoon();
+  }));
+  $('btnResetAll').addEventListener('click', resetSettings);
   $('setSoftware').addEventListener('change', () => {
     state.settings.softwareRender = $('setSoftware').checked;
     saveSoon();
@@ -1006,6 +1026,7 @@ function init() {
   wireTableBar();
   wireColsBar();
   wireSounds();
+  wireKeySounds();
   watchVpRect();
   wireExtras();
   paintStaticIcons();
@@ -1426,6 +1447,13 @@ const STATIC_ICONS = [
   ['label:has([data-t="set.zoomSpeed"]) .row-ic', 'av_timer'],
   ['label:has([data-t="set.motion"]) .row-ic', 'waves'],
   ['#setSounds + .row-ic', 'volume_up'],
+  ['.set-tab[data-tab="extra"] .tab-ic', 'auto_awesome'],
+  ['h3:has(> [data-t="set.extra"]) .sec-ic', 'auto_awesome'],
+  ['h3:has([data-t="set.extraBoard"]) .sec-ic', 'push_pin'],
+  ['label:has([data-t="set.keySounds"]) .row-ic', 'keyboard'],
+  ['label:has([data-t="set.keyVol"]) .row-ic', 'graphic_eq'],
+  ['label:has([data-t="set.cork"]) .row-ic', 'push_pin'],
+  ['#btnResetAll .b-ic', 'restart_alt'],
   ['label:has([data-t="set.soundVol"]) .row-ic', 'graphic_eq'],
   ['#setGuides + .row-ic', 'straighten'],
   ['#setSoftware + .row-ic', 'memory'],

@@ -88,7 +88,7 @@
            them when the board says so; it only takes the pointer while the pen
            is out. -->
       <svg id="inkSvg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
-      <svg id="linksSvg" xmlns="http://www.w3.org/2000/svg"><g id="linksInner"></g></svg>
+      <svg id="linksSvg" xmlns="http://www.w3.org/2000/svg"><defs><!-- a push pin's head, for the rope ends on a pinned board (mental.css §62) --><radialGradient id="pinGrad" cx="35%" cy="30%" r="70%"><stop offset="0" stop-color="#ffb0a3"/><stop offset=".22" stop-color="#e0473a"/><stop offset=".8" stop-color="#a4231a"/><stop offset="1" stop-color="#6d130d"/></radialGradient></defs><g id="linksInner"></g></svg>
       <div id="notesLayer"></div>
       <!-- The ropes of the selected notes, and the one under the pointer, drawn
            again above the notes so you can see where they go. drawHotRopes()
@@ -295,6 +295,7 @@
         <button class="set-tab" data-tab="templates" role="tab"><span class="tab-ic"></span><span data-t="set.templates"></span></button>
         <button class="set-tab" data-tab="habits" role="tab"><span class="tab-ic"></span><span data-t="set.habits"></span></button>
         <button class="set-tab" data-tab="board" role="tab"><span class="tab-ic"></span><span data-t="set.board"></span></button>
+        <button class="set-tab" data-tab="extra" role="tab"><span class="tab-ic"></span><span data-t="set.extra"></span></button>
         <button class="set-tab" data-tab="shortcuts" role="tab"><span class="tab-ic"></span><span data-t="set.shortcuts"></span></button>
     </nav>
 
@@ -407,14 +408,6 @@
           </div>
           <p class="set-note dim sub" data-t="set.motionHint"></p>
 
-          <!-- Menu sounds (2.1, js/sound.js). Off unless switched on; made on the
-               spot by Web Audio, so there is nothing to ship or fetch. -->
-          <label class="set-check"><input type="checkbox" id="setSounds"><span class="row-ic"></span><span data-t="set.sounds"></span></label>
-          <div class="set-row sub">
-            <label><span class="row-ic"></span><span data-t="set.soundVol"></span> <span class="set-val" id="soundVolVal">60%</span></label>
-            <input type="range" id="soundVol" min="5" max="100" step="5" data-t-aria="set.soundVol">
-          </div>
-          <p class="set-note dim sub" data-t="set.soundsHint"></p>
         </section>
 
         <section class="set-sec" data-pane="canvas">
@@ -741,6 +734,46 @@
           </div>
         </section>
 
+        <!-- Extra (2.1): things nobody needs and some people love. Every one
+             of them is off until it is switched on. -->
+        <section class="set-sec" data-pane="extra">
+          <h3><span class="sec-ic"></span><span data-t="set.extra"></span></h3>
+          <!-- Menu sounds (2.1, js/sound.js). Off unless switched on; made on the
+               spot by Web Audio, so there is nothing to ship or fetch. -->
+          <label class="set-check"><input type="checkbox" id="setSounds"><span class="row-ic"></span><span data-t="set.sounds"></span></label>
+          <div class="set-row sub">
+            <label><span class="row-ic"></span><span data-t="set.soundVol"></span> <span class="set-val" id="soundVolVal">60%</span></label>
+            <input type="range" id="soundVol" min="5" max="100" step="5" data-t-aria="set.soundVol">
+          </div>
+          <p class="set-note dim sub" data-t="set.soundsHint"></p>
+
+          <!-- A mechanical keyboard under every keystroke you type in the app.
+               Synthesised, like the menu sounds (js/sound.js, keySfx). -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.keySounds"></span></label>
+            <span class="sel-wrap"><select id="setKeySounds" class="sel" data-t-aria="set.keySounds"></select><span class="sel-chev"></span></span>
+          </div>
+          <div class="set-row sub">
+            <label><span class="row-ic"></span><span data-t="set.keyVol"></span> <span class="set-val" id="keyVolVal">60%</span></label>
+            <input type="range" id="keyVol" min="5" max="100" step="5" data-t-aria="set.keyVol">
+          </div>
+          <p class="set-note dim sub" data-t="set.keySoundsHint"></p>
+
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.extraBoard"></span></h3>
+          <!-- Notes as paper pinned to a corkboard or a wooden board, roped with
+               thin coloured string. Presentation only — see body.cork in
+               css/mental.css §62 and corkMode() in js/links.js. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.cork"></span></label>
+            <div class="seg" id="corkSeg">
+              <button data-cork="off" data-t="set.corkOff"></button>
+              <button data-cork="cork" data-t="set.corkCork"></button>
+              <button data-cork="wood" data-t="set.corkWood"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.corkHint"></p>
+        </section>
+
         <section class="set-sec" data-pane="shortcuts">
           <h3><span class="sec-ic"></span><span data-t="set.shortcuts"></span></h3>
           <div class="keys" id="keyList"></div>
@@ -753,6 +786,11 @@
            Filled by wireSettingsDesc() in js/settings.js. -->
       <aside class="set-desc" id="setDesc"></aside>
     </div>
+    <!-- Always at the foot of the panel, whichever tab is open: put every
+         setting back the way the app arrived. resetSettings() in js/settings.js. -->
+    <footer class="set-foot">
+      <button class="btn" id="btnResetAll"><span class="b-ic"></span><span data-t="set.resetAll"></span></button>
+    </footer>
   </div>
 </div>
 

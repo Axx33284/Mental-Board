@@ -314,6 +314,7 @@ function applySettings() {
      it for how early to start culling. Nothing here re-renders — the modes
      differ only in what is painted, never in what exists. */
   document.body.dataset.perf = resolvedPerf();
+  document.body.dataset.cork = s.cork;     // pinned paper on a board (mental.css §62)
   // main decides what the close button does, and this is the only thing telling it
   if (WIN && WIN.setBackground) WIN.setBackground(s.background);
   sendMainStrings();

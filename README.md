@@ -19,7 +19,7 @@ other end. Notes lose their head row (everything is on right-click), text links
 land where the caret is and can point at a note, columns keep their shape,
 copies keep their ropes, and holding `Ctrl V` shows where a paste will land. A
 workflow can be locked behind the notes, the wheel scrolls a long note, menus
-can make sounds (off by default), a note or workflow can take any colour from the colour window, links are blue, graphics picks one of three tiers for the
+can make sounds and your typing can sound like a mechanical keyboard (Settings › Extra, both off by default), notes can be paper pinned to a cork or wooden board with string between them, each rope can have its own colour, a note or workflow can take any colour from the colour window, links are blue, graphics picks one of three tiers for the
 machine, the accent defaults to white on dark and black on light, and a theme
 change fades.
 

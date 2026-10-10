@@ -42,6 +42,7 @@ function makeNote(n, stub) {
   el.className = 'note';
   el.dataset.id = n.id;
   paintColor(el, n.color, 'default');
+  el.style.setProperty('--tilt', tiltOf(n.id) + 'deg');   // read only on a pinned board (mental.css §62)
   el.style.zIndex = String(n.z || 1);
   placeEl(el, n);
   /* A picture is one <img> and eight handles — cheaper than a stub would be
@@ -62,6 +63,14 @@ function makeNote(n, stub) {
    mount, and later for a stub the view zoomed back in on. Safe to call twice:
    it replaces the whole subtree, so the listeners go with the nodes they were
    on and nothing is bound to the same element twice. */
+/* A note's tilt on a pinned board: a degree or so either way, the same every
+   time for the same note, so the board does not reshuffle on every render. */
+function tiltOf(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.round(((((h >>> 0) % 1000) / 1000) * 3.2 - 1.6) * 100) / 100;
+}
+
 function fillNote(el, n) {
   if (n.pic) { fillPicture(el, n); return; }
   delete el.dataset.stub;

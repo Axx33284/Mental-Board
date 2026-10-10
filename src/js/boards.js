@@ -531,7 +531,7 @@ function copySelection(cut) {
   if (!items.length) return;
   clipboard = items.map((it) => ({ frame: isFrame(it.id), data: JSON.parse(JSON.stringify(it)) }));
   const ids = new Set(items.map((it) => it.id));
-  clipLinks = state.links.filter((l) => ids.has(l.from) || ids.has(l.to)).map((l) => ({ from: l.from, to: l.to }));
+  clipLinks = state.links.filter((l) => ids.has(l.from) || ids.has(l.to)).map((l) => ({ from: l.from, to: l.to, color: l.color }));
   /* The internal clipboard above is what Ctrl+V on the canvas pastes, and it is
      unchanged. This is the *other* half, added because "copy what this note
      says and put it in an email" had no answer at all: the same selection also
@@ -587,7 +587,7 @@ function retieLinks(links, newId) {
   for (const l of links) {
     const from = newId.get(l.from) || l.from, to = newId.get(l.to) || l.to;
     if (from === to || !here.has(from) || !here.has(to) || has(from, to)) continue;
-    state.links.push({ id: uid(), from, to });
+    state.links.push(l.color ? { id: uid(), from, to, color: l.color } : { id: uid(), from, to });
     n++;
   }
   return n;

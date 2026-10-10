@@ -114,6 +114,8 @@ The things that make it more than a note wall:
 | **Drawing on the board — and selecting, moving, recolouring what was drawn** | js/ink.js §4v |
 | **Any colour at all on a note or a workflow** | js/helpers.js + js/menus.js §4v |
 | **Links in notes are blue** | css/mental.css §61 |
+| **Settings ▸ Extra: typing sounds, pinned paper on a cork or wooden board; reset from any tab** | js/sound.js + css/mental.css §62 §4v |
+| **A colour for each rope** | js/links.js + js/menus.js §4v |
 | **Menu sounds** | js/sound.js §4v |
 | **Three graphics tiers, picked for the machine** | js/theme.js + js/view.js §4c |
 | **Mono accent, and a theme change that fades** | js/helpers.js + js/theme.js §4v |
@@ -603,7 +605,7 @@ no bundler and no build step — the only thing joining them is the order
 |------|------:|---------------|
 | `helpers.js` | ~490 | `$()` `clamp` `uid` `esc` `stripHtml` `maxOf`/`minOf`, `THEMES` (18), `ACCENTS` (15, with `mono`), an item's colour (`okItemColor` `paintColor` `colorStyle` `colorName`, §4v), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
 | `state.js` | ~1150 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, `okDateKey()` (§4s), and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
-| `sound.js` | ~210 | **Menu sounds** (2.1): `sfx(kind)` — move, select, back, open, toggle — synthesised with Web Audio through a generated room reverb, and `wireSounds()`, which hears menus by delegation and a MutationObserver. Off unless `settings.sounds`. See §4v. |
+| `sound.js` | ~400 | **Menu sounds** and **typing sounds** (2.1, both in Settings ▸ Extra): `keySfx` `KEY_SWITCHES` `wireKeySounds`, and `sfx(kind)` — move, select, back, open, toggle — synthesised with Web Audio through a generated room reverb, and `wireSounds()`, which hears menus by delegation and a MutationObserver. Off unless `settings.sounds`. See §4v. |
 | `theme.js` | ~340 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, **`applyThemeFaded(ms)`** (a View Transition crossfade, §4v), `applyLang`, `applySettings`, and the graphics tiers: `gpuName` `detectPerf` `resolvedPerf` (§4c). See §3d. |
 | `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `fillStubs` `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
 | `items.js` | ~780 | `makeNote` (no head since 2.1) `makeFrame`, **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
@@ -1482,7 +1484,7 @@ title.
 
 ## 4v. Mental Board 2.1
 
-Fifteen changes from two lists. Each paragraph says where it lives and the one
+Nineteen changes from three lists. Each paragraph says where it lives and the one
 thing about it that is not obvious from the code.
 
 ### A note has no head
@@ -1646,9 +1648,42 @@ the accent, and once Mono became the default the accent *is* the text colour,
 so a link looked like the words around it. A link to a note is the same blue,
 dashed; a board link is a blue pill; an embed card is not underlined.
 
+### Settings ▸ Extra, and a reset you can always reach
+
+A tab of its own for the things nobody needs and some people love, every one
+off until switched on: the menu sounds (moved here from Appearance), typing
+sounds, and pinned paper. And at the foot of the Settings panel, whichever tab
+is open, **Restore default settings** (`#btnResetAll` → `resetSettings()`, which
+keeps the language and the backup folder, as the button in Your boards always
+did).
+
+**Typing sounds** (`keySfx`, `KEY_SWITCHES` in sound.js; `settings.keySounds`,
+`keyVol`): a mechanical keyboard under every key typed into a note, a field or
+a dialog — blue (clicky), brown (tactile), red (linear), black (heavy linear),
+membrane, typewriter (with the bell on Enter). Synthesised per press from one
+cached noise buffer, with a little random pitch and level so no two presses are
+alike; Space, Enter and Backspace sound bigger. Not on canvas shortcuts, not on
+modifier keys, and not on key-repeat — a switch is pressed once.
+
+**Pinned paper** (`settings.cork`: off · cork · wood; `body[data-cork]`, mental.css
+§62): the canvas becomes a corkboard or a wooden board, every note a sheet of
+paper tinted by its colour, tilted a degree or so by its id (`tiltOf()`), with a
+red push pin at the top. `anchor()` in links.js ties every rope to the pins
+(`CORK_PIN_Y`), `ropePath()` makes it sag, and the ropes layer goes *over* the
+paper — string on a board does — with each end drawn as a pin head
+(`#pinGrad`). Presentation only; nothing moves.
+
+### A rope's own colour
+
+Right-click a rope: under the two ends is a colour row — **as set in Settings**,
+the eight colours, and Custom (the colour window). It is `link.color`, a
+COLORS name or a hex, kept by `adoptBoard()`, carried by copy, cut, paste and
+duplicate, painted by `drawLinks()` through `linkColorCss()` (an empty inline
+stroke leaves `--rope` in charge), and drawn in the board picture.
+
 ### Menu sounds — `js/sound.js`
 
-Settings ▸ Appearance ▸ Menu sounds, **off by default**. Cues in the spirit of a
+Settings ▸ Extra ▸ Menu sounds, **off by default**. Cues in the spirit of a
 game's options screen — a dry tick as the highlight moves, a low thunk with a
 short metallic ring on select, a falling tone going back, air when a panel
 opens — synthesised with Web Audio through a generated room reverb. No audio
@@ -2193,7 +2228,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink. Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row. Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section

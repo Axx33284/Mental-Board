@@ -434,6 +434,7 @@ async function resetSettings() {
   applySettings();
   buildThemeGrid(); buildAccentSwatches(); buildGridPicker();
   buildLinkSwatches(); buildNoteColorSwatches();
+  resetLinks(); drawLinks();   // the board style and the rope settings may have moved them
   syncSettingsUI();
   save();
   toast(t('msg.settingsReset'), 4200);
@@ -533,6 +534,14 @@ function syncSettingsUI() {
   $('soundVol').value = s.soundVol;
   $('soundVolVal').textContent = pct(s.soundVol);
   $('soundVol').disabled = !s.sounds;
+  // the switches, named in the language — literal keys so check-lang.js sees each one
+  const keyNames = { off: te('set.keyOff'), blue: te('set.keyBlue'), brown: te('set.keyBrown'), red: te('set.keyRed'),
+    black: te('set.keyBlack'), membrane: te('set.keyMembrane'), typewriter: te('set.keyTypewriter') };
+  $('setKeySounds').innerHTML = KEY_SOUNDS.map((k) => `<option value="${k}"${k === s.keySounds ? ' selected' : ''}>${keyNames[k]}</option>`).join('');
+  $('keyVol').value = s.keyVol;
+  $('keyVolVal').textContent = pct(s.keyVol);
+  $('keyVol').disabled = s.keySounds === 'off';
+  $('corkSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.cork === s.cork));
   $('setSoftware').checked = !!s.softwareRender;
   /* Rebuilt rather than re-marked: the row's contents depend on which accent
      is selected — a preset outside the shown nine is appended so it can still

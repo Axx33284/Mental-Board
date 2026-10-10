@@ -350,7 +350,7 @@ function duplicate(ids) {
   const newId = new Map();
   // the ropes go with the copies, exactly as a copy and paste carries them
   const idSet = new Set(ids);
-  const ropes = state.links.filter((l) => idSet.has(l.from) || idSet.has(l.to)).map((l) => ({ from: l.from, to: l.to }));
+  const ropes = state.links.filter((l) => idSet.has(l.from) || idSet.has(l.to)).map((l) => ({ from: l.from, to: l.to, color: l.color }));
   ids.forEach((id) => {
     const it = itemById(id);
     if (!it) return;
@@ -781,6 +781,8 @@ function paintBoardCanvas(board, scale, pictures) {
     if (!a || !c) return;
     const p1 = anchor(a, { x: c.x + c.w / 2, y: c.y + c.h / 2 });
     const p2 = anchor(c, { x: a.x + a.w / 2, y: a.y + a.h / 2 });
+    // a rope with a colour of its own keeps it in the picture
+    ctx.strokeStyle = isHex(l.color) ? l.color : COLORS.includes(l.color) ? pal.noteInk(l.color) : pal.rope;
     try { ctx.stroke(new Path2D(ropePath(p1, p2, a, c))); } catch (_) {}
   });
   ctx.restore();

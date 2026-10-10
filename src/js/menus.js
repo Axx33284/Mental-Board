@@ -319,11 +319,39 @@ function openRopeMenu(clientX, clientY, id) {
   if (!r) return;
   const menu = $('ctxMenu');
   const go = (n) => `<button class="cm-item cm-go" data-act="go" data-note="${esc(n.id)}">${icon('arrow_forward')}<span>${esc(noteTitle(n))}</span></button>`;
+  /* This rope's colour (2.1). The first swatch is "as set in Settings" — the
+     rope then follows the global rope colour again — then the eight colours,
+     then any colour from the colour window, as on a note. */
+  const cur = r.l.color || '';
+  const own = isHex(cur) ? cur : '';
+  const swatches =
+    `<button class="cm-rope-auto${cur ? '' : ' on'}" data-rope-color="" title="${te('menu.ropeColourAuto')}"></button>` +
+    COLORS.filter((c) => c !== 'default').map((c) =>
+      `<button data-color="${c}" data-rope-color="${c}" class="${cur === c ? 'on' : ''}" title="${te('colour.' + c)}"></button>`).join('') +
+    `<label class="cm-custom${own ? ' on' : ''}" title="${te('menu.customColour')}" style="${own ? '--sw:' + own : ''}">` +
+      `<input type="color" value="${own || '#e05a5a'}" aria-label="${te('menu.customColour')}"></label>`;
   menu.innerHTML =
     `<div class="cm-label">${icon('link')}<span>${te('menu.rope')}</span></div>` +
     go(r.a) + go(r.b) +
+    `<div class="cm-label">${icon('colorize')}<span>${te('menu.ropeColour')}</span></div>` +
+    `<div class="cm-colors cm-rope-colors">${swatches}</div>` +
     `<div class="cm-sep"></div>` +
     `<button class="cm-item danger" data-act="del">${icon('link_off')}<span>${te('menu.removeLink')}</span></button>`;
+  const setRopeColor = (c, close) => {
+    const l = state.links.find((x) => x.id === id);
+    if (!l) return;
+    if (c) l.color = c; else delete l.color;
+    drawLinks();
+    if (close) { closeCtxMenu(); saveSoon(); }
+  };
+  menu.querySelectorAll('[data-rope-color]').forEach((b) => b.addEventListener('click', () => {
+    pushUndo(); setRopeColor(b.dataset.ropeColor, true);
+  }));
+  const pick = menu.querySelector('.cm-custom input');
+  let undoTaken = false;
+  const live = () => { if (!isHex(pick.value)) return; if (!undoTaken) { pushUndo(); undoTaken = true; } setRopeColor(pick.value.toLowerCase(), false); };
+  pick.addEventListener('input', live);
+  pick.addEventListener('change', () => { live(); closeCtxMenu(); saveSoon(); });
   menu.classList.remove('hidden');
   const w = menu.offsetWidth, h = menu.offsetHeight;
   menu.style.left = clamp(RTL ? clientX - w : clientX, 6, innerWidth - w - 6) + 'px';

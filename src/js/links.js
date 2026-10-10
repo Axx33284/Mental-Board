@@ -76,7 +76,21 @@ function applyLinkStyle() {
 
    'edge' is the original: the point on the border facing the other note, so
    the rope always takes the shortest visible path. */
+/* A rope can wear its own colour (2.1, the rope's right-click menu): one of
+   COLORS or any hex, stored as `link.color`. Unset, it follows the setting —
+   which is why this returns '' rather than a colour: an empty inline style
+   leaves `--rope` in charge. */
+function linkColorCss(c) {
+  if (isHex(c)) return c;
+  return COLORS.includes(c) ? `var(--c-${c}-c)` : '';
+}
+
+/* Pinned paper on a board (Settings ▸ Extra, 2.1): every rope is a thin
+   string tied to the pin at the top of each note, and it sags. */
+const corkMode = () => state.settings.cork === 'cork' || state.settings.cork === 'wood';
+const CORK_PIN_Y = 11;          // world px from a note's top edge to the centre of its pin
 function anchor(rect, to) {
+  if (corkMode()) return { x: rect.x + rect.w / 2, y: rect.y + CORK_PIN_Y };
   if (state.settings.linkAnchor === 'top') return { x: rect.x + rect.w / 2, y: rect.y - 6 };
   const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
   const dx = to.x - cx, dy = to.y - cy;
@@ -90,7 +104,7 @@ function anchor(rect, to) {
 
 /* The path between two anchor points, in the shape the user picked. */
 function ropePath(p1, p2, a, b) {
-  const style = state.settings.linkStyle;
+  const style = corkMode() ? 'thread' : state.settings.linkStyle;
   if (style === 'straight') return `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
   if (style === 'thread') {
     /* String hangs. The sag grows with the span so a short hop is nearly taut
@@ -216,7 +230,7 @@ function drawLinks(moving) {
   const g = $('linksInner');
   if (!g) return;
   const byId = noteIndex();
-  const pinned = state.settings.linkAnchor === 'top';
+  const pinned = state.settings.linkAnchor === 'top' || corkMode();
   const R = culling ? visibleWorldRect() : null;
   const keep = moving ? null : new Set();
 
@@ -245,6 +259,9 @@ function drawLinks(moving) {
     r.dotA.setAttribute('cx', p1.x); r.dotA.setAttribute('cy', p1.y);
     r.dotB.setAttribute('cx', p2.x); r.dotB.setAttribute('cy', p2.y);
     r.dotA.style.display = pinned ? '' : 'none';
+    // this one rope's own colour, if it has one; otherwise the setting's, through --rope
+    const own = linkColorCss(l.color);
+    r.line.style.stroke = own; r.dotA.style.fill = own; r.dotB.style.fill = own;
   }
 
   // a partial pass never unmounts: what it skipped it did not look at
@@ -370,7 +387,8 @@ function drawHotRopes() {
     const el = linkEls.get(id);
     const d = el ? el._rope.line.getAttribute('d') : null;
     if (!d) continue;
-    html += `<g><path class="lk-hit" data-id="${esc(id)}" d="${d}"></path><path class="lk-line lk-top" d="${d}"></path></g>`;
+    const own = el._rope.line.style.stroke;
+    html += `<g><path class="lk-hit" data-id="${esc(id)}" d="${d}"></path><path class="lk-line lk-top" d="${d}"${own ? ` style="stroke:${own}"` : ''}></path></g>`;
   }
   svg.innerHTML = html;
 }
