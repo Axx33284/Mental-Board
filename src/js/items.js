@@ -1,7 +1,7 @@
 /* Mental Board — items.js
    Note and frame elements, the one drag/resize gesture engine, selection, and the camera.
 
-   Part 5 of 17. These files are plain scripts sharing one global
+   Part 6 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -41,7 +41,7 @@ function makeNote(n, stub) {
   const el = document.createElement('div');
   el.className = 'note';
   el.dataset.id = n.id;
-  el.dataset.color = n.color || 'default';
+  paintColor(el, n.color, 'default');
   el.style.zIndex = String(n.z || 1);
   placeEl(el, n);
   /* A picture is one <img> and eight handles — cheaper than a stub would be
@@ -65,37 +65,28 @@ function makeNote(n, stub) {
 function fillNote(el, n) {
   if (n.pic) { fillPicture(el, n); return; }
   delete el.dataset.stub;
+  /* No head, since 2.1. A note used to carry a row of five controls on its top
+     edge — grip, icon, link, more, delete — that appeared on hover. Every one
+     of them was already in the right-click menu, the whole note is the drag
+     handle (onPointerDown starts a move anywhere on a closed note), and the
+     row cost 24px of every note's height and a flicker on every hover. What it
+     showed rather than did — the reminder — is a pill in the status row now.
+
+     The icon badge stays: it is something the user put on the note, not
+     chrome. Changing it is the right-click menu's "Icon" row. */
   el.innerHTML =
-    `<div class="note-head">
-       <span class="nh-grip">${icon('drag_indicator')}</span>
-       <span class="nh-marks"></span>
-       <button class="nh-btn ico" title="${te('note.icon')}">${icon('mood')}</button>
-       <button class="nh-btn lk" title="${te('note.link')}">${icon('link')}</button>
-       <button class="nh-btn more" title="${te('note.more')}">${icon('more_horiz')}</button>
-       <button class="nh-btn del" title="${te('note.delete')}">${icon('close')}</button>
-     </div>
-     <button class="note-icon" title="${te('note.changeIcon')}"></button>
+    `<div class="note-icon"></div>
      <div class="note-body" dir="auto" spellcheck="${state.settings.spell}"></div>
      <div class="note-status hidden"></div>
      ${rzHtml()}`;
   paintNoteIcon(el, n);
-  paintNoteMarks(el, n);
   paintNoteStatus(el, n);
-  el.querySelector('.note-icon').addEventListener('click', (e) => { e.stopPropagation(); openIconPicker(n.id); });
-  el.querySelector('.nh-btn.ico').addEventListener('click', (e) => { e.stopPropagation(); openIconPicker(n.id); });
   const body = el.querySelector('.note-body');
   body.innerHTML = n.body || '';
   lazyImages(body);
   paintCodeBlocks(body);
   paintEmbeds(body);              // the card, not the player; see the embeds block
   wireNoteBody(body, n, el);
-  el.querySelector('.nh-btn.del').addEventListener('click', (e) => { e.stopPropagation(); askThenDelete([n.id]); });
-  el.querySelector('.nh-btn.lk').addEventListener('click', (e) => { e.stopPropagation(); startLinking(n.id); });
-  el.querySelector('.nh-btn.more').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const r = e.currentTarget.getBoundingClientRect();
-    openCtxMenu(r.left, r.bottom + 6, n.id);
-  });
 }
 
 /* Every picture in a note decodes off the main thread and is not fetched at
@@ -109,6 +100,7 @@ function lazyImages(root) {
     if (!img.hasAttribute('loading')) img.setAttribute('loading', 'lazy');
     if (!img.hasAttribute('decoding')) img.setAttribute('decoding', 'async');
   });
+  watchVideos(root);          // every body that is drawn passes through here
 }
 
 /* Redraw a note's text from `n.body` without rebuilding the whole element —
@@ -146,7 +138,7 @@ function makeFrame(f) {
   const el = document.createElement('div');
   el.className = 'frame';
   el.dataset.id = f.id;
-  el.dataset.color = f.color || 'blue';
+  paintColor(el, f.color, 'blue');
   el.dataset.title = TITLE_POS.includes(f.titlePos) ? f.titlePos : 'tl';
   placeEl(el, f);
   el.innerHTML =
@@ -158,6 +150,7 @@ function makeFrame(f) {
      ${rzHtml()}`;
   el.querySelector('.ft-name').textContent = f.title || t('frame.default');
   paintFrameIcon(el, f);
+  paintFrameLock(el, f);
   el.querySelector('.ft-icon').addEventListener('click', (e) => { e.stopPropagation(); openIconPicker(f.id); });
   return el;
 }
@@ -177,6 +170,41 @@ function setTitlePos(id, pos) {
   if (el) el.dataset.title = pos;
   saveSoon();
 }
+
+/* A workflow locked behind the notes (2.1). It stays exactly where it is and
+   stops being something the pointer can catch: a lasso drawn across it picks
+   up the notes and not the frame, Ctrl+A leaves it out, its title will not
+   drag, and its handles go. That is the whole point — a big workflow is the
+   thing a lasso across its notes kept grabbing, and dragging the selection
+   then dragged the frame and every note inside it.
+
+   Right-click still reaches it (frameAt() hit-tests by geometry), because
+   that is where Unlock is. Stored on the frame as `locked: true`; a frame
+   without it is unlocked, so nothing needs healing on load. */
+function lockFrame(id) {
+  const f = state.frames.find((x) => x.id === id);
+  if (!f) return;
+  pushUndo();
+  if (f.locked) delete f.locked; else f.locked = true;
+  const el = els.get(id);
+  if (el) paintFrameLock(el, f);
+  if (f.locked && selection.has(id)) { selection.delete(id); syncSelectionClasses(); }
+  saveSoon();
+  toast(t(f.locked ? 'msg.frameLocked' : 'msg.frameUnlocked'));
+}
+function paintFrameLock(el, f) {
+  el.classList.toggle('locked', !!f.locked);
+  const t0 = el.querySelector('.frame-title');
+  let lk = t0 && t0.querySelector('.ft-lock');
+  if (f.locked && t0 && !lk) {
+    lk = document.createElement('span');
+    lk.className = 'ft-lock';
+    lk.innerHTML = icon('lock');
+    t0.appendChild(lk);
+  } else if (!f.locked && lk) lk.remove();
+}
+// what a lasso, Ctrl+A or a click on a title can pick up
+const frameSelectable = (f) => !f.locked;
 
 function paintFrameIcon(el, f) {
   const b = el.querySelector('.ft-icon');
@@ -560,7 +588,7 @@ function onGestureMove(e) {
     const hit = [];
     const test = (it) => (it.x < b.x && it.x + it.w > a.x && it.y < b.y && it.y + it.h > a.y);
     state.notes.forEach((n) => { if (test(n)) hit.push(n.id); });
-    state.frames.forEach((f) => { if (test(f)) hit.push(f.id); });
+    state.frames.forEach((f) => { if (frameSelectable(f) && test(f)) hit.push(f.id); });
     setSelection(g.base.concat(hit), false);
   }
 }
@@ -608,6 +636,7 @@ function toggleSelection(id) {
 function clearSelection() { selection = new Set(); syncSelectionClasses(); }
 function syncSelectionClasses() {
   els.forEach((el, id) => el.classList.toggle('selected', selection.has(id)));
+  drawHotRopes();         // a selected note shows its ropes above the notes
 }
 function selectedItems() { return [...selection].map(itemById).filter(Boolean); }
 
@@ -640,7 +669,40 @@ function resetZoom() {
   flyTo({ x: c.x, y: c.y }, 1);
 }
 
+/* The wheel over a note that has more text than it shows scrolls the note.
+
+   It used to pan the canvas unconditionally, so the only way to read the end
+   of a long note was to resize it or open it. Now the note gets the wheel when
+   it can actually move in that direction — the browser's own nested-scroll
+   rule — and the board gets it back at either end.
+
+   **Latched, the way a browser latches nested scrollers.** Without that, a
+   wheel pan across the board stops dead the moment the pointer passes over a
+   long note, which would make this feature a trap. So whichever of the two
+   took the first notch of a burst keeps the burst: panning carries on over a
+   note, and scrolling a note does not spill into the canvas when it reaches the
+   bottom. A gap of WHEEL_LATCH ms starts a new burst. Ctrl always zooms. */
+const WHEEL_LATCH = 260;
+let wheelLatch = { to: null, at: 0 };
+function scrollableNoteBody(e) {
+  const body = e.target.closest && e.target.closest('.note-body');
+  if (!body) return null;
+  const dy = e.deltaY, dx = e.deltaX;
+  const canY = body.scrollHeight > body.clientHeight + 1 &&
+    (dy > 0 ? body.scrollTop + body.clientHeight < body.scrollHeight - 1 : dy < 0 ? body.scrollTop > 0 : false);
+  const canX = body.scrollWidth > body.clientWidth + 1 &&
+    (dx > 0 ? body.scrollLeft + body.clientWidth < body.scrollWidth - 1 : dx < 0 ? body.scrollLeft > 0 : false);
+  return (canY || canX) ? body : null;
+}
 function onWheel(e) {
+  if (!e.ctrlKey) {
+    const now = performance.now();
+    const fresh = now - wheelLatch.at > WHEEL_LATCH;
+    wheelLatch.at = now;
+    if (fresh) wheelLatch.to = scrollableNoteBody(e);
+    if (wheelLatch.to && wheelLatch.to.isConnected && wheelLatch.to.contains(e.target)) return;   // the note scrolls itself
+    if (wheelLatch.to) wheelLatch.to = null;   // left the note mid-burst: the canvas has it from here
+  } else wheelLatch.to = null;
   e.preventDefault();
   const zoomIntent = e.ctrlKey || state.settings.wheel === 'zoom';
   if (zoomIntent) {
@@ -706,7 +768,9 @@ function fitTo(items, pad, maxZoom) {
   flyTo({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, z);
 }
 function zoomToFitAll() {
-  const all = [...state.notes, ...state.frames];
+  // a drawing is part of the board, so "everything" includes it (2.1)
+  const ink = (state.ink || []).map((s) => { const q = inkBox(s); return { x: q.x0, y: q.y0, w: q.x1 - q.x0, h: q.y1 - q.y0 }; });
+  const all = [...state.notes, ...state.frames, ...ink];
   if (!all.length) { flyTo({ x: 0, y: 0 }, 1); return; }
   fitTo(all);
 }

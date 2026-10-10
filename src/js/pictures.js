@@ -1,7 +1,7 @@
 /* Mental Board — pictures.js
    A picture standing on the board by itself: no note around it.
 
-   Part 11 of 17. These files are plain scripts sharing one global
+   Part 13 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */

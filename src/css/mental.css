@@ -464,7 +464,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px 
 .note.selected { box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
 .note.editing { box-shadow: 0 0 0 1px var(--accent); }
 .frame-title { border-radius: 2px; }
-.nh-btn { border-radius: 2px; }
 .ns-pill { border-radius: 2px; }
 .theme-card { border-radius: 2px; }
 .theme-card.on { box-shadow: 0 0 0 1px var(--text), 0 0 0 3px var(--surface), 0 0 0 4px var(--text); }
@@ -691,3 +690,388 @@ html[dir="rtl"] .titlebar .tb-hint { direction: rtl; unicode-bidi: plaintext; }
 html[lang="ar"] .pg-btn .pg-name, html[lang="ar"] .pm-title, html[lang="ar"] .br-name, html[lang="ar"] .eh-card h2, html[lang="ar"] .pal-tx b {
   font-family: var(--face-type); font-weight: 700;
 }
+
+/* ─────────────── 55. a date on a note (MAP.md §4s) ───────────────
+   Beside the status pill and built the same way, but its colour is not the
+   user's: it is what the day means. Plain before the day, amber on it, red
+   once it has gone — and plain again on a finished note, where "late" stops
+   being true. */
+.note-status { gap: 6px; flex-wrap: wrap; }
+.nd-pill {
+  --dc: var(--dim);
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  height: 20px; padding: 0 9px 0 6px; border-radius: 2px;
+  font-size: 11px; font-weight: 600; letter-spacing: .01em; font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--dc) 72%, var(--text));
+  background: color-mix(in srgb, var(--dc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dc) 30%, transparent);
+  transition: background .14s, border-color .14s;
+}
+.nd-pill:hover { background: color-mix(in srgb, var(--dc) 22%, transparent); }
+.nd-pill .mi { width: 12px; height: 12px; flex: 0 0 12px; }
+.nd-pill.today { --dc: var(--c-amber-c); }
+.nd-pill.late  { --dc: var(--c-red-c); }
+.nd-pill.done  { opacity: .7; }
+.nd-pill.done .ns-name { text-decoration: line-through; }
+
+/* the date row in the right-click menu: three chips, a field, None */
+.cm-date .cm-st { padding: 0 9px; }
+.cm-dt {
+  height: 24px; padding: 0 6px; border-radius: 2px; font: inherit; font-size: 11.5px;
+  color: var(--dim); background: transparent; border: 1px solid var(--line);
+  color-scheme: light;
+}
+.cm-dt:hover, .cm-dt:focus { color: var(--text); border-color: var(--accent); outline: none; }
+.cm-dt.on { color: var(--text); border-color: color-mix(in srgb, var(--accent) 62%, transparent); }
+/* the calendar glyph inside the field follows the app's mode, not Windows' */
+html[data-mode="dark"] .cm-dt { color-scheme: dark; }
+
+/* ─────────────── 56. a clip the app cannot play (MAP.md §4n) ───────────────
+   Painted over the player by watchVideos(), never stored. The black box with
+   a dead play button goes; a line saying why and a way to open it stays. */
+.note-body .mb-file:has(.mb-cant) .mb-video-el { display: none; }
+.note-body .mb-cant {
+  display: flex; align-items: center; gap: .55em; flex-wrap: wrap;
+  padding: .8em .9em; font-size: .86em; color: var(--dim);
+  background: var(--surface-3, var(--surface));
+}
+.note-body .mb-cant svg { width: 1.3em; height: 1.3em; flex: none; }
+.note-body .mb-cant span { flex: 1 1 10em; min-width: 0; }
+.note-body .mb-cant .btn { height: 26px; padding: 0 10px; font-size: .95em; }
+
+/* ─────────────── 57. the minimap, the agenda, the board as columns (MAP.md §4u) ─────────────── */
+/* the map sits on the zoom bar, the same width as its own frame of the board */
+#minimap {
+  position: absolute; right: 18px; bottom: 64px; z-index: 44;
+  width: 200px; height: 132px; cursor: crosshair;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+  opacity: .82; transition: opacity .15s;
+}
+#minimap:hover { opacity: 1; }
+body.focus-mode #minimap { display: none; }
+#btnAgenda .mi, #btnKanban .mi { width: 16px; height: 16px; }
+
+/* both views are wide sheets */
+.view-sheet { width: min(1100px, 94vw); height: 84vh; max-height: 84vh; }
+.view-sheet .sheet-body { flex: 1; min-height: 0; padding-top: 14px; }
+
+/* ---- the agenda: a month on the left, the list on the right ---- */
+#agendaBody { display: grid; grid-template-columns: 252px 1fr; gap: 22px; align-items: start; }
+@media (max-width: 760px) { #agendaBody { grid-template-columns: 1fr; } }
+.ag-cal { position: sticky; top: 0; }
+.ag-month { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ag-month b { font-family: var(--face-label); text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
+.ag-nav { width: 26px; height: 26px; display: grid; place-items: center; color: var(--dim); border-radius: var(--r); }
+.ag-nav:hover { background: var(--surface-3); color: var(--text); }
+.ag-nav .mi { width: 16px; height: 16px; }
+.ag-nav.prev .mi { transform: scaleX(-1); }
+html[dir="rtl"] .ag-nav .mi { transform: scaleX(-1); }
+html[dir="rtl"] .ag-nav.prev .mi { transform: none; }
+.ag-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.ag-wd { text-align: center; font-size: 10.5px; color: var(--dimmer); padding: 2px 0 4px; }
+.ag-day {
+  position: relative; height: 32px; border-radius: var(--r); font-size: 12px;
+  color: var(--dim); font-variant-numeric: tabular-nums;
+}
+.ag-day:hover { background: var(--surface-3); color: var(--text); }
+.ag-day.has { color: var(--text); font-weight: 600; }
+.ag-day i { position: absolute; left: 50%; bottom: 4px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--accent); }
+.ag-day.late i { background: var(--c-red-c); }
+.ag-day.today { outline: 1px solid var(--line-2); }
+.ag-day.on { background: var(--text); color: var(--bg); }
+.ag-day.on i { background: var(--bg); }
+
+.ag-list { min-width: 0; }
+.ag-head {
+  font-family: var(--face-label); text-transform: uppercase; letter-spacing: .14em;
+  font-size: 11px; color: var(--dim); padding: 14px 4px 6px; border-bottom: 1px solid var(--line);
+}
+.ag-head:first-child { padding-top: 2px; }
+.ag-head.late { color: var(--c-red-c); }
+.ag-row { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); }
+.ag-tick { width: 30px; height: 30px; flex: none; display: grid; place-items: center; color: var(--dimmer); border-radius: var(--r); }
+.ag-tick:hover { color: var(--c-green-c, var(--accent)); background: var(--surface-3); }
+.ag-tick[disabled] { opacity: .3; pointer-events: none; }
+.ag-tick .mi { width: 17px; height: 17px; }
+.ag-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 6px; text-align: start; border-radius: var(--r); }
+.ag-open:hover { background: var(--surface-2); }
+.ag-when { flex: 0 0 92px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ag-row.late .ag-when { color: var(--c-red-c); font-weight: 600; }
+.ag-row.today .ag-when { color: var(--c-amber-c); font-weight: 600; }
+.ag-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.ag-row.done .ag-title { text-decoration: line-through; color: var(--dim); }
+.ag-st { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); flex: none; }
+.ag-board { flex: none; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--dimmer); border: 1px solid var(--line); padding: 1px 7px; border-radius: 2px; }
+.ag-empty { color: var(--dim); padding: 24px 4px; }
+
+/* ---- the board as columns ---- */
+#kanbanBody { display: flex; gap: 12px; align-items: stretch; overflow-x: auto; height: 100%; padding-bottom: 14px; }
+.kb-col {
+  flex: 1 0 210px; max-width: 320px; display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r);
+  transition: border-color .12s, background .12s;
+}
+.kb-col.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+.kb-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--face-label); text-transform: uppercase; letter-spacing: .12em; font-size: 11.5px; font-weight: 600;
+}
+.kb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-n { color: var(--dim); font-variant-numeric: tabular-nums; }
+.kb-cards { flex: 1; min-height: 60px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.kb-card {
+  padding: 10px 11px; cursor: grab; border-radius: var(--r);
+  background: var(--nb, var(--surface)); border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--nc, var(--line-2));
+}
+.kb-card[data-color="default"] { border-inline-start-color: var(--line-2); }
+.kb-card:hover { border-color: var(--line-2); }
+.kb-card.dragging { opacity: .4; }
+.kb-title { font-size: 13px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.kb-text { font-size: 12px; color: var(--dim); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.kb-card .nd-pill { margin-top: 8px; }
+.kb-col.done .kb-title { text-decoration: line-through; color: var(--dim); }
+.kb-more { font-size: 11.5px; color: var(--dim); text-align: center; margin: 4px 0; }
+
+/* ─────────────── 58. Mental Board 2.1 ───────────────
+   Everything below arrived with 2.1. Kept at the very end on purpose: these
+   rules are meant to win against anything above them. */
+
+/* ---- a reminder still to come, in the pill row (the note head is gone) ---- */
+.nr-pill {
+  display: inline-grid; place-items: center; width: 22px; height: 20px; border-radius: 2px;
+  color: var(--c-amber-c); background: color-mix(in srgb, var(--c-amber-c) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-amber-c) 30%, transparent);
+}
+.nr-pill:hover { background: color-mix(in srgb, var(--c-amber-c) 22%, transparent); }
+.nr-pill .mi { width: 12px; height: 12px; }
+
+/* ---- following a rope ---- */
+.lk-line.hot { opacity: 1; stroke-width: calc(var(--rope-w, 2) * 1px + 1.5px); }
+.note.rope-end { border-color: var(--rope, var(--accent)); box-shadow: 0 0 0 1px var(--rope, var(--accent)); }
+/* where a rope, a linked-notes row or a note link just landed */
+.note.arrived { animation: mb-arrive 1.6s ease-out; }
+@keyframes mb-arrive {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); }
+  25%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 35%, transparent); }
+  100% { box-shadow: 0 0 0 1px var(--accent); }
+}
+.cm-go > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+
+/* ---- a link to a note, in text ---- */
+.note-body a.mb-note {
+  color: var(--accent); text-decoration: none; cursor: pointer;
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.note-body a.mb-note:hover { border-bottom-style: solid; }
+.ln-list { display: flex; flex-direction: column; gap: 2px; margin-top: -4px; max-height: 240px; overflow-y: auto; }
+.ln-head { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; padding: 6px 2px 4px; }
+.ln-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 2px;
+  text-align: start; color: var(--text); font-size: 13px;
+}
+.ln-item:hover, .ln-item:focus-visible { background: var(--surface-3); outline: none; }
+.ln-item .mi { width: 15px; height: 15px; color: var(--dim); flex: 0 0 15px; }
+.ln-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ln-b { font-size: 11px; color: var(--dim); flex: 0 0 auto; }
+
+/* ---- a workflow locked behind the notes ---- */
+.frame.locked .rz { display: none; }
+.frame.locked > .frame-title { cursor: default; }
+.frame.locked { border-style: dashed; }
+.ft-lock { display: inline-grid; place-items: center; width: 13px; height: 13px; color: var(--dim); margin-inline-start: 2px; }
+.ft-lock .mi { width: 12px; height: 12px; }
+/* the selected note's ropes, lifted above the notes (drawHotRopes) */
+#ropesTop { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 2147483000; }
+#ropesTop .lk-line.lk-top { opacity: .95; stroke-dasharray: none; }
+#ropesTop .lk-hit:hover + .lk-line { stroke-width: calc(var(--rope-w, 2) * 1px + 1.5px); }
+
+/* ---- columns: one row, as many tracks as columns, until there is no room ----
+   §30 used `repeat(auto-fit, minmax(88px, 1fr))`, which is a track count set by
+   the note's *width*, not by the block: resize a note, or make its text bigger
+   so the columns read narrower, and the third column of three dropped to a
+   second row — under the first, with the divider and the gutter rules (which
+   assume one row) drawing a line and an indent at the start of that row. Now
+   the row holds exactly the columns there are. When the note gets too narrow
+   for them — narrower the more there are — the whole block stacks into one
+   column with a rule between each, never into a ragged half-and-half. */
+.note-body .mb-cols { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.note-body:has(.mb-cols) { container-type: inline-size; }
+@container (max-width: 200px) {
+  .note-body .mb-cols { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
+  .note-body .mb-cols > .mb-col { padding-inline: 0; }
+  .note-body .mb-cols > .mb-col + .mb-col { padding-top: 9px; margin-top: 9px; }
+  .note-body .mb-cols > .mb-col + .mb-col::before { inset-block: 0 auto; inset-inline: 0; width: auto; height: 1px; }
+}
+@container (max-width: 290px) {
+  .note-body .mb-cols:has(> .mb-col:nth-child(3)) { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
+  .note-body .mb-cols:has(> .mb-col:nth-child(3)) > .mb-col { padding-inline: 0; }
+  .note-body .mb-cols:has(> .mb-col:nth-child(3)) > .mb-col + .mb-col { padding-top: 9px; margin-top: 9px; }
+  .note-body .mb-cols:has(> .mb-col:nth-child(3)) > .mb-col + .mb-col::before { inset-block: 0 auto; inset-inline: 0; width: auto; height: 1px; }
+}
+@container (max-width: 390px) {
+  .note-body .mb-cols:has(> .mb-col:nth-child(4)) { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
+  .note-body .mb-cols:has(> .mb-col:nth-child(4)) > .mb-col { padding-inline: 0; }
+  .note-body .mb-cols:has(> .mb-col:nth-child(4)) > .mb-col + .mb-col { padding-top: 9px; margin-top: 9px; }
+  .note-body .mb-cols:has(> .mb-col:nth-child(4)) > .mb-col + .mb-col::before { inset-block: 0 auto; inset-inline: 0; width: auto; height: 1px; }
+}
+
+/* ---- holding Ctrl+V: the paste, before it lands ---- */
+#pasteGhost { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 2147483001; }
+.pgh-item {
+  position: absolute; box-sizing: border-box; overflow: hidden;
+  border: 1.5px dashed color-mix(in srgb, var(--nc, var(--accent)) 80%, var(--text));
+  background: color-mix(in srgb, var(--nb, var(--surface)) 55%, transparent);
+  border-radius: var(--radius); opacity: .78;
+  padding: 10px 12px; font-size: 13px; font-weight: 600; color: var(--text);
+}
+.pgh-item > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
+.pgh-item.pgh-frame { background: color-mix(in srgb, var(--nc, var(--accent)) 6%, transparent); border-radius: 20px; }
+.pgh-ropes { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.pgh-ropes line { stroke: var(--rope, var(--accent)); stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-dasharray: 6 5; opacity: .85; }
+.pgh-ext { z-index: 2147483001; }
+body.paste-ghosting #viewport { cursor: copy; }
+
+/* ─────────────── 59. drawing on the board (js/ink.js) ─────────────── */
+/* World-space, like the ropes: a 1px box that draws outside itself. Over the
+   notes unless the board put it behind them — and only ever hit-testable while
+   the pen is out. z-index 0 behind: the notes carry z from 1 upward and the
+   frames layer has none, so 0 lands between the two. */
+#inkSvg {
+  position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible;
+  pointer-events: none; z-index: 2147482000;
+}
+#inkSvg.behind { z-index: 0; }
+.ink { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ink-brush { stroke: none; }
+.ink-marker { opacity: .38; stroke-linecap: square; }
+/* the theme's ink: the text colour, so it is white on dark and black on light */
+:root { --ink-text: var(--text); }
+
+body.inking #viewport { cursor: none; }
+body.inking .note, body.inking .frame, body.inking .lk-hit { cursor: none; }
+body.inking .note:hover { box-shadow: var(--note-shadow, var(--shadow-sm)); border-color: var(--nl); }
+body.inking #emptyHint { display: none; }
+
+#inkCursor {
+  position: fixed; left: 0; top: 0; z-index: 90; pointer-events: none;
+  margin: 0; translate: -50% -50%;
+  border-radius: 50%; background: var(--ink, var(--text));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 70%, transparent);
+}
+#inkCursor.eraser { background: transparent; border: 1.5px solid var(--text); box-shadow: 0 0 0 1px var(--surface); }
+
+#inkBar {
+  position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 70;
+  display: flex; align-items: center; gap: 3px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 2px;
+  box-shadow: var(--shadow);
+  max-width: calc(100vw - 32px); overflow-x: auto; scrollbar-width: none;
+}
+#inkBar > * { flex: 0 0 auto; }
+.ik-tool, .ik-btn, .ik-size {
+  width: 34px; height: 34px; display: grid; place-items: center; border-radius: 2px;
+  color: var(--dim); transition: background .12s, color .12s;
+}
+.ik-tool .mi, .ik-btn .mi { width: 20px; height: 20px; }
+.ik-tool:hover, .ik-btn:hover, .ik-size:hover { background: var(--surface-3); color: var(--text); }
+.ik-tool.on, .ik-size.on { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.ik-size i { width: var(--d); height: var(--d); border-radius: 50%; background: currentColor; display: block; }
+.ik-done { color: var(--text); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.ik-sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.ik-sw, .ik-custom {
+  width: 22px; height: 22px; border-radius: 50%; margin: 0 1px; position: relative;
+  background: var(--sw); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 25%, transparent);
+  transition: transform .12s;
+}
+.ik-sw:hover, .ik-custom:hover { transform: scale(1.12); }
+.ik-sw.on, .ik-custom.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--text); }
+.ik-custom { background: conic-gradient(from 0deg, #e05a5a, #e0b95a, #5ae07a, #5ab8e0, #8a5ae0, #e05ab8, #e05a5a); cursor: pointer; overflow: hidden; }
+.ik-custom.on { background: var(--sw); }
+.ik-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: 0; padding: 0; }
+body.focus-mode #inkBar { bottom: 12px; }
+
+/* ---- Balanced: shadows and motion stay, the blur behind panels goes ---- */
+body[data-perf="balanced"] .overlay,
+body[data-perf="balanced"] #ctxMenu,
+body[data-perf="balanced"] #boardMenu,
+body[data-perf="balanced"] #pageMenu,
+body[data-perf="balanced"] .sheet { backdrop-filter: none; -webkit-backdrop-filter: none; }
+/* a toast while drawing sits above the pen's bar rather than on it */
+body.inking #toast { bottom: 84px; z-index: 71; }
+
+/* ---- a theme change fades (applyThemeFaded in js/theme.js) ---- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--theme-fade, 500ms);
+  animation-timing-function: cubic-bezier(.4, 0, .2, 1);
+}
+
+/* ─────────────── 60. icons that sit in the middle ───────────────
+   tokens.css resets a button's border and background but not its padding, so
+   every button still carried Chromium's own `padding: 1px 6px`. On a button
+   with text that is invisible. On a fixed-size icon button it is not: a 26px
+   close button kept 14px of content box for a 16px glyph, and a 22px rail
+   action kept 10px for a 15px one, so the glyph overflowed to one side —
+   every dialog's ✕, the agenda's arrows, the find bar, the rail's pencil and
+   ⋯, 0.5 to 2.5px right of centre. Measured, every one of them, by checking
+   each icon-only button's content box against its glyph. */
+.br-act, .pm-x, .sheet-x, .ag-nav, .tb-btn, .ik-tool, .ik-btn, .ik-size, .ft-icon, .nr-pill,
+:is(#findBar, #zoombar, #imgBar, #stTools, #tableBar, #colsBar, #selBar, .sb-pop) button:has(> svg.mi:only-child) { padding: 0; }
+/* the native date and time pickers wear the app's glyphs, not Windows' own */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  width: 15px; height: 15px; padding: 0; margin: 0 0 0 4px; cursor: pointer;
+  background: currentColor; opacity: .7;
+  -webkit-mask: var(--ico-event) center / 15px 15px no-repeat;
+  mask: var(--ico-event) center / 15px 15px no-repeat;
+}
+input[type="time"]::-webkit-calendar-picker-indicator { -webkit-mask-image: var(--ico-more); mask-image: var(--ico-more); }
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* ─────────────── 61. a custom colour, blue links, selected ink (2.1) ─────────────── */
+
+/* The right-click menu's tenth swatch: a colour wheel until the item has a
+   colour of its own, then that colour. The <input type="color"> covers it
+   invisibly, so pressing the swatch is pressing the input. */
+.cm-custom {
+  position: relative; height: 20px; border-radius: 2px; cursor: pointer; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  background: conic-gradient(from 0deg, #e05a5a, #e0b95a, #5ae07a, #5ab8e0, #8a5ae0, #e05ab8, #e05a5a);
+}
+.cm-custom.on { background: var(--sw); }
+.cm-custom:hover { box-shadow: 0 0 0 1px var(--text); }
+.cm-custom.on { box-shadow: 0 0 0 1px var(--text), 0 0 0 3px var(--surface), 0 0 0 4px var(--text); }
+.cm-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+
+/* A link in a note is blue — the colour everyone already reads as "this goes
+   somewhere". It used to be the accent, and since Mono became the default the
+   accent is the text colour, so a link looked exactly like the words around
+   it. One shade per mode, chosen for contrast on that mode's notes. */
+:root { --link: #6cb4ff; }
+html[data-mode="light"] { --link: #1a62d6; }
+.note-body a, .note-body a.mb-note {
+  color: var(--link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--link) 55%, transparent);
+  text-underline-offset: 2px; border-bottom: 0;
+}
+.note-body a:hover, .note-body a.mb-note:hover { text-decoration-color: var(--link); }
+/* a link to a note is dashed, so it reads as "somewhere on your boards" rather than the web */
+.note-body a.mb-note { text-decoration-style: dashed; }
+/* the board link stays a pill, but blue like every other link */
+.note-body a.mb-board { color: var(--link); text-decoration: none; }
+/* a bookmark card's own link is the card, not a blue underline */
+.note-body .mb-embed a { color: inherit; text-decoration: none; }
+.note-body a.mb-board { background: color-mix(in srgb, var(--link) 14%, transparent); }
+
+/* ---- selected strokes ---- */
+#inkSelSvg { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 2147482001; }
+.ink-selbox { fill: color-mix(in srgb, var(--accent) 6%, transparent); stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.ink.ink-sel { filter: drop-shadow(0 0 1.5px var(--accent)) drop-shadow(0 0 1px var(--accent)); }
+body.inking.ink-select #viewport, body.inking.ink-select .note, body.inking.ink-select .frame { cursor: default; }
+#inkCursor.select { display: none; }

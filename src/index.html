@@ -84,8 +84,16 @@
     <div id="grid" aria-hidden="true"></div>
     <div id="world">
       <div id="framesLayer"></div>
+      <!-- Drawing on the board (js/ink.js). Above the notes by default, behind
+           them when the board says so; it only takes the pointer while the pen
+           is out. -->
+      <svg id="inkSvg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
       <svg id="linksSvg" xmlns="http://www.w3.org/2000/svg"><g id="linksInner"></g></svg>
       <div id="notesLayer"></div>
+      <!-- The ropes of the selected notes, and the one under the pointer, drawn
+           again above the notes so you can see where they go. drawHotRopes()
+           in js/links.js. -->
+      <svg id="ropesTop" xmlns="http://www.w3.org/2000/svg"></svg>
       <!-- Alignment guides, drawn while something is dragged. Above the notes
            rather than below them, because a line hidden behind the note it is
            lining up is a line nobody can use. Its own <svg> and not a second <g>
@@ -130,13 +138,29 @@
     <div class="fab-menu" id="fabMenu">
       <button class="fab-item" data-new="note" data-icon="sticky_note_2"><span class="fi-ic"></span><span><span data-t="fab.note"></span><em>N</em></span></button>
       <button class="fab-item" data-new="frame" data-icon="select_all"><span class="fi-ic"></span><span><span data-t="fab.frame"></span><em>G</em></span></button>
+      <button class="fab-item" data-new="picture" data-icon="image"><span class="fi-ic"></span><span><span data-t="fab.picture"></span></span></button>
+      <button class="fab-item" data-new="video" data-icon="movie"><span class="fi-ic"></span><span><span data-t="fab.video"></span></span></button>
+      <button class="fab-item" data-new="draw" data-icon="draw"><span class="fi-ic"></span><span><span data-t="fab.draw"></span><em>P</em></span></button>
       <button class="fab-item" data-new="link" data-icon="link"><span class="fi-ic"></span><span><span data-t="fab.link"></span><em>L</em></span></button>
     </div>
     <button id="fab" data-t-title="fab.add" data-t-aria="fab.add"></button>
   </div>
 
+  <!-- The pen's bar, bottom centre, while drawing. Built by buildInkBar() in
+       js/ink.js; the circle is the eraser's (and the pen's) cursor. -->
+  <div id="inkBar" class="hidden" role="toolbar" data-t-aria="ink.bar"></div>
+  <div id="inkCursor" class="hidden" aria-hidden="true"></div>
+
   <!-- bottom-right zoom controls -->
+  <!-- The minimap: the whole board as rectangles, the view as a frame. A
+       <canvas> drawn by drawMinimap() in js/views.js; hidden on an empty
+       board, in focus mode, and when Settings turns it off. -->
+  <canvas id="minimap" class="hidden" data-t-title="view.minimap" data-t-aria="view.minimap"></canvas>
+
   <div id="zoombar" dir="ltr">
+    <button id="btnAgenda" data-t-title="view.agendaKey" data-t-aria="view.agenda"></button>
+    <button id="btnKanban" data-t-title="view.kanbanKey" data-t-aria="view.kanban"></button>
+    <span class="zb-sep"></span>
     <button id="zOut" data-t-title="zoom.out"></button>
     <button id="zLevel" data-t-title="zoom.reset">100%</button>
     <button id="zIn" data-t-title="zoom.in"></button>
@@ -382,6 +406,15 @@
             </div>
           </div>
           <p class="set-note dim sub" data-t="set.motionHint"></p>
+
+          <!-- Menu sounds (2.1, js/sound.js). Off unless switched on; made on the
+               spot by Web Audio, so there is nothing to ship or fetch. -->
+          <label class="set-check"><input type="checkbox" id="setSounds"><span class="row-ic"></span><span data-t="set.sounds"></span></label>
+          <div class="set-row sub">
+            <label><span class="row-ic"></span><span data-t="set.soundVol"></span> <span class="set-val" id="soundVolVal">60%</span></label>
+            <input type="range" id="soundVol" min="5" max="100" step="5" data-t-aria="set.soundVol">
+          </div>
+          <p class="set-note dim sub" data-t="set.soundsHint"></p>
         </section>
 
         <section class="set-sec" data-pane="canvas">
@@ -425,6 +458,7 @@
             <div class="seg" id="perfSeg">
               <button data-perf="auto" data-t="set.perfAuto"></button>
               <button data-perf="full" data-t="set.perfFull"></button>
+              <button data-perf="balanced" data-t="set.perfBalanced"></button>
               <button data-perf="lite" data-t="set.perfLite"></button>
             </div>
           </div>
@@ -438,6 +472,7 @@
           <p class="set-note dim sub" data-t="set.guidesHint"></p>
           <label class="set-check"><input type="checkbox" id="setSnap"><span class="row-ic"></span><span data-t="set.snap"></span></label>
           <label class="set-check"><input type="checkbox" id="setCompass"><span class="row-ic"></span><span data-t="set.compass"></span></label>
+          <label class="set-check"><input type="checkbox" id="setMinimap"><span class="row-ic"></span><span data-t="set.minimap"></span></label>
           <label class="set-check"><input type="checkbox" id="setSpell"><span class="row-ic"></span><span data-t="set.spell"></span></label>
           <div class="set-row">
             <label><span class="row-ic"></span><span data-t="set.rail"></span></label>
@@ -504,9 +539,6 @@
               <button data-shadow="lift" data-t="set.shadowLift"></button>
             </div>
           </div>
-
-          <label class="set-check"><input type="checkbox" id="setNoteChrome"><span class="row-ic"></span><span data-t="set.noteChrome"></span></label>
-          <p class="set-note" data-t="set.noteChromeHint"></p>
 
           <!-- What a NEW note starts as. Nothing here touches a note that
                already exists, which is what makes it safe to change freely. -->
@@ -851,7 +883,9 @@
     <header class="sheet-head"><h2 data-t="link.title"></h2><button class="sheet-x" id="linkCancel" data-t-aria="tb.close"></button></header>
     <div class="sheet-body">
       <label class="fld"><span data-t="link.text"></span><input type="text" id="linkText" data-t-ph="link.textPh" dir="auto"></label>
-      <label class="fld"><span data-t="link.url"></span><input type="text" id="linkUrl" placeholder="https://…" dir="ltr"></label>
+      <label class="fld"><span data-t="link.url"></span><input type="text" id="linkUrl" data-t-ph="link.urlPh" dir="auto"></label>
+      <!-- notes you can link to instead, filled by renderLinkNotes() -->
+      <div id="linkNotes" class="ln-list hidden"></div>
       <div class="set-btns end"><button class="btn" id="linkRemove"><span class="b-ic"></span><span data-t="link.remove"></span></button><button class="btn primary" id="linkOk"><span class="b-ic"></span><span data-t="link.apply"></span></button></div>
     </div>
   </div>
@@ -860,6 +894,25 @@
 <!-- ───────────────────────── embed a video ─────────────────────────
      One field, because a video card has exactly one input. The /video route to
      the same card the paste-as menu builds. -->
+<!-- ───────────────────────── the agenda ─────────────────────────
+     Every dated note on every board, with a month above it. Filled by
+     renderAgenda() in js/views.js. -->
+<div id="agendaDlg" class="overlay hidden">
+  <div class="sheet view-sheet ag-sheet" role="dialog" data-t-aria="view.agenda">
+    <header class="sheet-head"><h2 data-t="view.agenda"></h2><button class="sheet-x" id="agendaClose" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body" id="agendaBody"></div>
+  </div>
+</div>
+
+<!-- ───────────────────────── the board as columns ─────────────────────────
+     One column per status. Filled by renderKanban() in js/views.js. -->
+<div id="kanbanDlg" class="overlay hidden">
+  <div class="sheet view-sheet kb-sheet" role="dialog" data-t-aria="view.kanban">
+    <header class="sheet-head"><h2 id="kanbanTitle"></h2><button class="sheet-x" id="kanbanClose" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body" id="kanbanBody"></div>
+  </div>
+</div>
+
 <div id="embedDlg" class="overlay hidden">
   <div class="sheet small" role="dialog" data-t-aria="embed.title">
     <header class="sheet-head"><h2 data-t="embed.title"></h2><button class="sheet-x" id="embedCancel" data-t-aria="tb.close"></button></header>
@@ -867,7 +920,7 @@
       <label class="fld"><span data-t="embed.url"></span><input type="text" id="embedUrl" placeholder="https://youtube.com/watch?v=…" dir="ltr"></label>
       <p class="set-note dim" data-t="embed.hint"></p>
       <p class="fld-err" id="embedErr"></p>
-      <div class="set-btns end"><button class="btn primary" id="embedOk"><span class="b-ic"></span><span data-t="embed.insert"></span></button></div>
+      <div class="set-btns end"><button class="btn" id="embedFile"><span class="b-ic"></span><span data-t="embed.orFile"></span></button><button class="btn primary" id="embedOk"><span class="b-ic"></span><span data-t="embed.insert"></span></button></div>
     </div>
   </div>
 </div>
@@ -986,10 +1039,12 @@
      but only once the file that needs it is reached. See MAP.md §4. -->
 <script src="js/helpers.js"></script>
 <script src="js/state.js"></script>
+<script src="js/sound.js"></script>
 <script src="js/theme.js"></script>
 <script src="js/view.js"></script>
 <script src="js/items.js"></script>
 <script src="js/links.js"></script>
+<script src="js/ink.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/embeds.js"></script>
 <script src="js/toolbars.js"></script>
@@ -1000,6 +1055,8 @@
 <script src="js/boards.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/page.js"></script>
+<script src="js/canvas.js"></script>
+<script src="js/views.js"></script>
 <script src="js/init.js"></script>
 </body>
 </html>

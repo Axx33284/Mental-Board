@@ -1,7 +1,7 @@
 /* Mental Board — editor.js
    The note editor: markdown, blocks, tables, columns, templates, the paste sanitiser.
 
-   Part 7 of 17. These files are plain scripts sharing one global
+   Part 9 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -13,6 +13,7 @@ let editBefore = '';      // its body when the edit began, for pushHistory()
 
 function wireNoteBody(body, n, el) {
   body.addEventListener('input', () => {
+    if (columnsBroken(body)) repairColumns(body);    // a typed merge across a column edge
     n.body = bodyHtml(body);
     editDirty = true;
     saveSoon();
@@ -52,6 +53,11 @@ function wireNoteBody(body, n, el) {
     /* A board link is checked before the external-URL branch: it carries
        href="#" so that it looks and behaves like a link, and handing that to
        the system browser would open a blank tab. */
+    if (a && a.classList.contains('mb-note')) {
+      e.preventDefault();               // href="#" must not do anything of its own
+      if (!el.classList.contains('editing') || e.ctrlKey || e.metaKey) followNoteLink(a);
+      return;
+    }
     if (a && a.classList.contains('mb-board')) {
       if (!el.classList.contains('editing') || e.ctrlKey || e.metaKey) {
         e.preventDefault();
@@ -94,12 +100,12 @@ function bodyHtml(body) {
      board opens — and a board file that carries a remote URL the app promised
      only to load on a click. Lift them out for the read and put them straight
      back, the same trick `img-sel` uses below. */
-  const lifted = [...body.querySelectorAll('.emb-face, .mb-embed iframe')]
+  const lifted = [...body.querySelectorAll('.emb-face, .mb-embed iframe, .mb-cant')]
     .map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
   lifted.forEach((m) => m.el.remove());
   const marked = body.querySelector('img.img-sel');
   if (marked) marked.classList.remove('img-sel');
-  const html = body.innerHTML;
+  const html = body.innerHTML.replace(/ data-watched="1"/g, '');
   if (marked) marked.classList.add('img-sel');
   lifted.forEach((m) => { if (m.parent) m.parent.insertBefore(m.el, m.next); });
   return html;
@@ -173,6 +179,7 @@ function onEditorKey(e, body, n) {
   // letterKey(), not e.key: on an Arabic layout the K key reports 'ل'. See §1.
   if ((e.ctrlKey || e.metaKey) && letterKey(e) === 'k') { e.preventDefault(); openLinkDialog(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); exitEdit(); return; }
+  if (columnEdgeKey(e)) return;
 
   const pre = caretPre();
   if (pre) {
@@ -350,10 +357,23 @@ function normalizeBody(body) {
     .forEach((h) => h.replaceWith(...h.childNodes));
   // and a code span inside a code span draws two borders
   body.querySelectorAll('code code').forEach((c) => c.replaceWith(...c.childNodes));
+  repairColumns(body);
   // collapse redundant size wrappers
   body.querySelectorAll('span.mb-fs > span.mb-fs:only-child').forEach((inner) => {
     const outer = inner.parentElement;
     if (outer) outer.replaceWith(inner);
+  });
+  /* `insertHTML` copies the *stylesheet's* look onto what it inserts —
+     `font-family: var(--face-system)`, `color: var(--text)`, the note's own
+     font size — as inline styles, and wraps the space after it in a span to
+     carry them. Every one of those is the theme frozen into the text: change
+     the note font or the theme and that run stays behind. Nothing the app
+     writes into a body ever contains `var(` (see STYLE_OK), so a declaration
+     that does is always this echo, and a span left with nothing is unwrapped. */
+  body.querySelectorAll('[style*="var("]').forEach((el) => {
+    for (const prop of [...el.style]) if (el.style.getPropertyValue(prop).includes('var(')) el.style.removeProperty(prop);
+    if (!el.style.length) el.removeAttribute('style');
+    if (el.tagName === 'SPAN' && !el.attributes.length) el.replaceWith(...el.childNodes);
   });
 }
 
@@ -539,6 +559,106 @@ function delColumn() {
   const next = cell.nextElementSibling || cell.previousElementSibling;
   cell.remove();
   if (next) placeCaret(next.firstChild || next, 0);
+}
+
+/* Put a columns block back into the one shape the CSS draws: `.mb-cols` whose
+   children are all `.mb-col`, each holding blocks. execCommand does not know
+   the shape exists, and every way it was seen to break it is undone here:
+
+   - a block that landed directly in the grid (a merge across columns, a paste)
+     is moved into the column before it, so it stops being a column of its own;
+   - a `.mb-col` that was lifted out of its grid is unwrapped;
+   - bare text in a column gets a paragraph, or `formatBlock` on it wraps the
+     whole grid in a heading;
+   - a column emptied by Backspace keeps a paragraph to click into;
+   - a grid down to one column is unwrapped — there is no row left, and the
+     columns toolbar cannot do anything with one;
+   - a size span wrapped round a grid or a column (the old applyFontPx did
+     this) is pushed inside it, onto the text.
+
+   Runs from normalizeBody(), so after every edit that goes through
+   persistEdit(); it costs nothing on a note with no columns. */
+/* Cheap enough for every keystroke: is any columns block out of shape? */
+function columnsBroken(body) {
+  if (!body.querySelector('.mb-cols, .mb-col')) return false;
+  for (const g of body.querySelectorAll('.mb-cols')) {
+    let cols = 0;
+    for (const c of g.children) { if (!c.classList.contains('mb-col')) return true; if (!c.firstChild) return true; cols++; }
+    if (cols < 2) return true;
+  }
+  for (const c of body.querySelectorAll('.mb-col')) if (!c.parentElement.classList.contains('mb-cols')) return true;
+  return false;
+}
+function repairColumns(body) {
+  if (!body.querySelector('.mb-cols, .mb-col')) return;
+  body.querySelectorAll('span.mb-fs').forEach((sp) => {
+    if (!sp.querySelector(':scope > .mb-cols, :scope > .mb-col')) return;
+    const size = sp.style.fontSize;
+    [...sp.childNodes].forEach((c) => {
+      if (c.nodeType === 1 && /\bmb-col/.test(c.className)) {
+        c.querySelectorAll('p, li, h1, h2, h3, blockquote, td, th').forEach((blk) => {
+          if (blk.querySelector('p, li, h1, h2, h3, blockquote, td, th')) return;
+          const inner = document.createElement('span');
+          inner.className = 'mb-fs'; inner.style.fontSize = size;
+          while (blk.firstChild) inner.appendChild(blk.firstChild);
+          blk.appendChild(inner);
+        });
+      }
+    });
+    sp.replaceWith(...sp.childNodes);
+  });
+  body.querySelectorAll('.mb-col').forEach((col) => {
+    if (!col.parentElement || !col.parentElement.classList.contains('mb-cols')) col.replaceWith(...col.childNodes);
+  });
+  body.querySelectorAll('.mb-cols').forEach((grid) => {
+    let prev = null;
+    [...grid.childNodes].forEach((c) => {
+      if (c.nodeType === 1 && c.classList.contains('mb-col')) { prev = c; return; }
+      if (c.nodeType === 3 && !c.textContent.trim()) { c.remove(); return; }
+      if (!prev) { prev = document.createElement('div'); prev.className = 'mb-col'; grid.insertBefore(prev, c); }
+      prev.appendChild(c);
+    });
+    grid.querySelectorAll(':scope > .mb-col').forEach((col) => {
+      [...col.childNodes].forEach((c) => {
+        if (c.nodeType === 3 && c.textContent.trim()) { const p = document.createElement('p'); c.replaceWith(p); p.appendChild(c); }
+        else if (c.nodeType === 1 && /^(B|STRONG|I|EM|U|S|CODE|A|SPAN|MARK|BR)$/.test(c.tagName)) {
+          const p = document.createElement('p'); c.replaceWith(p); p.appendChild(c);
+        }
+      });
+      if (!col.firstElementChild) col.innerHTML = '<p><br></p>';
+    });
+    const cols = grid.querySelectorAll(':scope > .mb-col');
+    if (cols.length < 2) {
+      const out = document.createDocumentFragment();
+      cols.forEach((col) => { while (col.firstChild) out.appendChild(col.firstChild); });
+      grid.replaceWith(out);
+    }
+  });
+}
+
+/* Backspace at the very start of a column, or Delete at the very end of one,
+   is a merge across the column edge — and execCommand performs it: the two
+   columns' text runs together and one column is left empty or gone. A column
+   edge is a wall. Returns true when it swallowed the key. */
+function columnEdgeKey(e) {
+  if (e.key !== 'Backspace' && e.key !== 'Delete') return false;
+  const s = getSelection();
+  if (!s.rangeCount || !s.isCollapsed) return false;
+  const col = caretColumn();
+  if (!col || !editing || !editing.contains(col)) return false;
+  const r = s.getRangeAt(0);
+  const probe = document.createRange();
+  probe.selectNodeContents(col);
+  if (e.key === 'Backspace') probe.setEnd(r.startContainer, r.startOffset);
+  else probe.setStart(r.endContainer, r.endOffset);
+  const between = probe.cloneContents();
+  // nothing but empty markup between the caret and the column's edge
+  if ((between.textContent || '').replace(/[\s​]/g, '') || between.querySelector && between.querySelector('img, video, audio, hr, table, svg')) return false;
+  /* An empty column's one paragraph is the exception for Backspace: the caret
+     is at its start *and* its end, and the useful thing is nothing at all —
+     the column stays, still empty, ready to type into. */
+  e.preventDefault();
+  return true;
 }
 
 /* Unwrap rather than delete. The columns are a layout, not content — throwing
@@ -1182,7 +1302,9 @@ function sanitize(html) {
     [...el.attributes].forEach((a) => {
       const keep = (el.tagName === 'A' && a.name === 'href') ||
                    // a board link pasted from another note keeps pointing at it
-                   (el.tagName === 'A' && a.name === 'data-board' && /\bmb-board\b/.test(el.className)) ||
+                   (el.tagName === 'A' && a.name === 'data-board' && /\bmb-(board|note)\b/.test(el.className)) ||
+                   // a link to a note keeps the note it names (2.1)
+                   (el.tagName === 'A' && a.name === 'data-note' && /\bmb-note\b/.test(el.className) && /^[\w-]{1,40}$/.test(a.value)) ||
                    /* An embed copied between notes keeps working. Only the two
                       attributes the card is rebuilt from survive, and `data-vid`
                       is re-checked against the pattern that produced it — so a

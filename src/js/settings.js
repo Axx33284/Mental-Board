@@ -1,7 +1,7 @@
 /* Mental Board — settings.js
    The settings panel and every dialog behind it.
 
-   Part 15 of 17. These files are plain scripts sharing one global
+   Part 17 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -523,10 +523,16 @@ function syncSettingsUI() {
   /* Say which one Auto landed on, and why. "Auto" that will not tell you its
      answer is a setting you cannot reason about — and the whole question this
      control exists to settle is "is my machine being treated as the slow one?" */
+  const modeName = (m) => t(m === 'lite' ? 'set.perfLite' : m === 'balanced' ? 'set.perfBalanced' : 'set.perfFull');
+  const modeHint = (m) => t(m === 'lite' ? 'set.perfLiteHint' : m === 'balanced' ? 'set.perfBalancedHint' : 'set.perfFullHint');
   $('perfHint').textContent = (s.perf === 'auto'
-    ? t('set.perfAutoHint', { mode: t(detectPerf() === 'lite' ? 'set.perfLite' : 'set.perfFull') })
-    : t(s.perf === 'lite' ? 'set.perfLiteHint' : 'set.perfFullHint')) +
+    ? t('set.perfAutoHint', { mode: modeName(detectPerf()) }) + (perfReason ? ' (' + perfReason.replace(/^ANGLE \(|\)$/g, '').slice(0, 80) + ')' : '') + ' ' + modeHint(detectPerf())
+    : modeHint(s.perf)) +
     (noGpu ? ' ' + t('set.perfNoGpu') : '');
+  $('setSounds').checked = !!s.sounds;
+  $('soundVol').value = s.soundVol;
+  $('soundVolVal').textContent = pct(s.soundVol);
+  $('soundVol').disabled = !s.sounds;
   $('setSoftware').checked = !!s.softwareRender;
   /* Rebuilt rather than re-marked: the row's contents depend on which accent
      is selected — a preset outside the shown nine is appended so it can still
@@ -537,6 +543,7 @@ function syncSettingsUI() {
   $('fontScaleVal').textContent = pct(s.fontScale);
   $('setSnap').checked = !!s.snap;
   $('setCompass').checked = !!s.compass;
+  $('setMinimap').checked = s.minimap !== false;
   $('setSpell').checked = !!s.spell;
   $('railSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.rail === s.railMode));
   $('shapeSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.shape === s.noteShape));
@@ -544,7 +551,6 @@ function syncSettingsUI() {
   $('fontSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.font === s.noteFont));
   $('shadowSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.shadow === s.noteShadow));
   $('motionSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.motion === s.motion));
-  $('setNoteChrome').checked = !!s.noteChrome;
   /* What a new note starts as. Rebuilt rather than re-marked, for the same
      reason the accent row is: the marked swatch is decided while it is built. */
   buildNoteColorSwatches();
@@ -714,7 +720,8 @@ function buildAccentSwatches() {
   const keys = ACCENT_CHOICES.slice();
   if (ACCENTS[cur] && !keys.includes(cur)) keys.push(cur);
   $('accentSwatches').innerHTML =
-    keys.map((k) => `<button data-accent="${k}"${k === cur ? ' class="on"' : ''} title="${te('accent.' + k)}" style="background:${ACCENTS[k]}"></button>`).join('') +
+    // mono is painted as what it is — white on dark, black on light — split corner to corner
+    keys.map((k) => `<button data-accent="${k}"${k === cur ? ' class="on"' : ''} title="${te('accent.' + k)}" style="background:${k === 'mono' ? 'linear-gradient(135deg, #ffffff 0 50%, #000000 50% 100%)' : ACCENTS[k]}"></button>`).join('') +
     /* The custom swatch is a real swatch showing the colour it holds, with the
        picker behind it — not a separate control below the row. Mixing your own
        is one of the choices, so it belongs among them. */
@@ -752,7 +759,10 @@ const SHORTCUTS = [
   ['Ctrl + Z', 'key.undo'], ['Ctrl + Shift + Z', 'key.redo'],
   ['Ctrl + F', 'key.find'], ['Ctrl + B', 'key.boards'], ['Ctrl + P', 'key.palette'],
   ['Ctrl + ,', 'key.settings'], ['Ctrl + .', 'key.focusMode'],
-  ['/', 'key.blocks'], ['Ctrl + K', 'key.link']
+  ['/', 'key.blocks'], ['Ctrl + K', 'key.link'],
+  ['Ctrl + Shift + D', 'view.agenda'], ['Ctrl + Shift + K', 'view.kanban'],
+  // 2.1
+  ['P', 'key.draw'], ['kb.holdPaste', 'key.holdPaste'], ['kb.clickRope', 'key.followRope']
 ];
 function buildKeyList() {
   $('keyList').innerHTML = SHORTCUTS.map(([k, d]) =>
@@ -1219,44 +1229,150 @@ function openBoardMenu(clientX, clientY, id) {
 }
 
 /* --- link dialog ------------------------------------------------------- */
+/* `savedRange` is shared with the selection toolbar, which stashes the caret
+   in it on every mousedown. The link dialog keeps its own copy — `linkCtx` —
+   because the toolbar is free to overwrite the shared one while the dialog is
+   open, and it is the dialog's range that says where the link goes.
+
+   **Why /link used to land at the top of the note.** applyLink() called
+   closeLinkDialog() first, and closeLinkDialog() cleared the range — so the
+   line that put the caret back always saw null, and `editing.focus()` on its
+   own puts the caret at the start of a contenteditable. Every link made from
+   the dialog was inserted before the first word of the note. The range is
+   now read before anything is closed, and a range that no longer sits inside
+   the note (the note was re-rendered under the dialog) falls back to the end
+   of the note rather than the start. */
 let savedRange = null;
+let linkCtx = null;          // { range, anchor, note } — what the dialog was opened on
 function openLinkDialog() {
   if (!editing) return;
   const s = getSelection();
-  savedRange = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;
+  const range = s.rangeCount && editing.contains(s.getRangeAt(0).commonAncestorContainer) ? s.getRangeAt(0).cloneRange() : null;
   let a = null;
   let node = s.anchorNode;
   if (node && node.nodeType === 3) node = node.parentElement;
-  if (node) a = node.closest('a');
-  $('linkText').value = a ? a.textContent : (savedRange ? savedRange.toString() : '');
-  $('linkUrl').value = a ? a.getAttribute('href') || '' : '';
+  if (node && editing.contains(node)) a = node.closest('a');
+  linkCtx = { range, anchor: a, note: editNote };
+  $('linkText').value = a ? a.textContent : (range ? range.toString() : '');
+  $('linkUrl').value = a && !a.classList.contains('mb-note') ? a.getAttribute('href') || '' : '';
   $('linkRemove').classList.toggle('hidden', !a);
   $('linkDlg').classList.remove('hidden');
+  renderLinkNotes();
   setTimeout(() => $('linkUrl').focus(), 30);
 }
-function closeLinkDialog() { $('linkDlg').classList.add('hidden'); savedRange = null; }
+function closeLinkDialog() { $('linkDlg').classList.add('hidden'); linkCtx = null; }
+
+/* Put the caret back where the dialog was opened. Returns false when the note
+   being edited is not the one the dialog was opened on — the link then goes
+   nowhere rather than into the wrong note. */
+function restoreLinkCaret(ctx) {
+  if (!editing || !ctx || ctx.note !== editNote) return false;
+  editing.focus();
+  const s = getSelection();
+  s.removeAllRanges();
+  if (ctx.range && editing.contains(ctx.range.commonAncestorContainer)) s.addRange(ctx.range);
+  else {
+    const r = document.createRange();
+    r.selectNodeContents(editing); r.collapse(false);
+    s.addRange(r);
+  }
+  return true;
+}
 function applyLink() {
+  const ctx = linkCtx;
   const text = $('linkText').value.trim();
   let url = $('linkUrl').value.trim();
   closeLinkDialog();
-  if (!url || !editing) return;
+  if (!url || !restoreLinkCaret(ctx)) return;
   /* A Windows path is a perfectly good thing to link to, and this used to turn
      `C:\budget\FY26.xlsx` into `https://C:\budget\FY26.xlsx`. Recognise the two
      shapes a local path comes in — a drive letter and a UNC share — and make a
      real file: URL out of them; leave file: alone; prefix everything else the
      way it always did. */
   url = toLinkHref(url);
-  editing.focus();
-  if (savedRange) { const s = getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
-  insertHTML(`<a href="${esc(url)}">${esc(text || url)}</a>&nbsp;`);
+  writeLink(ctx, `<a href="${esc(url)}">${esc(text || url)}</a>`, (a) => {
+    a.className = ''; a.removeAttribute('data-note'); a.removeAttribute('data-board');
+    a.setAttribute('href', url); a.textContent = text || url;
+  });
+}
+/* Editing a link the caret is in changes that link. It used to insert a second
+   one at the caret — inside the first, which the browser then split into
+   three fragments of two links. */
+function writeLink(ctx, html, update) {
+  if (ctx.anchor && editing.contains(ctx.anchor)) update(ctx.anchor);
+  else insertHTML(html + '&nbsp;');
+  normalizeBody(editing);
   persistEdit();
 }
 function removeLink() {
+  const ctx = linkCtx;
   closeLinkDialog();
-  if (!editing) return;
-  editing.focus();
-  document.execCommand('unlink');
+  if (!restoreLinkCaret(ctx)) return;
+  if (ctx.anchor && editing.contains(ctx.anchor)) ctx.anchor.replaceWith(...ctx.anchor.childNodes);
+  else document.execCommand('unlink');
   persistEdit();
+}
+
+/* ---- a link to a note ----
+   The dialog also offers the notes on your boards: type part of a title in the
+   address field and pick one. The link is `a.mb-note` with the note's id and
+   its board's, and clicking it flies there — switching boards first if it has
+   to. Notes on the open board come first, because that is usually what you
+   meant; a locked board is skipped, it has nothing to search. */
+function linkNoteMatches(q) {
+  const out = [];
+  const fq = foldSearch(q || '');
+  const boards = [state.boards.find((b) => b.id === state.activeBoard), ...state.boards.filter((b) => b.id !== state.activeBoard)];
+  for (const b of boards) {
+    if (!b || b.trash || isLocked(b)) continue;
+    const notes = b.id === state.activeBoard ? state.notes : (b.notes || []);
+    for (const n of notes) {
+      if (n.pic || (editNote && n.id === editNote.id)) continue;
+      const title = noteTitle(n);
+      if (fq && !foldSearch(title).includes(fq)) continue;
+      out.push({ n, b, title });
+      if (out.length >= 7) return out;
+    }
+    if (!fq && out.length) return out;      // nothing typed: this board's notes only
+  }
+  return out;
+}
+function renderLinkNotes() {
+  const box = $('linkNotes');
+  if (!box) return;
+  const q = $('linkUrl').value.trim();
+  // something that is plainly an address is not a search for a note
+  const looksLikeUrl = /^[a-z][\w+.-]*:|^www\.|^\\\\|^[a-z]:\\|\.[a-z]{2,}(\/|$)/i.test(q);
+  const hits = looksLikeUrl ? [] : linkNoteMatches(q);
+  box.classList.toggle('hidden', !hits.length);
+  box.innerHTML = hits.length
+    ? `<div class="ln-head">${te('link.toNote')}</div>` + hits.map(({ n, b, title }) =>
+        `<button class="ln-item" data-note="${esc(n.id)}" data-board="${esc(b.id)}">${icon('sticky_note_2')}<span class="ln-t">${esc(title)}</span>${b.id !== state.activeBoard ? `<span class="ln-b">${esc(boardLabel(b))}</span>` : ''}</button>`).join('')
+    : '';
+  box.querySelectorAll('.ln-item').forEach((el) => el.addEventListener('click', () => applyNoteLink(el.dataset.note, el.dataset.board)));
+}
+function applyNoteLink(noteId, boardId) {
+  const ctx = linkCtx;
+  const b = state.boards.find((x) => x.id === boardId);
+  const n = b && (b.id === state.activeBoard ? state.notes : b.notes || []).find((x) => x.id === noteId);
+  const text = $('linkText').value.trim() || (n ? noteTitle(n) : '');
+  closeLinkDialog();
+  if (!n || !restoreLinkCaret(ctx)) return;
+  writeLink(ctx, `<a class="mb-note" data-note="${esc(noteId)}" data-board="${esc(boardId)}" href="#">${esc(text)}</a>`, (a) => {
+    a.className = 'mb-note'; a.dataset.note = noteId; a.dataset.board = boardId;
+    a.setAttribute('href', '#'); a.textContent = text;
+  });
+}
+// following one: switch boards if it lives elsewhere, then fly to it
+async function followNoteLink(a) {
+  const id = a.dataset.note, bid = a.dataset.board || state.activeBoard;
+  if (bid !== state.activeBoard) {
+    const b = boardById(bid);
+    if (!b || !(b.notes || []).some((n) => n.id === id)) { toast(t('msg.noteGone')); return; }
+    await switchBoard(bid);
+    if (state.activeBoard !== bid) return;          // the switch was refused (locked, unreadable)
+  }
+  goToNote(id);
 }
 
 /* --- confirm ----------------------------------------------------------- */
@@ -1317,10 +1433,24 @@ function hint(msg) {
    automatic copy could fire twice on one local day or skip one entirely. */
 const backupName = () => `mental-board-${todayKey()}.json`;
 
+// the store's refusal has its own words; anything else is the system's
+const backupError = (r) => (r && r.error === 'inside My Boards')
+  ? t('msg.backupInside') : t('msg.backupFailed', { err: (r && r.error) || '?' });
+
 async function chooseBackupFolder() {
   if (!DATA || !DATA.pickBackupDir) { toast(t('msg.needDesktop')); return; }
   const dir = await DATA.pickBackupDir();
   if (!dir) return;                       // cancelled is not a failure
+  /* A copy of My Boards inside My Boards copies itself until Windows refuses
+     the path. The store refuses it too; saying so here keeps the bad folder
+     from being remembered and failing every morning. */
+  const norm = (p) => String(p || '').toLowerCase().replace(/\//g, '\\').replace(/\\+$/, '');
+  const rootDir = norm(DATA.paths && DATA.paths().root);
+  const picked = norm(dir);
+  if (rootDir && (picked === rootDir || picked.startsWith(rootDir + '\\'))) {
+    toast(t('msg.backupInside'), 7000);
+    return;
+  }
   state.settings.backupDir = dir;
   save();
   syncSettingsUI();
@@ -1339,7 +1469,7 @@ async function backupNow(quiet) {
   await saveNow();
   const r = await DATA.backupTo(dir);
   if (!r || r.error) {
-    toast(t('msg.backupFailed', { err: (r && r.error) || '?' }), 7000);
+    toast(backupError(r), 7000);
     return;
   }
   state.settings.lastBackup = Date.now();
@@ -1355,7 +1485,7 @@ async function backupAll() {
   await saveNow();
   const r = await DATA.backupAll();
   if (!r) return;                       // cancelled
-  if (r.error) { toast(t('msg.backupFailed', { err: r.error }), 7000); return; }
+  if (r.error) { toast(backupError(r), 7000); return; }
   toast(t('msg.backedUpAllTo', { n: r.files, path: r.path }), 7000);
 }
 
@@ -1476,6 +1606,11 @@ async function cleanUpFiles() {
   if (!canCleanFiles()) { toast(t('msg.needDesktop')); return; }
   const shut = state.boards.filter(isLocked);
   if (shut.length) { toast(t('msg.cleanLocked', { name: shut.map(boardLabel).join(', ') }), 6000); return; }
+  /* The same for a board whose board.json would not parse: its folder is
+     still in the store's map, its notes are not in memory, so every file in
+     it would look unused and go. */
+  const dead = state.boards.filter((b) => b.unreadable);
+  if (dead.length) { toast(t('msg.cleanUnreadable', { name: dead.map(boardLabel).join(', ') }), 6000); return; }
 
   const found = await FILES.unusedFiles(referencedFileUrls());
   if (!found || found.error) { toast(t('msg.cleanFailed', { err: (found && found.error) || '?' }), 6000); return; }

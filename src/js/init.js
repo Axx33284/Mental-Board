@@ -1,7 +1,7 @@
 /* Mental Board — init.js
    Pointer routing, the keyboard map, init(), and STATIC_ICONS — every listener in one place.
 
-   Part 17 of 17. These files are plain scripts sharing one global
+   Part 21 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -47,7 +47,7 @@ function onPointerDown(e) {
   // Buttons inside a note handle themselves. They must bail out BEFORE any
   // gesture starts: beginMove() takes pointer capture on the viewport, which
   // retargets the following click away from the button and swallows it.
-  if (e.target.closest('.nh-btn, .ft-icon, .note-icon')) return;
+  if (e.target.closest('.ft-icon')) return;
 
   /* A link in note text is a button too, and it was losing its click to exactly
      the same capture. Pressing on a note that is not being edited went straight
@@ -59,7 +59,7 @@ function onPointerDown(e) {
      to place the caret instead, and Ctrl+click is the escape hatch there. The
      embed's own controls take the same exit, or pressing play would drag the
      note across the board. */
-  const liveLink = e.target.closest('a[href], a.mb-board, .mb-embed');
+  const liveLink = e.target.closest('a[href], a.mb-board, a.mb-note, .mb-embed');
   if (liveLink && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
     const host = liveLink.closest('.note');
     if (host && !host.classList.contains('editing')) return;
@@ -81,6 +81,15 @@ function onPointerDown(e) {
   if (e.button === 1 || spaceHeld || e.altKey) { e.preventDefault(); beginPan(e); return; }
   if (e.button !== 0) return;
 
+  // the pen is out: every left press on the board is a stroke (js/ink.js)
+  if (inkMode) { e.preventDefault(); beginInk(e); return; }
+
+  /* A rope goes somewhere. Handled here, on the press, because anything left
+     for a `click` loses it to the lasso's pointer capture — see followRope().
+     Shift still lassos, so a selection can be started on top of a rope. */
+  const rope = e.target.closest('.lk-hit');
+  if (rope && !e.shiftKey) { e.preventDefault(); followRope(rope.dataset.id, e.clientX, e.clientY); return; }
+
   if (rz) {
     const host = rz.closest('.note, .frame');
     if (host) { e.preventDefault(); beginResize(e, host.dataset.id, rz.dataset.rz); return; }
@@ -99,7 +108,9 @@ function onPointerDown(e) {
     return;
   }
 
-  if (frameTitle && frameEl) {
+  // a locked workflow's title is canvas: pressing it starts a lasso
+  const frameLocked = frameEl && (state.frames.find((x) => x.id === frameEl.dataset.id) || {}).locked;
+  if (frameTitle && frameEl && !frameLocked) {
     const id = frameEl.dataset.id;
     if (e.shiftKey) { toggleSelection(id); return; }
     if (editing) exitEdit();
@@ -124,6 +135,7 @@ function onPointerDown(e) {
 function hitAt(e) { return document.elementFromPoint(e.clientX, e.clientY) || e.target; }
 
 function onDblClick(e) {
+  if (inkMode) return;               // a quick double tap of the pen is two dots, not a new note
   const hit = hitAt(e);
   // Rename is handled here rather than on the title element itself: dragging
   // the title takes pointer capture, so a listener bound to the title never
@@ -162,6 +174,8 @@ function onContextMenu(e) {
   const hit = hitAt(e);
   const noteEl = hit.closest('.note');
   if (noteEl) { openCtxMenu(e.clientX, e.clientY, noteEl.dataset.id); return; }
+  const rope = hit.closest('.lk-hit');
+  if (rope) { openRopeMenu(e.clientX, e.clientY, rope.dataset.id); return; }
   // frames are pointer-events:none so a lasso can reach through them — hit-test
   // them by geometry instead, which also makes their whole area right-clickable
   const f = frameAt(toWorld(e.clientX, e.clientY));
@@ -172,6 +186,11 @@ function onKeyDown(e) {
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
 
   if (e.key === 'Escape') {
+    if (pasteGhost) { cancelPasteGhost(); return; }
+    if (inkMode && !e.target.closest('.overlay')) {
+      if (inkSel.size) { inkSel.clear(); paintInkSelection(); return; }   // let go of the strokes first
+      toggleInk(false); return;
+    }
     if (!$('studio').classList.contains('hidden')) { closeStudio(); return; }
     if (!$('iconPicker').classList.contains('hidden')) { closeIconPicker(); return; }
     if (!$('confirmDlg').classList.contains('hidden')) { endConfirm(false); return; }
@@ -182,6 +201,8 @@ function onKeyDown(e) {
     if (!$('boardMenu').classList.contains('hidden')) { closeBoardMenu(); return; }
     if (!$('pageMenu').classList.contains('hidden')) { closePageMenu(); return; }
     if (!$('moveDlg').classList.contains('hidden')) { closeMoveTo(); return; }
+    if (!$('agendaDlg').classList.contains('hidden')) { closeAgenda(); return; }
+    if (!$('kanbanDlg').classList.contains('hidden')) { closeKanban(); return; }
     // a latched boards window closes before anything on the canvas does
     if (document.body.classList.contains('rail-open')) { holdRail(false); return; }
     if (palette.open) { closePalette(); return; }
@@ -227,7 +248,14 @@ function onKeyDown(e) {
 
   if (ctrl && key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (ctrl && key === 'y') { e.preventDefault(); redo(); return; }
-  if (ctrl && key === 'a') { e.preventDefault(); selectAll(); return; }
+  if (ctrl && key === 'a') {
+    e.preventDefault();
+    // drawing: every stroke, with the arrow in hand to do something with them
+    if (inkMode) { if (state.settings.pen.tool !== 'select') setPen({ tool: 'select' }); selectAllInk(); return; }
+    selectAll(); return;
+  }
+  if (ctrl && e.shiftKey && key === 'd') { e.preventDefault(); openAgenda(); return; }
+  if (ctrl && e.shiftKey && key === 'k') { e.preventDefault(); openKanban(); return; }
   if (ctrl && key === 'd') { e.preventDefault(); if (selection.size) duplicate([...selection]); return; }
   /* Ctrl+Shift+G, not Ctrl+R: Ctrl+R reloads the window and that is how this
      app is developed. Group and arrange are the two things you do to a
@@ -238,7 +266,19 @@ function onKeyDown(e) {
   if (ctrl && e.shiftKey && key === 'c') { e.preventDefault(); copyBoardContent(); return; }
   if (ctrl && key === 'c') { e.preventDefault(); copySelection(false); return; }
   if (ctrl && key === 'x') { e.preventDefault(); copySelection(true); return; }
-  if (ctrl && key === 'v') { e.preventDefault(); pasteClipboard(); return; }
+  /* Not preventDefault()ed, on purpose: the native paste has to run so the
+     `paste` event below can see the system clipboard. A screenshot there is
+     pasted as a picture; otherwise the copied notes follow the pointer until
+     the keys come up (beginPasteGhost). The timer is the backstop for a paste
+     event that never comes, which leaves the notes still pasting. */
+  if (ctrl && key === 'v') {
+    if (!e.repeat && !pasteGhost) {
+      pasteSeen = false;
+      clearTimeout(pasteTimer);
+      pasteTimer = setTimeout(() => { pasteTimer = null; if (!pasteSeen) { pasteSeen = true; beginPasteGhost(); } }, 150);
+    }
+    return;
+  }
   if (ctrl && key === 's') { e.preventDefault(); flushSave(); toast(t('msg.saved')); return; }
   if (ctrl && (ch === '=' || ch === '+')) { e.preventDefault(); zoomCentre(1.2); return; }
   if (ctrl && ch === '-') { e.preventDefault(); zoomCentre(1 / 1.2); return; }
@@ -247,6 +287,7 @@ function onKeyDown(e) {
 
   if (e.key === ' ' && !spaceHeld) { spaceHeld = true; $('viewport').classList.add('pan-ready'); e.preventDefault(); return; }
 
+  if (inkMode && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteInkSelection(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (selection.size) { e.preventDefault(); askThenDelete([...selection]); }
     return;
@@ -272,6 +313,15 @@ function onKeyDown(e) {
     return;
   }
 
+  /* The pen: P puts it out and away; while it is out, the first letter of
+     each tool picks it, and [ ] step the size. */
+  if (key === 'p' && !ctrl) { e.preventDefault(); toggleInk(); return; }
+  if (inkMode && !ctrl) {
+    const tools = { v: 'select', e: 'eraser', m: 'marker', b: 'brush', d: 'pen' };
+    if (tools[key]) { e.preventDefault(); setPen({ tool: tools[key] }); return; }
+    if (ch === '[' || ch === ']') { e.preventDefault(); setPen({ size: clamp(state.settings.pen.size + (ch === ']' ? 1 : -1), 0, 2) }); return; }
+    return;            // nothing else on the canvas while drawing
+  }
   if (key === 'n') { e.preventDefault(); addNote(); return; }
   if (key === 'g') { e.preventDefault(); selection.size ? groupSelection() : addFrame(); return; }
   if (key === 'l') {
@@ -281,8 +331,15 @@ function onKeyDown(e) {
   }
 }
 
+let pasteSeen = false, pasteTimer = null;
 function onKeyUp(e) {
   if (e.key === ' ') { spaceHeld = false; $('viewport').classList.remove('pan-ready'); }
+  // letting go of either key puts a held paste down where the pointer is
+  if (e.key === 'Control' || e.key === 'Meta' || letterKey(e) === 'v') {
+    if (pasteGhost) commitPasteGhost();
+    // released before the ghost could start: a plain paste at the pointer
+    else if (pasteTimer) { clearTimeout(pasteTimer); pasteTimer = null; if (!pasteSeen && clipboard.length) { pasteSeen = true; pasteClipboard(lastCanvasPoint || undefined); } }
+  }
 }
 
 /* The canvas with nothing on top of it: no rail, no + dial, no zoom bar, no
@@ -338,6 +395,10 @@ async function onCanvasDrop(e) {
   if (files.length === 1 && isBoardFile(files[0])) {
     if (await tryImportDroppedBoard(files[0])) return;
   }
+  if (files.length === 1 && /\.canvas$/i.test(files[0].name || '')) {
+    await importCanvasFile(FILES && FILES.pathOf ? FILES.pathOf(files[0]) : '');
+    return;
+  }
 
   /* Spread several drops along a row from where the pointer was, so they do not
      land on top of each other. */
@@ -354,25 +415,72 @@ async function onCanvasDrop(e) {
 async function noteFromDroppedFile(f, at) {
   const taken = await takeFileIn(f);
   if (!taken) return null;
+  if (isImageFile(f)) return noteFromImage(f, at, taken);
+  return noteFromTaken(taken, at);
+}
+/* A file already in the board's folder → the note that shows it. Sized to
+   what it is: a video gets a box you can actually watch in, a document gets a
+   card. (An image never arrives here — it stands on the board by itself; see
+   noteFromImage().) */
+async function noteFromTaken(taken, at) {
   const html = fileHtml(taken.url, taken.name);
   if (!html) return null;
-
-  /* Sized to what it is. A video gets a box you can actually watch in, a
-     document gets a card, and an image is measured before the note is made —
-     see noteFromImage(), which this defers to so the two cannot drift. */
-  if (isImageFile(f)) return noteFromImage(f, at, taken);
-  const video = isVideoFile(f), audio = isAudioFile(f);
+  if (IMG_EXT.includes(extOf(taken.name))) return addPicture(at, taken);
+  const kind = { name: taken.name };
+  const video = isVideoFile(kind), audio = isAudioFile(kind);
+  /* A video note is sized to the clip, measured first as a picture is, so a
+     portrait phone clip and a widescreen one both fit without a scrollbar.
+     VIDEO_CHROME is the icon row, the name bar and the padding around them. */
+  let vh = 360;
+  if (video) {
+    const size = await measureVideo(taken.url);
+    if (size) vh = Math.round(clamp(480 * size.h / size.w, 160, 760)) + VIDEO_CHROME;
+  }
   const n = addNote(at, {
     body: html + '<p><br></p>',
     icon: video ? 'movie' : audio ? 'headphones' : 'description',
     w: video ? 480 : audio ? 340 : 320,
-    h: video ? 360 : audio ? 170 : 150,
+    h: video ? vh : audio ? 170 : 150,
     edit: false
   });
   // two literal t() calls, so check-lang.js can see both keys
   if (n && video) toast(t('msg.videoAdded', { name: taken.name }));
   else if (n) toast(t('msg.fileAdded', { name: taken.name }));
   return n;
+}
+
+const VIDEO_CHROME = 130;
+// a clip's own width and height, or null if it will not say (an .avi, say)
+function measureVideo(url) {
+  return new Promise((res) => {
+    const v = document.createElement('video');
+    const done = (r) => { clearTimeout(timer); v.removeAttribute('src'); v.load(); res(r); };
+    const timer = setTimeout(() => done(null), 4000);
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => done(v.videoWidth && v.videoHeight ? { w: v.videoWidth, h: v.videoHeight } : null);
+    v.onerror = () => done(null);
+    v.src = url;
+  });
+}
+
+/* A picture or a video without a drag: the + menu and the right-click menu.
+   Picked by path, copied into the board's folder like a drop, and placed at
+   `at` — or the middle of the screen when nothing says where. */
+async function addMediaFromPicker(kind, at) {
+  if (!canEditHere()) return null;
+  if (!FILES || !FILES.attach || !(kind === 'video' ? FILES.pickVideo : FILES.pickImage)) { toast(t('msg.needDesktop')); return null; }
+  const p = kind === 'video' ? await FILES.pickVideo() : await FILES.pickImage();
+  if (!p) return null;
+  const r = await FILES.attach(p, state.activeBoard, '');
+  if (!r || r.error) {
+    const name = p.split(/[\\/]/).pop();
+    if (r && r.error === 'too big') toast(t('msg.fileTooBig', { name }), 5000);
+    else toast(t('msg.fileFailed', { name }), 5000);
+    return null;
+  }
+  const vr = $('viewport').getBoundingClientRect();
+  const pt = at || toWorld(vr.left + vr.width / 2, vr.top + vr.height / 2);
+  return noteFromTaken({ url: r.url, name: r.name }, pt);
 }
 
 /* A board file dropped on the canvas. Returns true when it was one of ours and
@@ -483,7 +591,7 @@ function init() {
     if (dark === systemDark) return;
     systemDark = dark;
     if (state.settings.themeMode !== 'system') return;
-    applyTheme();
+    applyThemeFaded(900);
     // only if it is on screen — syncSettingsUI() walks every board to count words
     if (!$('settings').classList.contains('hidden')) syncSettingsUI();
   };
@@ -503,6 +611,7 @@ function init() {
      fixed-position chrome outside #viewport. */
   document.addEventListener('pointermove', trackRailPeek, { passive: true });
   document.addEventListener('pointermove', trackCanvasPoint, { passive: true });
+  document.addEventListener('pointermove', moveInkCursor, { passive: true });
   document.addEventListener('pointerleave', () => setPeek(false));
 
   window.addEventListener('keydown', onKeyDown);
@@ -551,7 +660,10 @@ function init() {
     if (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
     if (editing) return;
     if (!$('settings').classList.contains('hidden')) return;
-    pasteAnything(e, lastCanvasPoint || viewCenterWorld());
+    pasteSeen = true; clearTimeout(pasteTimer);
+    if (pasteGhost) { e.preventDefault(); return; }       // a held Ctrl+V repeats
+    if (pasteAnything(e, lastCanvasPoint || viewCenterWorld())) return;
+    if (clipboard.length) { e.preventDefault(); beginPasteGhost(); }
   });
 
   // titlebar
@@ -583,6 +695,9 @@ function init() {
     const what = b.dataset.new;
     if (what === 'note') addNote();
     if (what === 'frame') selection.size ? groupSelection() : addFrame();
+    if (what === 'picture') addMediaFromPicker('image');
+    if (what === 'video') addMediaFromPicker('video');
+    if (what === 'draw') toggleInk(true);
     if (what === 'link') {
       const one = [...selection].find((id) => !isFrame(id)) || (state.notes[0] && state.notes[0].id);
       if (one) startLinking(one); else toast(t('msg.addNotesFirst'));
@@ -594,6 +709,15 @@ function init() {
   $('zOut').addEventListener('click', () => zoomCentre(1 / 1.2));
   $('zLevel').addEventListener('click', resetZoom);
   $('zFit').addEventListener('click', zoomToFitAll);
+  $('btnAgenda').addEventListener('click', openAgenda);
+  $('btnKanban').addEventListener('click', openKanban);
+  wireMinimap();
+  window.addEventListener('resize', scheduleMinimap);
+  // the two views close on their X, on Escape (onKeyDown), and on the backdrop
+  $('agendaClose').addEventListener('click', closeAgenda);
+  $('kanbanClose').addEventListener('click', closeKanban);
+  $('agendaDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeAgenda(); });
+  $('kanbanDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeKanban(); });
 
   // settings
   $('settingsClose').addEventListener('click', closeSettings);
@@ -633,7 +757,7 @@ function init() {
     state.settings.themeMode = THEME_MODES.includes(m) ? m : 'fixed';
     state.settings.matchSystem = state.settings.themeMode === 'system';
     clockTheme = null;
-    applyTheme(); syncSettingsUI(); saveSoon();
+    applyThemeFaded(600); syncSettingsUI(); saveSoon();
   }));
   /* Picking your day theme or your night theme.
 
@@ -649,7 +773,7 @@ function init() {
     if (!THEMES.some((th) => th.id === id)) return;
     state.settings[which === 'light' ? 'lightTheme' : 'darkTheme'] = id;
     clockTheme = null;               // re-evaluate on the next tick
-    applyTheme(); syncSettingsUI(); saveSoon();
+    applyThemeFaded(450); syncSettingsUI(); saveSoon();
   };
   $('setLightTheme').addEventListener('change', pairChanged('light'));
   $('setDarkTheme').addEventListener('change', pairChanged('dark'));
@@ -659,7 +783,7 @@ function init() {
     s.dayAt = okClock($('setDayAt').value, s.dayAt);
     s.nightAt = okClock($('setNightAt').value, s.nightAt);
     clockTheme = null;
-    applyTheme(); syncSettingsUI(); saveSoon();
+    applyThemeFaded(600); syncSettingsUI(); saveSoon();
   };
   $('setDayAt').addEventListener('change', clockChanged);
   $('setNightAt').addEventListener('change', clockChanged);
@@ -756,6 +880,17 @@ function init() {
        changed even though nothing about the board did. */
     applySettings(); render(); syncSettingsUI(); saveSoon();
   }));
+  $('setSounds').addEventListener('change', () => {
+    state.settings.sounds = $('setSounds').checked;
+    syncSettingsUI(); saveSoon();
+    if (state.settings.sounds) sfx('select');       // so you hear what you just turned on
+  });
+  $('soundVol').addEventListener('input', () => {
+    state.settings.soundVol = +$('soundVol').value;
+    $('soundVolVal').textContent = pct(state.settings.soundVol);
+    saveSoon();
+  });
+  $('soundVol').addEventListener('change', () => sfx('move'));   // a sample at the new level
   $('setSoftware').addEventListener('change', () => {
     state.settings.softwareRender = $('setSoftware').checked;
     saveSoon();
@@ -771,6 +906,7 @@ function init() {
     applySettings(); saveSoon();
   });
   $('setSnap').addEventListener('change', () => { state.settings.snap = $('setSnap').checked; saveSoon(); });
+  $('setMinimap').addEventListener('change', () => { state.settings.minimap = $('setMinimap').checked; scheduleMinimap(); saveSoon(); });
   $('setCompass').addEventListener('change', () => { state.settings.compass = $('setCompass').checked; drawCompass(); saveSoon(); });
   $('setSpell').addEventListener('change', () => { state.settings.spell = $('setSpell').checked; applySettings(); saveSoon(); });
   $('btnExportImage').addEventListener('click', () => exportBoardImage());
@@ -814,7 +950,7 @@ function init() {
     if (!ok) return;
     exitEdit();
     pushUndo();
-    state.notes = []; state.frames = []; state.links = [];
+    state.notes = []; state.frames = []; state.links = []; state.ink = [];
     markStatsStale();
     render(); drawCompass(); renderBoardRail(); save(); closeSettings(); toast(t('msg.cleared'));
   });
@@ -825,8 +961,19 @@ function init() {
   $('linkOk').addEventListener('click', applyLink);
   $('linkCancel').addEventListener('click', closeLinkDialog);
   $('linkRemove').addEventListener('click', removeLink);
-  $('linkUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') applyLink(); });
-  $('linkText').addEventListener('keydown', (e) => { if (e.key === 'Enter') applyLink(); });
+  $('linkUrl').addEventListener('input', renderLinkNotes);
+  /* Enter takes the first note offered when the field is a search rather than
+     an address — the list is on screen, so that is what Enter visibly means. */
+  $('linkUrl').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    /* Without this the Enter is still on its way when applyLink() hands the
+       focus back to the note, and its default action lands there: the link
+       went in and then split the paragraph it was put in. */
+    e.preventDefault();
+    const first = $('linkNotes').querySelector('.ln-item');
+    if (first && !$('linkNotes').classList.contains('hidden') && $('linkUrl').value.trim()) first.click(); else applyLink();
+  });
+  $('linkText').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } });
 
   // confirm dialog
   $('confirmYes').addEventListener('click', () => endConfirm(true));
@@ -858,6 +1005,8 @@ function init() {
   wireSettingsDesc();
   wireTableBar();
   wireColsBar();
+  wireSounds();
+  watchVpRect();
   wireExtras();
   paintStaticIcons();
 
@@ -1004,6 +1153,7 @@ function wireExtras() {
   // embed a video: /video, and the dialog the paste menu shares a builder with
   $('embedCancel').addEventListener('click', closeEmbedDialog);
   $('embedOk').addEventListener('click', submitEmbed);
+  $('embedFile').addEventListener('click', embedVideoFile);
   $('embedUrl').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submitEmbed(); }
     if (e.key === 'Escape') { e.preventDefault(); closeEmbedDialog(); }
@@ -1065,13 +1215,6 @@ function wireExtras() {
   });
   $('btnResetSettings').addEventListener('click', resetSettings);
   $('statusAdd').addEventListener('click', addStatus);
-  $('setNoteChrome').addEventListener('change', () => {
-    state.settings.noteChrome = $('setNoteChrome').checked;
-    applySettings(); saveSoon();
-    /* Turning them off hides the only visible way to delete a note or open its
-       menu, so say where both went rather than leaving it to be discovered. */
-    if (!state.settings.noteChrome) toast(t('set.noteChromeOff'), 5200);
-  });
 
   // settings that arrived with these features
   $('setShowArchived').addEventListener('change', () => {
@@ -1113,6 +1256,11 @@ const STATIC_ICONS = [
   ['#zOut', 'zoom_out'],
   ['#zIn', 'zoom_in'],
   ['#zFit', 'fit_screen'],
+  ['#btnAgenda', 'calendar_month'],
+  ['#btnKanban', 'view_column'],
+  ['#agendaClose', 'close'],
+  ['#kanbanClose', 'close'],
+  ['#setMinimap + .row-ic', 'map'],
 
   /* text toolbar */
   ['#selBar [data-cmd="bold"]', 'format_bold'],
@@ -1263,6 +1411,7 @@ const STATIC_ICONS = [
   ['#setEmbeds + .row-ic', 'play_circle'],
   ['#embedCancel', 'close'],
   ['#embedOk .b-ic', 'play_circle'],
+  ['#embedFile .b-ic', 'movie'],
   ['label:has([data-t="set.accent"]) .row-ic', 'colorize'],
   ['label:has([data-t="set.canvasBg"]) .row-ic', 'grid_on'],
   ['label:has([data-t="set.gridSize"]) .row-ic', 'grid_view'],
@@ -1276,6 +1425,8 @@ const STATIC_ICONS = [
   ['label:has([data-t="set.wheel"]) .row-ic', 'mouse'],
   ['label:has([data-t="set.zoomSpeed"]) .row-ic', 'av_timer'],
   ['label:has([data-t="set.motion"]) .row-ic', 'waves'],
+  ['#setSounds + .row-ic', 'volume_up'],
+  ['label:has([data-t="set.soundVol"]) .row-ic', 'graphic_eq'],
   ['#setGuides + .row-ic', 'straighten'],
   ['#setSoftware + .row-ic', 'memory'],
   ['#setFocusMode + .row-ic', 'visibility_off'],
@@ -1295,7 +1446,6 @@ const STATIC_ICONS = [
   ['h3:has([data-t="set.notes"]) .sec-ic', 'sticky_note_2'],
   ['label:has([data-t="set.shape"]) .row-ic', 'crop_square'],
   ['label:has([data-t="set.density"]) .row-ic', 'view_list'],
-  ['#setNoteChrome + .row-ic', 'more_horiz'],
   ['h3:has([data-t="set.statuses"]) .sec-ic', 'label'],
   ['#statusAdd .b-ic', 'add'],
   ['#setLang + .sel-chev', 'expand_more'],
@@ -1335,6 +1485,14 @@ function paintStaticIcons() {
   });
   // the empty-board tips are marked with a chevron rather than a list bullet
   document.querySelectorAll('.eh-card .eh-ic').forEach((s) => { s.innerHTML = icon('chevron_right'); });
+  /* The date and time fields' picker buttons. Chromium draws those with the
+     operating system's own glyphs — a calendar and a clock in Windows' line
+     weight, off-centre in the field and unlike every other icon here. CSS
+     masks them with these instead (mental.css §60), built from the same set
+     as everything else; a data: URL, which the CSP allows for images. */
+  const glyph = (name) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${ICON_BOX}"><path d="${ICONS[name]}"/></svg>`)}")`;
+  document.documentElement.style.setProperty('--ico-event', glyph('event'));
+  document.documentElement.style.setProperty('--ico-more', glyph('expand_more'));
 }
 
 function seedWelcome() {

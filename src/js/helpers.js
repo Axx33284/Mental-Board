@@ -1,7 +1,7 @@
 /* Mental Board — helpers.js
    The preamble, the helpers every other file uses, and the language catalogue.
 
-   Part 1 of 17. These files are plain scripts sharing one global
+   Part 1 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -213,11 +213,50 @@ const PIC_MIN = 40;                    // a picture on its own can be small
 const FRAME_MIN_W = 240, FRAME_MIN_H = 180;
 const ZOOM_MIN = 0.08, ZOOM_MAX = 4.5;
 const COLORS = ['default', 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'violet', 'pink'];
+
+/* A note's or a workflow's colour is one of COLORS — or, since 2.1, any hex
+   the user mixed in the colour window ("Custom…" in the right-click menu).
+
+   A preset paints through the `[data-color="…"]` rules in tokens.css, which
+   set three variables: --nc (the colour itself), --nb (the fill) and --nl (the
+   edge). A hex sets the same three inline, with the fill and the edge *mixed
+   against the theme's own default note* — so a custom colour still sits on a
+   dark theme as a dark tint and on a light one as a light tint, the way the
+   presets do, instead of being one flat swatch that ignores the theme.
+   Everything that reads a colour (the stripe, the frame wash, the icon on
+   `auto`) reads those variables, so nothing else has to know. */
+const okItemColor = (c, fb) => (COLORS.includes(c) ? c : isHex(c) ? c.toLowerCase() : fb);
+function customColorVars(hex) {
+  return {
+    '--nc': hex,
+    '--nb': `color-mix(in srgb, ${hex} 20%, var(--c-default-b))`,
+    '--nl': `color-mix(in srgb, ${hex} 48%, var(--c-default-l))`
+  };
+}
+// the colour onto an element: a preset by attribute, a hex by the three variables
+function paintColor(el, c, fb) {
+  const hex = isHex(c);
+  el.dataset.color = hex ? 'custom' : (c || fb || 'default');
+  const vars = customColorVars(hex ? c : '#000000');
+  for (const k in vars) { if (hex) el.style.setProperty(k, vars[k]); else el.style.removeProperty(k); }
+}
+// the same, as an inline style string for markup built as text ('' for a preset)
+function colorStyle(c) {
+  return isHex(c) ? Object.entries(customColorVars(c)).map(([k, v]) => `${k}:${v}`).join(';') : '';
+}
+// a colour's name for a label: the preset's translated name, or the hex itself
+const colorName = (c) => (isHex(c) ? c.toUpperCase() : t('colour.' + c));
 /* Accents. Every one of these has to stay legible as a button fill with
    `--accent-ink` on top of it, and as a 1px focus ring on both the lightest and
    the darkest theme — which is why they are all mid-tone. A pastel reads as
    disabled on Paper; a near-black reads as a border on Midnight. */
+/* `mono` is not one colour but two (2.1, and the default since): pure white
+   on a dark theme, pure black on a light one — the app's own ink, so the
+   accent reads as part of the type rather than as a colour laid over it.
+   accentHex() resolves it against the theme in force; the value here is only
+   what a swatch would paint if anything ever drew it as a plain colour. */
 const ACCENTS = {
+  mono: '#ffffff',
   mint: '#7fd6c8', indigo: '#6b8afd', blue: '#3d8bf2', sky: '#22a7d0', teal: '#22b8a6',
   green: '#3fb96b', lime: '#7fb52e', amber: '#e0a12c', orange: '#f0813f',
   rose: '#f0607f', crimson: '#e34d6a', violet: '#a06bfd', plum: '#8d5bd6',
@@ -236,10 +275,11 @@ const ACCENTS = {
    The map above keeps all fourteen. A board saved with `crimson` still
    resolves to crimson and still shows as the selected swatch — dropping a name
    from this list changes what is *offered*, never what is stored. */
-const ACCENT_CHOICES = ['mint', 'indigo', 'blue', 'green', 'amber', 'orange', 'rose', 'violet', 'slate'];
+const ACCENT_CHOICES = ['mono', 'mint', 'indigo', 'blue', 'green', 'amber', 'orange', 'rose', 'violet', 'slate'];
 // the accent actually in force, whether it is a preset or the user's own hex
 function accentHex() {
   const s = state.settings;
+  if (s.accent === 'mono') return resolvedTheme().mode === 'light' ? '#000000' : '#ffffff';
   if (s.accent === 'custom') return isHex(s.accentCustom) ? s.accentCustom : ACCENTS.mint;
   return ACCENTS[s.accent] || ACCENTS.mint;
 }

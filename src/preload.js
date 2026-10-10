@@ -50,6 +50,15 @@ contextBridge.exposeInMainWorld('mbData', {
   importBoard: () => ipcRenderer.invoke('board:import'),
   readExternal: (p) => ipcRenderer.invoke('board:read-external', p),
   adoptFiles: (beside, urls, toId) => ipcRenderer.invoke('board:adopt-files', beside, urls, toId),
+  /* JSON Canvas (Obsidian). pickCanvasPath asks where; writeCanvas writes the
+     JSON and copies the named files into `folder` beside it. importCanvas
+     asks for one and reads it; readCanvas reads a dropped one; resolveCanvas
+     finds the files it names. See js/canvas.js. */
+  pickCanvasPath: (suggested) => ipcRenderer.invoke('canvas:pick-save', suggested),
+  writeCanvas: (file, json, id, names, folder) => ipcRenderer.invoke('canvas:write', file, json, id, names, folder),
+  importCanvas: () => ipcRenderer.invoke('canvas:import'),
+  readCanvas: (p) => ipcRenderer.invoke('canvas:read', p),
+  resolveCanvas: (dir, rels) => ipcRenderer.invoke('canvas:resolve', dir, rels),
   duplicateFiles: (fromId, toId, name, group) => ipcRenderer.invoke('board:duplicate-files', fromId, toId, name, group),
   removeBoardDir: (id) => ipcRenderer.invoke('board:remove-dir', id)
 });
@@ -61,6 +70,7 @@ contextBridge.exposeInMainWorld('mbFiles', {
   pathOf: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch (_) { return ''; } },
   // a path, not a URL: the renderer attaches it so the note owns its copy
   pickImage: (purpose) => ipcRenderer.invoke('file:pick-image', purpose || ''),
+  pickVideo: () => ipcRenderer.invoke('file:pick-video'),
   /* Write a canvas out as a real PNG. null when cancelled, { path } when it
      landed, { error } when it did not — and the renderer acts on which. */
   savePng: (dataUrl, suggested) => ipcRenderer.invoke('file:save-image', dataUrl, suggested),

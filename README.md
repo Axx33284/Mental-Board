@@ -13,6 +13,16 @@ folders in `Documents\My Boards`, groups, and a lighter touch on a slow
 machine. Your 1.x board is read into the new layout the first time 2.0 starts,
 and the old file is left where it was.
 
+**2.1** draws on the board — pen, marker, brush and eraser (`P`) — and makes
+ropes something you travel along: press one and you fly to the note at the
+other end. Notes lose their head row (everything is on right-click), text links
+land where the caret is and can point at a note, columns keep their shape,
+copies keep their ropes, and holding `Ctrl V` shows where a paste will land. A
+workflow can be locked behind the notes, the wheel scrolls a long note, menus
+can make sounds (off by default), a note or workflow can take any colour from the colour window, links are blue, graphics picks one of three tiers for the
+machine, the accent defaults to white on dark and black on light, and a theme
+change fades.
+
 ![the board](src/assets/icon.png)
 
 ## Getting it running
@@ -89,6 +99,35 @@ from any handle and it keeps its shape, double-click it to crop or draw on
 it. Drag it onto a note and it goes inside; the image toolbar's arrow button
 takes it back out.
 
+**Videos.** Drop a clip on the canvas, or use **+ → Video…**, right-click empty
+space → *Add a video…*, or `/video` → *A video on this computer…* inside a note.
+The clip is copied into the board's folder, the note is sized to the clip's own
+shape, and it plays in place. A format Windows can play but the app cannot
+(most `.avi`, some `.mkv`) says so and offers to open it in your player.
+
+**Dates.** Right-click a note → *Date*: Today, Tomorrow, Next week, or any day
+from the field. The date sits beside the status on the note — amber on the day,
+red once it has passed, plain again when the note is done. *Show only what is
+due* fades out everything that is not overdue or due today.
+
+**The agenda** (`Ctrl+Shift+D`, or the calendar button on the zoom bar). Every
+dated note on every board, under Overdue, Today, Tomorrow, This week and Later,
+with a month beside it marking the busy days. Click a day for just that day,
+click a row to fly to the note, tick it to mark it done.
+
+**The board as columns** (`Ctrl+Shift+K`, or the button beside it). One column
+per status, cards in date order. Drag a card to another column to change its
+status; click it to go to the note.
+
+**The minimap.** The whole board in the bottom-right corner, with the part on
+screen framed. Click or drag on it to go there. Settings → Canvas turns it off.
+
+**Obsidian.** The page menu has *Export for Obsidian (.canvas)* and *Import a
+.canvas*. A board goes out in the open JSON Canvas format with its pictures and
+clips in a folder beside it, and notes become Markdown; drop both into a vault
+and Obsidian opens it. Coming in, a `.canvas` (picked, or dropped on the board)
+becomes a new board, with the files it names found in the vault and copied in.
+
 **Boards.** A small window in the top-left corner holds one row per board — one
 for work, one for the gym, one that is nobody else's business. Click a row to
 switch. Hover it and three buttons appear at its end: an icon picker, a pencil
@@ -133,14 +172,16 @@ tells you where the copies go and when the last one landed, and if it ever
 fails it says so rather than going quiet.
 
 **Files and documents.** Drop a spreadsheet, a PDF or a deck on the canvas and
-you get a note that links to it where it already lives — a link, not a copy, so
-your filing stays where it is. `Ctrl+K` accepts a path like
+you get a note for it. The file is copied into the board's own `files` folder,
+so the board still has it when the original moves — and a board copied to a
+stick takes its documents with it. `Ctrl+K` accepts a path like
 `C:\\Reports\\Q3.xlsx` as well as a web address. Documents open in whatever
 Windows uses for them; anything that could *run* is shown in its folder
 instead, never launched.
 
 **Pictures of a board.** *Save as image…* draws the whole board — every note,
-its colour, its status, and the ropes between them. It is drawn in a light
+its colour, its status and date, the pictures standing on it, and the ropes
+between them. It is drawn in a light
 theme by default even if you work in a dark one, because a picture is for
 somewhere else: a deck, an email, a printer. Settings → Your board → *Board
 picture* changes that, including back to matching the app.
@@ -262,12 +303,17 @@ one again to hand it back.
 | Drag empty space | Lasso-select |
 | Scroll | Zoom · `Ctrl 0` reset · `Shift 1` fit everything |
 | `Ctrl D` / `Ctrl G` | Duplicate · group |
-| `Ctrl C` `Ctrl V` `Ctrl X` | Copy · paste · cut |
+| `Ctrl C` `Ctrl V` `Ctrl X` | Copy · paste at the pointer · cut — **hold** `Ctrl V` to see where it lands |
+| `P` | Draw — then `V` select · `D` pen · `M` marker · `B` brush · `E` eraser · `[` `]` size · `Shift` straight line · `Esc` done |
+| `V` then click / drag (while drawing) | Select strokes — drag to move, `Delete` to remove, pick a colour to recolour |
+| Click a rope | Fly to the note at its other end (right-click for more) |
 | `Delete` | Delete selection |
 | `Ctrl Z` / `Ctrl Shift Z` | Undo · redo |
 | `Ctrl F` | Find across every board |
 | `Ctrl P` | Jump to any note, board or command |
 | `Ctrl B` | Open the boards window |
+| `Ctrl Shift D` | The agenda — every dated note on every board |
+| `Ctrl Shift K` | This board as columns by status |
 | `Ctrl ,` | Settings |
 | `Ctrl .` | Focus mode — the canvas and nothing else |
 | Arrow keys | Nudge selection (`Shift` for a bigger step) |
@@ -412,4 +458,11 @@ actually uses — Arabic needs six, English needs two.
 ## Building on it
 
 `MAP.md` is the map of the source — read that before opening `src/js/`.
+
+`npm test` runs the tests: `tools/test-store.js` against a temporary My Boards
+folder, then `tools/test-app.js`, which launches the real app with a throwaway
+profile and drives it — saving, failed writes, dates, the views, video, the
+picture export, JSON Canvas, a smoke pass over every panel in every theme and
+in Arabic, and a check that none of it logged an error. `npm run build` runs
+`npm run check` and `npm test` first and stops if either fails.
 §4a covers the language layer and the two separate bidi mechanisms.

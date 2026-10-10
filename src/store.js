@@ -505,6 +505,104 @@ function pathOfUrl(url) {
   return '';
 }
 
+/* ---------- JSON Canvas (Obsidian's open board format) ----------
+   A board leaves as `<name>.canvas` with its files copied into a folder beside
+   it, and the canvas's file nodes point into that folder — so dropping both
+   into an Obsidian vault opens with the pictures in place. The JSON itself is
+   built by the renderer (js/canvas.js); this side only writes it and copies.
+
+   Coming in, a canvas names its files relative to the vault root, which is
+   some folder above the .canvas we were handed. They are looked for there and
+   in every folder above it, a few levels up, and nothing is read that is not
+   a picture, a clip, a sound or a document. */
+const CANVAS_FILE_EXT = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif', '.svg',
+  '.mp4', '.webm', '.ogv', '.ogg', '.m4v', '.mov', '.mkv', '.avi',
+  '.mp3', '.wav', '.flac', '.m4a', '.opus', '.aac',
+  '.pdf', '.txt', '.md', '.csv', '.docx', '.xlsx', '.pptx'
+]);
+const okFolderName = (n) => typeof n === 'string' && !!n && n.length <= 120 &&
+  !/[\\/:*?"<>|\x00-\x1f]/.test(n) && !/^[.\s]|[.\s]$/.test(n);
+
+function writeCanvas(file, json, id, names, folder) {
+  try {
+    const target = String(file || '');
+    if (!/\.canvas$/i.test(target)) return { error: 'not a .canvas file' };
+    if (!okFolderName(folder)) return { error: 'bad folder name' };
+    JSON.parse(json);                                  // never write something Obsidian cannot read
+    const dir = path.dirname(target);
+    let copied = 0;
+    const missing = [];
+    const list = Array.isArray(names) ? names : [];
+    if (list.length) {
+      const into = path.join(dir, folder);
+      fs.mkdirSync(into, { recursive: true });
+      for (const name of list) {
+        const src = resolveFile(id, name);
+        if (!src) { missing.push(name); continue; }
+        fs.copyFileSync(src, path.join(into, safeName(name)));
+        copied++;
+      }
+    }
+    /* Whole or not at all, but no .bak beside it: writeAtomic()'s backup name
+       is made by swapping `.json`, and a .canvas has no .json to swap — its
+       "backup" would be the file itself. */
+    const tmp = target + '.tmp';
+    try { fs.writeFileSync(tmp, json, 'utf8'); fs.renameSync(tmp, target); }
+    catch (err) { try { fs.rmSync(tmp, { force: true }); } catch (_) {} return { error: errMsg(err) }; }
+    return { path: target, files: copied, missing };
+  } catch (err) { return { error: errMsg(err) }; }
+}
+
+function readCanvas(p) {
+  try {
+    const file = String(p || '');
+    if (!/\.canvas$/i.test(file)) return { error: 'not a .canvas file' };
+    const data = readJson(file);
+    if (!data || !Array.isArray(data.nodes)) return { error: 'unreadable' };
+    return { data, dir: path.dirname(file), name: path.basename(file).replace(/\.canvas$/i, '') };
+  } catch (err) { return { error: errMsg(err) }; }
+}
+
+/* rel → absolute path, for every reference that can be found. */
+function resolveCanvasFiles(dir, rels) {
+  const out = {};
+  const base = path.resolve(String(dir || ''));
+  const ups = [];
+  for (let d = base, i = 0; i < 8; i++) { ups.push(d); const p = path.dirname(d); if (p === d) break; d = p; }
+  let index = null;                                    // basename → path, under the canvas's own folder
+  const byName = (name) => {
+    if (!index) {
+      index = new Map();
+      let seen = 0;
+      const walk = (d, depth) => {
+        let entries = [];
+        try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return; }
+        for (const e of entries) {
+          if (++seen > 5000) return;
+          const full = path.join(d, e.name);
+          if (e.isDirectory()) { if (depth < 3 && !e.name.startsWith('.')) walk(full, depth + 1); }
+          else if (!index.has(e.name.toLowerCase())) index.set(e.name.toLowerCase(), full);
+        }
+      };
+      walk(base, 0);
+    }
+    return index.get(name.toLowerCase()) || '';
+  };
+  for (const raw of (Array.isArray(rels) ? rels : [])) {
+    const rel = String(raw || '').replace(/^[\\/]+/, '').split(/[\\/]+/).filter((s) => s && s !== '.' && s !== '..').join(path.sep);
+    if (!rel || !CANVAS_FILE_EXT.has(path.extname(rel).toLowerCase())) continue;
+    let found = '';
+    for (const d of ups) {
+      const p = path.join(d, rel);
+      try { if (fs.statSync(p).isFile()) { found = p; break; } } catch (_) {}
+    }
+    if (!found) found = byName(path.basename(rel));
+    if (found) out[raw] = found;
+  }
+  return out;
+}
+
 /* ---------- whole boards ---------- */
 /* Copy one board's files folder to a new board id (the board.json is written
    by the next save). The renderer rewrites `mbf://<from>/` → `mbf://<to>/`. */
@@ -613,11 +711,22 @@ async function adoptExternalFiles(beside, urls, toId) {
    and changed files are copied; nothing in the mirror is ever deleted, so a
    mistake here can only leave too much behind. Big clips that have not
    changed are not copied again. */
+/* A copy of My Boards may not be put inside My Boards. The copy would land in
+   the folder being copied, be copied again, and recurse until Windows refuses
+   a path — about two thousand folders deep, inside one of the user's boards,
+   and too deep for Explorer or Node to delete. */
+const INSIDE_STORE = 'inside My Boards';
+const insideStore = (dir) => {
+  const a = path.resolve(String(dir || '')).toLowerCase(), r = path.resolve(root).toLowerCase();
+  return a === r || a.startsWith(r + path.sep);
+};
+
 function mirrorTo(destRoot) {
   const out = { files: 0, bytes: 0, error: '' };
   try {
     const dest = path.join(String(destRoot || ''), 'Mental Board backup');
     if (!destRoot) return { error: 'no folder' };
+    if (insideStore(destRoot)) return { error: INSIDE_STORE };
     const walk = (from, to) => {
       fs.mkdirSync(to, { recursive: true });
       for (const e of fs.readdirSync(from, { withFileTypes: true })) {
@@ -646,6 +755,7 @@ function mirrorTo(destRoot) {
 function backupAllTo(destParent) {
   try {
     if (!destParent) return { error: 'no folder' };
+    if (insideStore(destParent)) return { error: INSIDE_STORE };
     const d = new Date();
     const p2 = (n) => String(n).padStart(2, '0');
     const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}${p2(d.getMinutes())}`;
@@ -705,7 +815,7 @@ function migrateLegacy(oldDir) {
       settings: raw.settings || {}, templates: raw.templates || [], statuses: raw.statuses,
       boardOrder: [], activeBoard: raw.activeBoard || ''
     };
-    let n = 0, i = 0;
+    let n = 0, i = 0, failed = 0;
     for (const b of list) {
       if (!b || typeof b !== 'object') continue;
       i++;
@@ -713,7 +823,7 @@ function migrateLegacy(oldDir) {
       b.id = id;
       const name = b.trash ? 'Trash' : (b.name || `Board ${i}`);
       const d = ensureDir(id, name, '');
-      if (!d.dir) continue;
+      if (!d.dir) { failed++; continue; }
       // the files, then the markup that points at them
       const from = path.join(oldFiles, idSeg(id));
       if (isDir(from)) copyDir(from, path.join(d.dir, FILES));
@@ -723,11 +833,16 @@ function migrateLegacy(oldDir) {
         try { name2 = decodeURIComponent(fname); } catch (_) {}
         return `mbf://${String(bid).toLowerCase()}/${encodeURIComponent(name2)}`;
       });
-      writeAtomic(path.join(d.dir, BOARD), json);
+      // a status, acted on: a board that did not land is not counted as moved
+      if (!writeAtomic(path.join(d.dir, BOARD), json).ok) { failed++; continue; }
       settings.boardOrder.push(id);
       n++;
     }
-    writeAtomic(settingsFile(), JSON.stringify(settings, null, 2));
+    if (!writeAtomic(settingsFile(), JSON.stringify(settings, null, 2)).ok) failed++;
+    /* No marker unless every board landed, and the failure goes back to main
+       rather than being logged as a success. The old file is never touched,
+       so whatever did not land can still be brought in with Import. */
+    if (failed) return { error: `${failed} write(s) failed`, migrated: n };
     try { fs.writeFileSync(marker, `migrated ${n} board(s) into ${root}
 `, 'utf8'); } catch (_) {}
     return { migrated: n, from: file };
@@ -739,5 +854,6 @@ module.exports = {
   boardDir, filesDir, resolveFile, parseFileUrl, fileUrl, safeName,
   attachFile, attachBytes, listFiles, carryFiles, cleanup, readImage, pathOfUrl,
   duplicateFiles, removeBoardDir, exportBoard, readExternal, adoptExternalFiles,
-  mirrorTo, backupAllTo, tally, reset, migrateLegacy, settingsFile, backupsDir
+  mirrorTo, backupAllTo, tally, reset, migrateLegacy, settingsFile, backupsDir,
+  writeCanvas, readCanvas, resolveCanvasFiles
 };

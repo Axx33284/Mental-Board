@@ -1,7 +1,7 @@
 /* Mental Board — embeds.js
    Pasted links: bookmark cards, click-to-play video, and the paste-as menu.
 
-   Part 8 of 17. These files are plain scripts sharing one global
+   Part 10 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -273,6 +273,24 @@ function openEmbedDialog() {
   setTimeout(() => $('embedUrl').focus(), 30);
 }
 function closeEmbedDialog() { $('embedDlg').classList.add('hidden'); embedRange = null; }
+/* The other kind of video: a file on this computer, copied into the board's
+   folder and put in the note at the caret, as a drop would. */
+async function embedVideoFile() {
+  if (!FILES || !FILES.pickVideo || !FILES.attach) { toast(t('msg.needDesktop')); return; }
+  const body = editing, n = editNote, range = embedRange;
+  closeEmbedDialog();
+  const p = await FILES.pickVideo();
+  if (!p || !body || !n) return;
+  const r = await FILES.attach(p, state.activeBoard, '');
+  if (!r || r.error) { toast(t('msg.fileFailed', { name: p.split(/[\\/]/).pop() }), 5000); return; }
+  body.focus();
+  if (range) { const s = getSelection(); s.removeAllRanges(); s.addRange(range); }
+  insertHTML(videoHtml(r.url, r.name) + '<p><br></p>');
+  watchVideos(body);
+  n.body = bodyHtml(body);
+  saveSoon();
+  toast(t('msg.videoAdded', { name: r.name }));
+}
 function submitEmbed() {
   const raw = $('embedUrl').value.trim();
   if (!raw) { closeEmbedDialog(); return; }

@@ -116,19 +116,9 @@ html[dir="rtl"] .cm-item .k, html[dir="rtl"] .sm-item { text-align: right; }
 
 /* note and workflow chrome mirrors with the interface; the boxes themselves do
    not move, because their left/top are world coordinates */
-/* The note's edge buttons deliberately do NOT mirror.
-
-   Everything else here flips with the interface, and for a while these did too:
-   `flex-direction: row-reverse` moved close/more/link/icon to the top-left in
-   Arabic. It is the textbook mirroring rule and it was wrong in practice —
-   these four are not part of the reading order of anything. They are the note's
-   window controls, and having ✕ jump to the other corner when the interface
-   language changes means aiming at where it was and hitting the icon picker.
-   The grip still stretches, so the row stays anchored to the top-right in both
-   directions. */
-html[dir="rtl"] .note-head { flex-direction: row; }
+/* The colour stripe and the icon badge follow the reading side. */
 html[dir="rtl"] .note::before { left: auto; right: 0; }
-html[dir="rtl"] .note-icon { margin-left: 0; margin-right: 12px; }
+html[dir="rtl"] .note-icon { margin-left: 0; margin-right: calc(var(--note-pad) - 4px); }
 /* The workflow title is NOT mirrored. It has a position of its own now —
    nine of them, chosen per frame — and a language should not move a thing the
    user placed. Same reasoning as the fab above: this sits on the canvas, and

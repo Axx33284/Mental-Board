@@ -1,7 +1,7 @@
 /* Mental Board — links.js
    The ropes between notes.
 
-   Part 6 of 17. These files are plain scripts sharing one global
+   Part 7 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -184,7 +184,7 @@ function makeLinkEl(l) {
   hit.setAttribute('class', 'lk-hit');
   hit.setAttribute('data-id', l.id);
   const tip = document.createElementNS(SVGNS, 'title');
-  tip.textContent = t('msg.linkClickHint');
+  tip.textContent = t('msg.ropeHint');
   hit.appendChild(tip);
   const line = document.createElementNS(SVGNS, 'path');
   line.setAttribute('class', 'lk-line');
@@ -251,24 +251,151 @@ function drawLinks(moving) {
   if (keep) {
     linkEls.forEach((el, id) => { if (!keep.has(id)) { el.remove(); linkEls.delete(id); } });
   }
+  drawHotRopes();
 }
 // the ropes are rebuilt from scratch — render() empties the layer under them
-function resetLinks() { linkEls.clear(); const g = $('linksInner'); if (g) g.textContent = ''; }
-/* One delegated listener for the life of the app, rather than one per rope on
-   every frame of every drag. Binding them per redraw meant a board with two
-   hundred ropes did four hundred addEventListener calls per pointer move. */
-function wireLinkClicks() {
-  const g = $('linksInner');
-  if (!g) return;
-  g.addEventListener('click', (e) => {
-    const p = e.target.closest ? e.target.closest('.lk-hit') : null;
-    if (!p) return;
-    e.stopPropagation();
-    pushUndo();
-    deleteLink(p.dataset.id);
-  });
+function resetLinks() {
+  linkEls.clear();
+  const g = $('linksInner'); if (g) g.textContent = '';
+  const top = $('ropesTop'); if (top) top.textContent = '';
 }
+/* ---- following a rope (2.1) ---------------------------------------------
+
+   A rope used to be removed by clicking it — and that click never arrived.
+   onPointerDown() starts a lasso on anything that is not a note, the lasso
+   takes pointer capture on the viewport, and capture retargets the `click`
+   away from the rope. So the one thing a rope did, it could not do, and it
+   was a destructive thing besides: a stray click on a line deleted it.
+
+   A rope is a way to *get somewhere* now. Pressing it is routed from
+   onPointerDown() before the lasso can start, and flies to the note at the
+   far end — the end further from where you pressed, so following a rope that
+   runs off screen takes you to the side you cannot see, and pressing near
+   either end goes to the other one. Hovering lights up both ends so you can
+   see where it goes before you go. Removing it is in its right-click menu,
+   alongside "go to" for each end, where a destructive action belongs. */
+let ropeHover = null;     // the link id under the pointer, for the end highlight
+
+// the link, its two notes, and which of them is further from a world point
+function ropeEnds(id) {
+  const l = state.links.find((x) => x.id === id);
+  if (!l) return null;
+  const a = state.notes.find((n) => n.id === l.from), b = state.notes.find((n) => n.id === l.to);
+  return (a && b) ? { l, a, b } : null;
+}
+const centreOf = (n) => ({ x: n.x + n.w / 2, y: n.y + n.h / 2 });
+
+function followRope(id, clientX, clientY) {
+  const r = ropeEnds(id);
+  if (!r) return;
+  const p = toWorld(clientX, clientY);
+  const ca = centreOf(r.a), cb = centreOf(r.b);
+  const far = Math.hypot(ca.x - p.x, ca.y - p.y) > Math.hypot(cb.x - p.x, cb.y - p.y) ? r.a : r.b;
+  goToNote(far.id);
+}
+
+/* Fly to a note on this board, select it, and make it say "here". Used by a
+   rope, the right-click menu's linked-notes rows and a link to a note in text.
+   The zoom is kept unless it is too far out to read the note at the end of
+   the flight, which is the case that made a rope useless as a way to travel. */
+function goToNote(id) {
+  const n = state.notes.find((x) => x.id === id);
+  if (!n) { toast(t('msg.noteGone')); return; }
+  if (editing) exitEdit();
+  const vr = vpRect();
+  const fitZ = Math.min((vr.width - 160) / Math.max(n.w, 1), (vr.height - 160) / Math.max(n.h, 1));
+  const z = state.view.z < 0.6 ? Math.min(1, fitZ) : Math.min(state.view.z, Math.max(fitZ, 0.25));
+  flyTo(centreOf(n), z);
+  setSelection([id], false);
+  flashNote(id);
+}
+function flashNote(id) {
+  const el = ensureMounted(id);
+  if (!el) return;
+  el.classList.remove('arrived');
+  void el.offsetWidth;                  // restart the animation if it is already running
+  el.classList.add('arrived');
+  setTimeout(() => el.classList.remove('arrived'), 1700);
+}
+
+/* Both ends lit while the pointer is on a rope. Classes, not a redraw — this
+   runs on pointerover and must cost nothing on a big board. */
+function markRopeEnds(id) {
+  if (id === ropeHover) return;
+  document.querySelectorAll('.note.rope-end').forEach((el) => el.classList.remove('rope-end'));
+  document.querySelectorAll('.lk-line.hot').forEach((el) => el.classList.remove('hot'));
+  ropeHover = id;
+  const r = id && ropeEnds(id);
+  if (r) {
+    els.get(r.a.id)?.classList.add('rope-end');
+    els.get(r.b.id)?.classList.add('rope-end');
+    linkEls.get(id)?._rope.line.classList.add('hot');
+  }
+  drawHotRopes();
+}
+function wireLinkClicks() {
+  const vp = $('viewport');
+  if (!vp) return;
+  vp.addEventListener('pointerover', (e) => {
+    if (gesture) return;
+    const p = e.target.closest ? e.target.closest('.lk-hit') : null;
+    markRopeEnds(p ? p.dataset.id : null);
+  });
+  vp.addEventListener('pointerleave', () => markRopeEnds(null));
+}
+
+/* Ropes are drawn under the notes, which is right at rest — a board full of
+   string over every card is unreadable — and wrong the moment you want to know
+   where one goes, because most of a rope between two rows of cards is behind
+   them. So the ropes of the selected notes, and the one under the pointer, are
+   drawn again on a layer *above* the notes (#ropesTop): you select a note and
+   see every rope it has, end to end, and any of them can be clicked from there.
+
+   Copies, not moves: the rope underneath stays mounted and culled exactly as
+   before, and this layer is rebuilt from the few ropes involved. It stays off
+   for a big selection — a lasso over the whole board lifting every rope at
+   once is the clutter this is avoiding. */
+const HOT_MAX = 12;
+function drawHotRopes() {
+  const svg = $('ropesTop');
+  if (!svg) return;
+  const ids = new Set();
+  if (selection.size && selection.size <= HOT_MAX) {
+    for (const l of state.links) if (selection.has(l.from) || selection.has(l.to)) ids.add(l.id);
+  }
+  if (ropeHover) ids.add(ropeHover);
+  if (!ids.size) { if (svg.firstChild) svg.textContent = ''; return; }
+  let html = '';
+  for (const id of ids) {
+    const el = linkEls.get(id);
+    const d = el ? el._rope.line.getAttribute('d') : null;
+    if (!d) continue;
+    html += `<g><path class="lk-hit" data-id="${esc(id)}" d="${d}"></path><path class="lk-line lk-top" d="${d}"></path></g>`;
+  }
+  svg.innerHTML = html;
+}
+
+// every rope tied to a note, and the note at the other end of each
+function linksOf(id) {
+  const out = [];
+  for (const l of state.links) {
+    const other = l.from === id ? l.to : l.to === id ? l.from : null;
+    if (!other) continue;
+    const n = state.notes.find((x) => x.id === other);
+    if (n) out.push({ l, n });
+  }
+  return out;
+}
+
 function deleteLink(id) {
   state.links = state.links.filter((l) => l.id !== id);
+  markRopeEnds(null);
   drawLinks(); saveSoon(); toast(t('msg.linkRemoved'));
+}
+function unlinkNote(id) {
+  const before = state.links.length;
+  state.links = state.links.filter((l) => l.from !== id && l.to !== id);
+  if (state.links.length === before) return;
+  markRopeEnds(null);
+  drawLinks(); saveSoon(); toast(t('msg.linksRemoved', { n: before - state.links.length }));
 }

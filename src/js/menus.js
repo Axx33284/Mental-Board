@@ -1,7 +1,7 @@
 /* Mental Board — menus.js
    The right-click menu, and the compass that signposts off-screen workflows.
 
-   Part 12 of 17. These files are plain scripts sharing one global
+   Part 14 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -29,8 +29,9 @@ function openCtxMenu(clientX, clientY, id) {
     html += `<p class="cm-hint">${te('menu.pictureHint')}</p>`;
     html += `<div class="cm-sep"></div>`;
     if (onTrashBoard()) html += item('putBack', 'undo', te('menu.putBack'));
-    html += item('dup', 'content_copy', te('menu.duplicate'), 'Ctrl D');
+    html += item('copy', 'content_copy', te('menu.copy'), 'Ctrl C');
     html += item('cut', 'content_cut', te('menu.cut'), 'Ctrl X');
+    html += item('dup', 'library_add', te('menu.duplicate'), 'Ctrl D');
     html += item('front', 'arrow_upward', te('menu.front'));
     html += item('back', 'arrow_downward', te('menu.back'));
     html += `<div class="cm-sep"></div>`;
@@ -39,6 +40,15 @@ function openCtxMenu(clientX, clientY, id) {
     const first = itemById(targets[0]);
     html += `<div class="cm-label">${icon('colorize')}<span>${te('menu.colour')}</span></div><div class="cm-colors">` +
       COLORS.map((c) => `<button data-color="${c}" data-color-swatch data-color-key="${c}" class="${first && first.color === c ? 'on' : ''}" title="${te('colour.' + c)}"></button>`).join('') +
+      /* Any colour at all (2.1). Not a picker on show — a swatch, which opens the
+         system's colour window only when pressed, and which wears the item's own
+         colour once it has one. The input is the swatch: a label around a
+         full-size, transparent <input type="color">, so one click opens it. */
+      (() => {
+        const own = first && isHex(first.color) ? first.color : '';
+        return `<label class="cm-custom${own ? ' on' : ''}" title="${te('menu.customColour')}" style="${own ? '--sw:' + own : ''}">` +
+          `<input type="color" value="${own || '#4c9aff'}" aria-label="${te('menu.customColour')}"></label>`;
+      })() +
       `</div>`;
     /* Status, on notes only — a workflow frame is a place, not a task.
 
@@ -55,6 +65,19 @@ function openCtxMenu(clientX, clientY, id) {
         `<button data-status="" class="cm-st cm-st-none${cur === '' ? ' on' : ''}">${te('status.none')}</button>` +
         `</div>`;
     }
+    /* The date, the same way and for the same reason: three days you pick most
+       as chips, any other day from the field, and None. The field shows the
+       note's own date when it is not one of the three, so the row always says
+       what is set. See MAP.md §4s. */
+    if (noteTargets.length) {
+      const curD = okDateKey((state.notes.find((x) => x.id === noteTargets[0]) || {}).date);
+      const quick = [[dayKeyIn(0), te('date.today')], [dayKeyIn(1), te('date.tomorrow')], [dayKeyIn(7), te('date.nextWeek')]];
+      html += `<div class="cm-label">${icon('event')}<span>${te('menu.date')}</span></div><div class="cm-status cm-date">` +
+        quick.map(([k, label]) => `<button data-date="${k}" class="cm-st${curD === k ? ' on' : ''}" title="${esc(fmtDay(k))}"><span>${label}</span></button>`).join('') +
+        `<input type="date" class="cm-dt${curD && !quick.some(([k]) => k === curD) ? ' on' : ''}" value="${curD}" aria-label="${te('date.pick')}" title="${te('date.pick')}">` +
+        `<button data-date="" class="cm-st cm-st-none${curD === '' ? ' on' : ''}">${te('status.none')}</button>` +
+        `</div>`;
+    }
     html += `<div class="cm-sep"></div>`;
     const item = (act, ic, label, key, cls) =>
       `<button class="cm-item${cls ? ' ' + cls : ''}" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
@@ -68,10 +91,24 @@ function openCtxMenu(clientX, clientY, id) {
       const n1 = state.notes.find((x) => x.id === targets[0]);
       const s1 = statusOf(n1);
       html += item('focusStatus', 'label', te(s1 ? 'menu.focusStatus' : 'menu.focusNoStatus'));
+      if (n1 && okDateKey(n1.date)) html += item('focusDue', 'event', te('menu.focusDue'));
     }
     if (targets.length === 1 && !isFrame(targets[0])) {
       html += item('edit', 'edit', te('menu.edit'), te('menu.dblclick'));
       html += item('link', 'link', te('menu.link'), 'L');
+      /* Where this note's ropes go, one row per note at the other end. This is
+         what the backlink badge in the old note head was for, and more: it
+         names the notes, and it counts both directions — a rope has no
+         direction anyone can see, so "links here" vs "links from here" was a
+         distinction the board never showed. */
+      const ends = linksOf(targets[0]);
+      if (ends.length) {
+        html += `<div class="cm-label">${icon('hub')}<span>${te('menu.linked', { n: ends.length })}</span></div>`;
+        ends.slice(0, 6).forEach(({ n: o }) => {
+          html += `<button class="cm-item cm-go" data-act="goNote" data-note="${esc(o.id)}">${icon('arrow_forward')}<span>${esc(noteTitle(o))}</span></button>`;
+        });
+        html += item('unlink', 'link_off', te('menu.unlinkAll'));
+      }
       html += item('remind', 'alarm', te('menu.remind'));
       html += item('tpl', 'bookmarks', te('tpl.save'));
       const n0 = state.notes.find((x) => x.id === targets[0]);
@@ -109,10 +146,17 @@ function openCtxMenu(clientX, clientY, id) {
        everywhere else. Put back comes first, above the colours' worth of
        actions that make less sense on something already deleted. */
     if (onTrashBoard()) html += item('putBack', 'undo', te('menu.putBack'));
-    html += item('dup', 'content_copy', te('menu.duplicate'), 'Ctrl D');
+    html += item('copy', 'content_copy', te('menu.copy'), 'Ctrl C');
     html += item('cut', 'content_cut', te('menu.cut'), 'Ctrl X');
+    html += item('dup', 'library_add', te('menu.duplicate'), 'Ctrl D');
     html += item('front', 'arrow_upward', te('menu.front'));
     html += item('back', 'arrow_downward', te('menu.back'));
+    /* A workflow can be pinned behind the notes: a lasso goes straight through
+       it and its title will not drag. See lockFrame() in items.js. */
+    if (targets.length === 1 && isFrame(targets[0])) {
+      const f0 = state.frames.find((x) => x.id === targets[0]);
+      html += item('lockFrame', f0 && f0.locked ? 'lock_open' : 'lock', te(f0 && f0.locked ? 'menu.unlockFrame' : 'menu.lockFrame'));
+    }
     html += `<div class="cm-sep"></div>`;
     html += item('del', 'delete', te('menu.delete'), 'Del', 'danger');
   } else {
@@ -120,6 +164,8 @@ function openCtxMenu(clientX, clientY, id) {
       `<button class="cm-item" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
     html += item('newNote', 'sticky_note_2', te('menu.newNote'), 'N');
     html += item('newFrame', 'select_all', te('menu.newFrame'), 'G');
+    html += item('addPicture', 'image', te('menu.addPicture'));
+    html += item('addVideo', 'movie', te('menu.addVideo'));
     if (clipboard.length) html += item('paste', 'content_paste', te('menu.paste', { n: clipboard.length }), 'Ctrl V');
     html += `<div class="cm-sep"></div>`;
     html += item('selectAll', 'select_all', te('menu.selectAll'), 'Ctrl A');
@@ -157,17 +203,58 @@ function openCtxMenu(clientX, clientY, id) {
         if (!it) return;
         it.color = b.dataset.colorKey;
         const el = els.get(t);
-        if (el) el.dataset.color = it.color;
+        if (el) paintColor(el, it.color);
       });
       closeCtxMenu(); saveSoon(); drawCompass();
     });
   });
 
-  menu.querySelectorAll('.cm-st').forEach((b) => b.addEventListener('click', () => {
+  /* The custom colour. `input` previews it live on the items (one undo step,
+     taken on the first one), `change` keeps it and closes the menu. */
+  const customPick = menu.querySelector('.cm-custom input');
+  if (customPick) {
+    let undoTaken = false;
+    const apply = (hex) => {
+      if (!isHex(hex)) return;
+      if (!undoTaken) { pushUndo(); undoTaken = true; }
+      targets.forEach((tid) => {
+        const it = itemById(tid);
+        if (!it) return;
+        it.color = hex.toLowerCase();
+        const el = els.get(tid);
+        if (el) paintColor(el, it.color);
+      });
+      customPick.parentElement.style.setProperty('--sw', hex);
+      customPick.parentElement.classList.add('on');
+    };
+    customPick.addEventListener('input', () => apply(customPick.value));
+    customPick.addEventListener('change', () => {
+      apply(customPick.value);
+      closeCtxMenu(); saveSoon(); drawCompass(); scheduleMinimap();
+    });
+  }
+
+  menu.querySelectorAll('.cm-st[data-status]').forEach((b) => b.addEventListener('click', () => {
     pushUndo();
     setStatus(targets.filter((tid) => !isFrame(tid)), b.dataset.status || '');
     closeCtxMenu();
   }));
+  menu.querySelectorAll('.cm-st[data-date]').forEach((b) => b.addEventListener('click', () => {
+    pushUndo();
+    setNoteDate(targets.filter((tid) => !isFrame(tid)), b.dataset.date || '');
+    closeCtxMenu();
+  }));
+  /* `change` fires as each part of a typed date becomes valid, so typing the
+     year 2027 passes through 0002, 0020 and 0202 on the way. Only a whole
+     year is taken; picking from the calendar is one change and lands at once. */
+  const dt = menu.querySelector('.cm-dt');
+  if (dt) dt.addEventListener('change', () => {
+    const v = okDateKey(dt.value);
+    if (!v || +v.slice(0, 4) < 1900) return;
+    pushUndo();
+    setNoteDate(targets.filter((tid) => !isFrame(tid)), v);
+    closeCtxMenu();
+  });
 
   menu.querySelectorAll('.cm-pos button').forEach((b) => b.addEventListener('click', () => {
     setTitlePos(targets[0], b.dataset.tp);
@@ -189,8 +276,13 @@ function openCtxMenu(clientX, clientY, id) {
       case 'flyHere': { const f = state.frames.find((x) => x.id === targets[0]); if (f) fitTo([f]); break; }
       case 'group': groupSelection(); break;
       case 'dup': duplicate(targets); break;
+      case 'copy': copySelection(false); break;
       case 'cut': copySelection(true); break;
+      case 'goNote': goToNote(b.dataset.note); break;
+      case 'unlink': pushUndo(); unlinkNote(targets[0]); break;
+      case 'lockFrame': lockFrame(targets[0]); break;
       case 'focus': { const it = itemById(targets[0]); if (it) setColourFocus(it.color || 'default'); break; }
+      case 'focusDue': setDueFocus(); break;
       case 'focusStatus': { const n1 = state.notes.find((x) => x.id === targets[0]); if (n1) setStatusFocus(n1.status || ''); break; }
       case 'remind': openRemindDialog(targets[0]); break;
       case 'tpl': openTemplateDialog(targets[0]); break;
@@ -207,6 +299,8 @@ function openCtxMenu(clientX, clientY, id) {
       case 'boardFiles': openBoardFiles(); break;
       case 'newNote': addNote(worldPt); break;
       case 'newFrame': addFrame(worldPt); break;
+      case 'addPicture': addMediaFromPicker('image', worldPt); break;
+      case 'addVideo': addMediaFromPicker('video', worldPt); break;
       case 'paste': pasteClipboard(worldPt); break;
       case 'selectAll': selectAll(); break;
       case 'fit': zoomToFitAll(); break;
@@ -214,6 +308,31 @@ function openCtxMenu(clientX, clientY, id) {
       case 'undo': undo(); break;
       case 'redo': redo(); break;
     }
+  }));
+}
+
+/* A rope's own menu: go to either end, or remove it. Removing used to be what
+   a left click did; it lives here now, behind a right-click, because a
+   destructive action should not share a gesture with "show me". */
+function openRopeMenu(clientX, clientY, id) {
+  const r = ropeEnds(id);
+  if (!r) return;
+  const menu = $('ctxMenu');
+  const go = (n) => `<button class="cm-item cm-go" data-act="go" data-note="${esc(n.id)}">${icon('arrow_forward')}<span>${esc(noteTitle(n))}</span></button>`;
+  menu.innerHTML =
+    `<div class="cm-label">${icon('link')}<span>${te('menu.rope')}</span></div>` +
+    go(r.a) + go(r.b) +
+    `<div class="cm-sep"></div>` +
+    `<button class="cm-item danger" data-act="del">${icon('link_off')}<span>${te('menu.removeLink')}</span></button>`;
+  menu.classList.remove('hidden');
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = clamp(RTL ? clientX - w : clientX, 6, innerWidth - w - 6) + 'px';
+  menu.style.top = clamp(clientY, 44, innerHeight - h - 6) + 'px';
+  markRopeEnds(id);
+  menu.querySelectorAll('.cm-item').forEach((b) => b.addEventListener('click', () => {
+    closeCtxMenu();
+    if (b.dataset.act === 'go') goToNote(b.dataset.note);
+    else { pushUndo(); deleteLink(id); }
   }));
 }
 
@@ -294,7 +413,7 @@ function drawCompass() {
       chipEls.set(c.f.id, el);
     }
     el.dataset.id = c.f.id;
-    el.dataset.color = c.f.color;
+    paintColor(el, c.f.color, 'blue');
     const key = (c.f.icon || '') + '|' + (c.f.iconColor || '');
     if (el._icon !== key) {
       el._icon = key;

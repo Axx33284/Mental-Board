@@ -1,7 +1,7 @@
 /* Mental Board — media.js
    The icon picker, and images: select, size, align, and the crop/annotate studio.
 
-   Part 10 of 17. These files are plain scripts sharing one global
+   Part 12 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -557,6 +557,31 @@ function audioHtml(url, name) {
          `</div>`;
 }
 const imageHtml = (url) => `<img class="mb-img" src="${esc(url)}">`;
+
+/* A clip Chromium cannot decode — most .avi, some .mkv and .mov — used to
+   show a black box with a greyed-out play button and nothing to say why. Now
+   the player is swapped, on screen only, for a line that says so and a button
+   that opens it in the program Windows uses for it. The line is painted, not
+   stored: bodyHtml() lifts `.mb-cant` out, like the embed face. */
+function watchVideos(root) {
+  if (!root) return;
+  root.querySelectorAll('video.mb-video-el').forEach((v) => {
+    if (v.dataset.watched) return;
+    v.dataset.watched = '1';
+    const fail = () => {
+      const box = v.closest('.mb-file');
+      if (!box || box.querySelector('.mb-cant')) return;
+      const url = v.getAttribute('src') || '';
+      const d = document.createElement('div');
+      d.className = 'mb-cant';
+      d.setAttribute('contenteditable', 'false');
+      d.innerHTML = `${icon('movie')}<span>${te('video.cantPlay')}</span><button class="btn">${te('video.openIt')}</button>`;
+      d.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); openHref(url); });
+      box.insertBefore(d, box.firstChild);
+    };
+    if (v.error) fail(); else v.addEventListener('error', fail);
+  });
+}
 /* A document. Still a link and still opened by the same guarded door in main —
    what changed is only *which* copy it points at. */
 const docHtml = (url, name) =>

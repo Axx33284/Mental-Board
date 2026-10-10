@@ -32,7 +32,6 @@ body.big-board .br-tile { transition: none; }
    the layout takes the caret with it, and Ctrl+0 while typing would otherwise
    throw away the keystroke you were in the middle of. */
 body.far-zoom .note-body,
-body.far-zoom .note-head,
 body.far-zoom .note-icon,
 body.far-zoom .rz { display: none; }
 body.far-zoom .note.editing .note-body { display: block; }
@@ -164,7 +163,7 @@ html[dir="rtl"] .tpl-name { text-align: right; }
    canvas would be one nobody dared touch twice.
 
    --radius is redeclared on <body> rather than overridden per element. It is
-   read by exactly two rules (`.note` and the top corners of `.note-head`), so
+   read by exactly two rules (`.note` and its colour stripe), so
    this reaches both and nothing else. */
 body[data-shape="round"]  { --radius: 20px; }
 body[data-shape="soft"]   { --radius: 7px; }
@@ -192,15 +191,9 @@ body[data-density="thin"]  { --note-pad: 6px; }
 body[data-density="cosy"]  { --note-pad: 14px; }
 body[data-density="roomy"] { --note-pad: 28px; }
 
-.note-body { padding: 2px var(--note-pad) calc(var(--note-pad) - 2px); }
-.note-head { padding: 0 max(4px, calc(var(--note-pad) - 10px)) 0 var(--note-pad); }
+/* No head since 2.1, so the body carries the top margin itself. */
+.note-body { padding: calc(var(--note-pad) - 2px) var(--note-pad) calc(var(--note-pad) - 2px); }
 .note-status { padding: 0 var(--note-pad) calc(var(--note-pad) - 5px); }
-
-/* At the widest setting the head would otherwise sit a long way in from the
-   corner it belongs to, so the buttons keep their own smaller inset. */
-body[data-density="roomy"] .note-head { height: 26px; flex-basis: 26px; }
-body[data-density="thin"]  .note-head { height: 20px; flex-basis: 20px; }
-body[data-density="thin"]  .nh-btn { width: 19px; height: 19px; border-radius: 6px; }
 
 /* ─────────────── 30. columns ───────────────
 

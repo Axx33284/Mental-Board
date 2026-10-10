@@ -38,10 +38,23 @@ const rm = (p) => { try { fs.rmSync(p, { recursive: true, force: true }); } catc
 
 /* The files are locked while the app is open, and a half-replaced App\ is worse
    than no rebuild at all. Refuse early and say why. */
+/* *This* App\ — not any process with the same name. A copy of the app built
+   in another project folder (the 2.0 folder, say) locks its own files, not
+   these, and refusing over it stopped a build that could not have been
+   harmed. The executable paths are asked for by name; if that question cannot
+   be answered, the old by-name answer stands, so this never errs towards
+   building over a running App\. */
 function appIsRunning() {
+  const cp = require('child_process');
+  const mine = path.join(APP, EXE).toLowerCase();
   try {
-    const out = require('child_process')
-      .execSync(`tasklist /fi "imagename eq ${EXE}"`, { encoding: 'utf8' });
+    const out = cp.execSync(
+      `powershell -NoProfile -Command "Get-Process -Name '${pkg.productName}' -ErrorAction SilentlyContinue | ForEach-Object { $_.Path }"`,
+      { encoding: 'utf8' });
+    return out.split(/\r?\n/).some((p) => p.trim().toLowerCase() === mine);
+  } catch (_) {}
+  try {
+    const out = cp.execSync(`tasklist /fi "imagename eq ${EXE}"`, { encoding: 'utf8' });
     return out.toLowerCase().includes(EXE.toLowerCase());
   } catch (_) { return false; }
 }
@@ -68,7 +81,7 @@ const IGNORE = [
    broken app rather than a fat one: drop assets/ and the app starts with no
    glyphs and every string showing its own key. Checked, not assumed. */
 const MUST_SHIP = [
-  '/src/main.js', '/src/preload.js', '/src/index.html',
+  '/src/main.js', '/src/preload.js', '/src/store.js', '/src/index.html',
   /* One from each half of the split app, and the two ends of each load order:
      the first and last script, the first and last stylesheet. A mistake in
      IGNORE that swallowed src/js or src/css would take one of these with it. */

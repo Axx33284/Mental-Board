@@ -3,7 +3,7 @@
    never touches Node directly; everything goes through preload.js + these IPC
    handlers. */
 const { app, BrowserWindow, Menu, Tray, nativeImage, Notification, ipcMain, dialog,
-        shell, screen, nativeTheme, globalShortcut, protocol, net } = require('electron');
+        shell, screen, nativeTheme, globalShortcut, protocol, net, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -66,6 +66,9 @@ const S_EN = {
   'main.stillRunningBody': 'It sits in the tray so reminders and quick capture keep working. Right-click the tray icon to quit.',
   'main.exportBoard': 'Export board — choose where to put the copy',
   'main.importBoard': 'Import board — pick its board.json',
+  'main.exportCanvas': 'Export for Obsidian — save as .canvas',
+  'main.importCanvas': 'Import a .canvas board',
+  'main.filterCanvas': 'JSON Canvas',
   'main.exportImage': 'Export board as image',
   'main.backupFolder': 'Choose a backup folder',
   'main.insertImage': 'Insert image',
@@ -234,7 +237,12 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,        // preload needs fs for the board file
+      /* Sandboxed. preload.js asks main for everything over IPC and requires
+         nothing but contextBridge, ipcRenderer and webUtils — all of which a
+         sandboxed preload has — so the page and its preload run with no Node
+         at all. It used to be off because the 1.x preload read the board file
+         itself; since 2.0 that is store.js, here in main. */
+      sandbox: true,
       spellcheck: true,
       /* Chromium throttles timers in a hidden window to about one a minute, and
          the reminder ticker is a timer in the renderer — so with the window in
@@ -655,7 +663,8 @@ ipcMain.on('store:load', (e) => {
 });
 ipcMain.on('store:save-sync', (e, payload) => {
   try { e.returnValue = store.saveAll(payload); }
-  catch (err) { e.returnValue = { ok: false, errors: [{ id: '', error: String((err && err.message) || err) }] }; }
+  // '*', not '': the call failed as a whole, so no board landed (MAP.md §7)
+  catch (err) { e.returnValue = { ok: false, errors: [{ id: '*', error: String((err && err.message) || err) }] }; }
 });
 ipcMain.handle('store:save', (_e, payload) => store.saveAllAsync(payload));
 ipcMain.on('store:snapshot', (e, id, json, day) => { e.returnValue = store.snapshot(id, json, day); });
@@ -699,6 +708,28 @@ ipcMain.handle('board:import', async (e) => {
   return store.readExternal(filePaths[0]);
 });
 ipcMain.handle('board:read-external', (_e, p) => store.readExternal(p));
+/* JSON Canvas: Obsidian's board format. See js/canvas.js and MAP.md §4t. */
+ipcMain.handle('canvas:pick-save', async (e, suggested) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePath } = await dialog.showSaveDialog(w, {
+    title: t('main.exportCanvas'),
+    defaultPath: suggested || 'board.canvas',
+    filters: [{ name: t('main.filterCanvas'), extensions: ['canvas'] }]
+  });
+  return canceled || !filePath ? null : filePath;
+});
+ipcMain.handle('canvas:write', (_e, file, json, id, names, folder) => store.writeCanvas(file, json, id, names, folder));
+ipcMain.handle('canvas:import', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.importCanvas'), properties: ['openFile'],
+    filters: [{ name: t('main.filterCanvas'), extensions: ['canvas'] }]
+  });
+  if (canceled || !filePaths.length) return null;
+  return store.readCanvas(filePaths[0]);
+});
+ipcMain.handle('canvas:read', (_e, p) => store.readCanvas(p));
+ipcMain.handle('canvas:resolve', (_e, dir, rels) => store.resolveCanvasFiles(dir, rels));
 
 /* Save a board picture. Takes a data: URL because that is what a canvas
    produces, and decodes it here so the renderer never holds a Buffer. */
@@ -791,6 +822,21 @@ ipcMain.handle('file:pick-image', async (e, purpose) => {
     title: purpose === 'background' ? t('main.pickBackground') : t('main.insertImage'),
     properties: ['openFile'],
     filters: [{ name: t('main.filterImages'), extensions: IMAGE_EXT }]
+  });
+  if (canceled || !filePaths.length) return null;
+  return filePaths[0];
+});
+
+/* The same for a video, so a clip can be added without a drag — from the +
+   menu, the right-click menu and /video. The list is the renderer's VIDEO_EXT;
+   a format Chromium cannot decode is still taken and the player says so. */
+const VIDEO_EXT = ['mp4', 'webm', 'ogv', 'ogg', 'm4v', 'mov', 'mkv', 'avi'];
+ipcMain.handle('file:pick-video', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.insertVideo'),
+    properties: ['openFile'],
+    filters: [{ name: t('main.filterVideos'), extensions: VIDEO_EXT }]
   });
   if (canceled || !filePaths.length) return null;
   return filePaths[0];
@@ -897,6 +943,14 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showMain());
 
   app.whenReady().then(() => {
+    /* Permissions: what the app uses, and nothing else. Reminders are
+       notifications, Copy writes the clipboard, and a video or an embedded
+       player can go full screen. A crafted board cannot ask for the camera,
+       the microphone, the location or anything else — the answer is no
+       without a prompt. */
+    const ALLOWED_PERMISSIONS = new Set(['notifications', 'clipboard-sanitized-write', 'fullscreen']);
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(ALLOWED_PERMISSIONS.has(permission)));
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
     try { fs.mkdirSync(dataDir(), { recursive: true }); } catch (_) {}
     tidyOldCache();
     store.init(boardsRoot());
@@ -904,8 +958,8 @@ if (!app.requestSingleInstanceLock()) {
        once. The old file is left where it was. */
     try {
       const m = store.migrateLegacy(dataDir());
-      if (m && m.migrated) console.log(`migrated ${m.migrated} board(s) from ${m.from}`);
-      else if (m && m.error) console.error('migration failed:', m.error);
+      if (m && m.error) console.error('migration failed:', m.error);
+      else if (m && m.migrated) console.log(`migrated ${m.migrated} board(s) from ${m.from}`);
     } catch (err) { console.error('migration threw:', err); }
     /* mbf://<boardId>/<name> → that board's files\<name>. Range headers are
        passed through so a video can seek; anything the store will not resolve

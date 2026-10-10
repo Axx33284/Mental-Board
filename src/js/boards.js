@@ -1,7 +1,7 @@
 /* Mental Board — boards.js
    Several boards, one rail: switching, the flyout, locking, and drag-to-board.
 
-   Part 14 of 17. These files are plain scripts sharing one global
+   Part 16 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -14,6 +14,7 @@ async function switchBoard(id) {
   if (id === state.activeBoard) { closeBoardMenu(); return; }
   const next = boardById(id);
   if (!next) return;
+  if (inkMode) toggleInk(false);        // the pen belongs to the board it was taken out on
   /* A board whose file would not parse is listed so the user knows it is
      there, and refused so nothing can be written over it. The toast names
      the folder to look in. */
@@ -289,6 +290,17 @@ async function deleteBoard(id) {
      leaves an orphan folder, which the next launch simply lists as a board
      again — the opposite order could lose the pictures the bin now points at. */
   await saveNow();
+  /* …and only if it really was written, and every file the trashed notes
+     show was carried out first. saveNow() reports a failure but does not
+     return one, and a folder removed after a failed write takes its pictures
+     with it while the bin that points at them exists only in memory. Kept, the
+     folder is listed again at the next launch: a duplicate, never a loss. */
+  if (keepable) {
+    const tb = state.boards.find((x) => x.trash);
+    const own = `mbf://${String(b.id).toLowerCase()}/`;
+    const stillHere = notesFileUrls(b.notes).some((u) => u.toLowerCase().startsWith(own));
+    if (!tb || !boardLanded(tb.id) || stillHere) { toast(t('msg.boardDirKept'), 7000); return; }
+  }
   forgetWritten(b.id);
   if (DATA && DATA.removeBoardDir) {
     const r = await DATA.removeBoardDir(b.id);
@@ -386,10 +398,10 @@ let undoBytes = 0;
    is full — a step that restores too much is a surprise, a step that restores
    too little is data loss. */
 function clearHistory() { undoStack.length = 0; redoStack.length = 0; undoBytes = 0; }
-function snapshot() { return JSON.stringify({ notes: state.notes, frames: state.frames, links: state.links, nextZ: state.nextZ }); }
+function snapshot() { return JSON.stringify({ notes: state.notes, frames: state.frames, links: state.links, ink: state.ink, nextZ: state.nextZ }); }
 // what a step costs to keep, so the byte cap means something for both shapes
 const stepBytes = (s) =>
-  (s.kind === 'full' ? s.json.length + (s.other ? s.other.json.length : 0) : s.items.length * 64);
+  (s.kind === 'full' ? s.json.length + (s.other ? s.other.json.length : 0) : s.kind === 'ink' ? s.json.length : s.items.length * 64);
 
 /* One board's contents as JSON, and back again. A step normally only has to
    describe the board you are looking at — that is the only one anything can
@@ -397,10 +409,10 @@ const stepBytes = (s) =>
    is why `other` exists on a full step: without it, undo put the note back on
    the board it came from and left the copy sitting on the board it went to, so
    one Ctrl+Z turned one note into two. */
-const boardJson = (b) => JSON.stringify({ notes: b.notes, frames: b.frames, links: b.links, nextZ: b.nextZ });
+const boardJson = (b) => JSON.stringify({ notes: b.notes, frames: b.frames, links: b.links, ink: b.ink || [], nextZ: b.nextZ });
 function loadBoardJson(b, json) {
   const o = JSON.parse(json);
-  b.notes = o.notes; b.frames = o.frames; b.links = o.links; b.nextZ = o.nextZ || 1;
+  b.notes = o.notes; b.frames = o.frames; b.links = o.links; b.ink = o.ink || []; b.nextZ = o.nextZ || 1;
   // the live mirror points at the old arrays; rebind or the next save undoes this
   if (b.id === state.activeBoard) bindBoard(b);
 }
@@ -414,6 +426,10 @@ function pushStep(step) {
   redoStack.length = 0;
 }
 function pushUndo() { pushStep({ kind: 'full', json: snapshot() }); }
+/* A stroke drawn or erased (2.1). Only the ink is kept: a full step would
+   serialise every note on the board for each stroke, and a drawing is dozens
+   of strokes. */
+function pushUndoInk() { pushStep({ kind: 'ink', json: JSON.stringify(state.ink) }); }
 
 /* A full step that also remembers a second board, for the one gesture that
    changes two of them at once. `other` is captured before the move, so undoing
@@ -438,6 +454,7 @@ function popUndo() { takeUndo(); }          // the gesture turned out to be a no
 
 // the step that would put things back the way they are this instant
 function currentStepFor(step) {
+  if (step.kind === 'ink') return { kind: 'ink', json: JSON.stringify(state.ink) };
   if (step.kind === 'geom') {
     const live = step.items.map((g) => itemById(g.id)).filter(Boolean);
     return { kind: 'geom', items: geomOf(live) };
@@ -453,6 +470,7 @@ function currentStepFor(step) {
 
 function restore(step) {
   if (!step) return;
+  if (step.kind === 'ink') { state.ink = JSON.parse(step.json); drawInk(); updateEmpty(); save(); return; }
   if (step.kind === 'geom') {
     step.items.forEach((g) => {
       const it = itemById(g.id);
@@ -476,7 +494,7 @@ function restore(step) {
     if (b && !isLocked(b)) loadBoardJson(b, step.other.json);
   }
   const o = JSON.parse(step.json);
-  state.notes = o.notes; state.frames = o.frames; state.links = o.links; state.nextZ = o.nextZ || 1;
+  state.notes = o.notes; state.frames = o.frames; state.links = o.links; state.ink = o.ink || []; state.nextZ = o.nextZ || 1;
   editing = null; editNote = null;
   selection = new Set();
   render(); drawCompass(); renderBoardRail(); save();
@@ -499,10 +517,21 @@ function redo() {
 
 /* --- internal clipboard ------------------------------------------------ */
 let clipboard = [];
+/* The ropes that went with the last copy or cut (2.1). Every rope touching a
+   copied note is kept, not only the ones between two copied notes: a rope
+   between two of them is re-tied between their copies, and a rope to a note
+   that was left behind is re-tied to that same note if it is on the board the
+   paste lands on. That is what makes Cut then Paste a *move* — before, cutting
+   a note deleted its ropes along with it and pasting brought back a note with
+   none, so a note could not be carried across the board without being
+   re-roped by hand. */
+let clipLinks = [];
 function copySelection(cut) {
   const items = selectedItems();
   if (!items.length) return;
   clipboard = items.map((it) => ({ frame: isFrame(it.id), data: JSON.parse(JSON.stringify(it)) }));
+  const ids = new Set(items.map((it) => it.id));
+  clipLinks = state.links.filter((l) => ids.has(l.from) || ids.has(l.to)).map((l) => ({ from: l.from, to: l.to }));
   /* The internal clipboard above is what Ctrl+V on the canvas pastes, and it is
      unchanged. This is the *other* half, added because "copy what this note
      says and put it in an email" had no answer at all: the same selection also
@@ -521,15 +550,18 @@ function pasteClipboard(worldPt) {
   const c0 = worldPt || viewCenterWorld();
   const dx = Math.round(c0.x - (b.x + b.w / 2)), dy = Math.round(c0.y - (b.y + b.h / 2));
   const made = [];
+  const newId = new Map();
   clipboard.forEach(({ frame, data }) => {
     const copy = JSON.parse(JSON.stringify(data));
-    copy.id = uid(); copy.x += dx; copy.y += dy;
+    newId.set(copy.id, copy.id = uid());
+    copy.x += dx; copy.y += dy;
     if (frame) { state.frames.push(copy); const el = makeFrame(copy); $('framesLayer').appendChild(el); els.set(copy.id, el); }
     else { copy.z = ++state.nextZ; state.notes.push(copy); const el = makeNote(copy); $('notesLayer').appendChild(el); els.set(copy.id, el); }
     made.push(copy.id);
   });
+  retieLinks(clipLinks, newId);
   updateCulling();          // a paste of many notes can cross the threshold
-  refreshFrameCounts(); updateEmpty(); drawCompass(); save();
+  refreshFrameCounts(); updateEmpty(); drawCompass(); drawLinks(); save();
   setSelection(made, false);
   /* Notes copied off another board still point at that board's pictures.
      They show straight away — the other board's folder is still there — and
@@ -542,6 +574,119 @@ function pasteClipboard(worldPt) {
     saveSoon();
   });
 }
+
+/* Tie `links` again after their notes were copied. `newId` maps each copied
+   id to its copy; an end that was not copied keeps its own id, and the rope is
+   kept only if that note is on this board. Never a rope from a note to itself,
+   and never a second rope where one already runs. Shared by paste and
+   duplicate. */
+function retieLinks(links, newId) {
+  const here = new Set(state.notes.map((n) => n.id));
+  const has = (a, b) => state.links.some((l) => (l.from === a && l.to === b) || (l.from === b && l.to === a));
+  let n = 0;
+  for (const l of links) {
+    const from = newId.get(l.from) || l.from, to = newId.get(l.to) || l.to;
+    if (from === to || !here.has(from) || !here.has(to) || has(from, to)) continue;
+    state.links.push({ id: uid(), from, to });
+    n++;
+  }
+  return n;
+}
+
+/* ---- holding Ctrl+V: see where it will land (2.1) ----------------------
+
+   A tap of Ctrl+V pastes at the pointer. *Holding* it shows the paste first —
+   every copied note and workflow as a faint outline, with its ropes, riding
+   on the pointer — and lets go where you let go of the keys. Escape while
+   holding cancels; a click puts it down early.
+
+   The ghost lives inside #world, so it is drawn in world coordinates and
+   scales with the zoom for free, and moving it is one transform on its
+   container. It is built once per hold, from the clipboard; the only thing
+   recomputed per pointer move is the rope to any note that stayed behind.
+
+   It starts from the `paste` event (see init.js), not from the keydown: the
+   paste event is where we learn whether the system clipboard holds a
+   screenshot, and a screenshot wins. */
+let pasteGhost = null;      // { el, svg, box, at, ext:[{line, ox, oy, to}] }
+function beginPasteGhost() {
+  if (pasteGhost || !clipboard.length || !canEditHere()) return;
+  const datas = clipboard.map((c) => c.data);
+  const box = bboxOf(datas);
+  const el = document.createElement('div');
+  el.id = 'pasteGhost';
+  let html = '';
+  for (const { frame, data } of clipboard) {
+    const x = data.x - box.x, y = data.y - box.y;
+    const label = frame ? (data.title || '') : (data.pic ? '' : noteTitle(data));
+    html += `<div class="pgh-item${frame ? ' pgh-frame' : ''}" data-color="${esc(isHex(data.color) ? 'custom' : data.color || (frame ? 'blue' : 'default'))}" style="${colorStyle(data.color)};left:${x}px;top:${y}px;width:${data.w}px;height:${data.h}px"><span>${esc(label)}</span></div>`;
+  }
+  // ropes: between two copied notes they move with the ghost; to a note left
+  // behind, one end is fixed and the line is redrawn as the ghost moves
+  const inGhost = new Map(datas.map((d) => [d.id, d]));
+  const here = new Map(state.notes.map((n) => [n.id, n]));
+  let svg = `<svg class="pgh-ropes" xmlns="${SVGNS}">`;
+  const ext = [];
+  for (const l of clipLinks) {
+    const a = inGhost.get(l.from), b = inGhost.get(l.to);
+    if (a && b) {
+      svg += `<line x1="${a.x - box.x + a.w / 2}" y1="${a.y - box.y + a.h / 2}" x2="${b.x - box.x + b.w / 2}" y2="${b.y - box.y + b.h / 2}"/>`;
+    } else {
+      const mine = a || b, other = here.get(a ? l.to : l.from);
+      if (mine && other) ext.push({ ox: mine.x - box.x + mine.w / 2, oy: mine.y - box.y + mine.h / 2, to: other });
+    }
+  }
+  svg += '</svg>';
+  el.innerHTML = html + svg;
+  // the ropes to notes left behind are in world space, outside the moving group
+  const extSvg = document.createElementNS(SVGNS, 'svg');
+  extSvg.setAttribute('class', 'pgh-ropes pgh-ext');
+  ext.forEach((x) => { x.line = document.createElementNS(SVGNS, 'line'); extSvg.appendChild(x.line); });
+  $('world').appendChild(extSvg);
+  $('world').appendChild(el);
+  pasteGhost = { el, extSvg, box, ext, at: null };
+  document.body.classList.add('paste-ghosting');
+  movePasteGhost(lastCanvasPoint || viewCenterWorld());
+  window.addEventListener('pointermove', onPasteGhostMove);
+  window.addEventListener('pointerdown', onPasteGhostDown, true);
+  window.addEventListener('blur', cancelPasteGhost);
+}
+function movePasteGhost(pt) {
+  const g = pasteGhost;
+  if (!g) return;
+  g.at = pt;
+  const x = pt.x - g.box.w / 2, y = pt.y - g.box.h / 2;
+  g.el.style.transform = `translate(${x}px, ${y}px)`;
+  for (const e of g.ext) {
+    e.line.setAttribute('x1', x + e.ox); e.line.setAttribute('y1', y + e.oy);
+    e.line.setAttribute('x2', e.to.x + e.to.w / 2); e.line.setAttribute('y2', e.to.y + e.to.h / 2);
+  }
+}
+function onPasteGhostMove(e) {
+  if (e.target && e.target.closest && e.target.closest('.overlay, .titlebar')) return;
+  movePasteGhost(toWorld(e.clientX, e.clientY));
+}
+function onPasteGhostDown(e) {
+  if (!pasteGhost) return;
+  e.preventDefault(); e.stopPropagation();
+  movePasteGhost(toWorld(e.clientX, e.clientY));
+  commitPasteGhost();
+}
+function endPasteGhost() {
+  const g = pasteGhost;
+  pasteGhost = null;
+  window.removeEventListener('pointermove', onPasteGhostMove);
+  window.removeEventListener('pointerdown', onPasteGhostDown, true);
+  window.removeEventListener('blur', cancelPasteGhost);
+  document.body.classList.remove('paste-ghosting');
+  if (g) { g.el.remove(); g.extSvg.remove(); }
+  return g;
+}
+function commitPasteGhost() {
+  const g = endPasteGhost();
+  if (g) pasteClipboard(g.at);
+}
+function cancelPasteGhost() { endPasteGhost(); }
 
 /* --- find -------------------------------------------------------------- */
 let findHits = [], findIdx = 0;
@@ -733,7 +878,7 @@ async function encryptBoard(b, pass) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(pass, salt);
-  const payload = JSON.stringify({ notes: b.notes, frames: b.frames, links: b.links, view: b.view, nextZ: b.nextZ });
+  const payload = JSON.stringify({ notes: b.notes, frames: b.frames, links: b.links, ink: b.ink || [], view: b.view, nextZ: b.nextZ });
   const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(payload));
   return { v: 1, salt: b64(salt), iv: b64(iv), data: b64(data) };
 }
@@ -769,7 +914,7 @@ async function lockBoard(id) {
       throw new Error('round-trip mismatch');
     }
     b.enc = enc;
-    b.notes = []; b.frames = []; b.links = [];
+    b.notes = []; b.frames = []; b.links = []; b.ink = [];
     b.view = { x: 0, y: 0, z: 1 }; b.nextZ = 1;
     b.updatedAt = Date.now();
     unlocked.delete(b.id);
@@ -814,7 +959,7 @@ async function unlockBoard(b) {
       const healed = adoptBoard(Object.assign({}, plain, {
         id: b.id, name: b.name, icon: b.icon, iconColor: b.iconColor, archived: b.archived
       }));
-      b.notes = healed.notes; b.frames = healed.frames; b.links = healed.links;
+      b.notes = healed.notes; b.frames = healed.frames; b.links = healed.links; b.ink = healed.ink;
       b.view = healed.view; b.nextZ = healed.nextZ;
       unlocked.add(b.id);
       /* Keep the envelope. The board is still a locked board — it re-encrypts
@@ -907,12 +1052,14 @@ function cancelPass() {
    Which is also why `syncFocusClasses()` has to run after anything that mounts
    a note. Culling puts notes into the document as you pan, and a note that
    arrived after the filter was set would otherwise come in bright. */
-let focusKind = '';        // '' | 'colour' | 'status'
+let focusKind = '';        // '' | 'colour' | 'status' | 'date'
 let focusValue = '';
 
 function noteMatchesFocus(n) {
   if (!focusKind) return true;
   if (focusKind === 'colour') return (n.color || 'default') === focusValue;
+  // 'due' is the only date filter: gone or today, and not finished
+  if (focusKind === 'date') { const w = dateState(n); return w === 'late' || w === 'today'; }
   return (n.status || '') === focusValue;
 }
 function syncFocusClasses() {
@@ -936,11 +1083,14 @@ function setFocus(kind, value) {
   if (!focusKind) return;
   const n = state.notes.filter(noteMatchesFocus).length;
   if (focusKind === 'colour') {
-    chip.dataset.color = focusValue;
-    $('focusLabel').textContent = t('focus.on', { name: t('colour.' + focusValue), n });
+    paintColor(chip, focusValue);
+    $('focusLabel').textContent = t('focus.on', { name: colorName(focusValue), n });
+  } else if (focusKind === 'date') {
+    paintColor(chip, 'red');
+    $('focusLabel').textContent = t('focus.on', { name: t('date.due'), n });
   } else {
     const s = statusById(focusValue);
-    chip.dataset.color = s ? s.color : 'default';
+    paintColor(chip, s ? s.color : 'default');
     $('focusLabel').textContent = t('focus.on', { name: s ? statusName(s) : t('status.none'), n });
   }
 }
@@ -948,6 +1098,7 @@ const setColourFocus = (c) => setFocus('colour', c || 'default');
 /* '' is a real answer here — "show me the ones nobody has given a status to" is
    the question a manager asks on a board that has drifted. */
 const setStatusFocus = (id) => setFocus('status', id == null ? '' : id);
+const setDueFocus = () => setFocus('date', 'due');
 const clearFocus = () => { if (focusKind) setFocus(focusKind, focusValue); };
 
 /* --- reminders ----------------------------------------------------------
@@ -1023,6 +1174,7 @@ function nextOccurrence(ms, repeat) {
   return 0;                                            // give up rather than loop
 }
 function startReminders() {
+  watchDayChange();                        // the date pills' "Today" goes stale at midnight
   setInterval(checkReminders, REMIND_TICK);
   setTimeout(checkReminders, 3000);
 }

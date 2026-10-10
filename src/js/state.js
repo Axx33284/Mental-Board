@@ -1,7 +1,7 @@
 /* Mental Board — state.js
    One mutable `state`, the boards inside it, undo, and everything that reaches the disk.
 
-   Part 2 of 17. These files are plain scripts sharing one global
+   Part 2 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -57,7 +57,10 @@ function makeBoard(name, icon) {
     font: '',             // '' or one of NOTE_FONTS
     smallText: false,
     bg: null,             // { file, fit, dim } — a picture in the board's own folder
-    notes: [], frames: [], links: [],
+    /* Drawing on the board (2.1): strokes in world coordinates, and whether
+       they sit behind the notes or over them. See js/ink.js. */
+    inkBehind: false,
+    notes: [], frames: [], links: [], ink: [],
     view: { x: 0, y: 0, z: 1 },
     nextZ: 1
   };
@@ -99,6 +102,7 @@ function bindBoard(b) {
   if (!b) return;
   state.activeBoard = b.id;
   state.notes = b.notes; state.frames = b.frames; state.links = b.links;
+  state.ink = b.ink || (b.ink = []);
   state.view = b.view; state.nextZ = b.nextZ;
 }
 /* Copy the live fields back onto the stored board. Called before any write and
@@ -114,6 +118,7 @@ function syncActiveBoard() {
      losing the board. Refuse. */
   if (isLocked(b)) return;
   b.notes = state.notes; b.frames = state.frames; b.links = state.links;
+  b.ink = state.ink;
   b.view = state.view; b.nextZ = state.nextZ;
 }
 
@@ -149,7 +154,7 @@ function defaults() {
     activeBoard: first.id,
     /* the live mirror of the active board — see the note above. It is not
        written to the file; serialise() drops it. */
-    notes: first.notes, frames: first.frames, links: first.links,
+    notes: first.notes, frames: first.frames, links: first.links, ink: first.ink,
     view: first.view, nextZ: first.nextZ,
     /* The user's own templates. Global rather than per-board: a template is a
        shape you reuse, and the board you happened to be on when you saved it
@@ -180,7 +185,7 @@ function defaults() {
          — is derived from these in customVars(), so there is no way to build a
          palette whose text cannot be read on its own background. */
       customTheme: { mode: 'dark', bg: '#0d0f11', surface: '#16191c', text: '#e8e4da' },
-      accent: 'mint',
+      accent: 'mono',       // white on a dark theme, black on a light one — see ACCENTS
       /* What a note's text is set in. The UI keeps its own face whatever this
          says — this is about the writing, not about the app. See NOTE_FONTS. */
       noteFont: 'system',
@@ -223,11 +228,17 @@ function defaults() {
       softwareRender: false,
       snap: false,
       compass: true,
+      minimap: true,        // the map at the bottom right — js/views.js
+      /* The pen as it was last put down (2.1, js/ink.js): which tool, which
+         colour (`text`, a COLORS name or a hex), and which of three sizes. */
+      pen: { tool: 'pen', color: 'text', size: 1 },
+      // menu sounds (2.1, js/sound.js): off unless asked for, and how loud
+      sounds: false,
+      soundVol: 60,
       spell: true,
       railMode: 'hover',    // 'pinned' | 'hover' | 'off' — see RAIL_MODES
       noteShape: 'soft',    // 'round' | 'soft' | 'square' — see NOTE_SHAPES
       noteDensity: 'cosy',  // 'cosy' | 'thin' — padding and line-height on a note
-      noteChrome: true,     // the icon/link/more/close row on a note's top edge
       /* What a brand-new note starts as. Three fields rather than one, because
          "my notes are always this colour and about this big" is one preference
          that happens to need three numbers. Nothing here touches a note that
@@ -351,7 +362,7 @@ const THEME_MODES = ['fixed', 'system', 'clock'];
    nobody should be able to tell which one they are looking at without being
    told. A "low quality mode" that looks low quality is a mode people turn off
    and then blame the app for being slow. */
-const PERF_MODES = ['auto', 'full', 'lite'];
+const PERF_MODES = ['auto', 'full', 'balanced', 'lite'];
 /* How a rope between two notes is drawn.
      curve    — the S-bend it has always been
      straight — a plain line, shortest path
@@ -402,6 +413,19 @@ const DEFAULT_STATUSES = () => ([
 const statusName = (s) => (s && s.name) || (s && FALLBACK['status.' + s.id] !== undefined ? t('status.' + s.id) : '') || (s ? s.id : '');
 const statusById = (id) => (id ? state.statuses.find((s) => s.id === id) || null : null);
 const statusOf = (n) => statusById(n && n.status);
+
+/* A note's date, beside its status: a calendar day, 'YYYY-MM-DD' in local
+   time, or '' for none. A day and not a timestamp on purpose — "due Friday"
+   has no hour in it, and a timestamp would move the day under anyone who
+   crosses a time zone. Reminders are the timed thing; this is the plain one.
+   A declaration, not a const, so adoptBoard() can call it whatever the load
+   order. See MAP.md §4s. */
+function okDateKey(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return '';
+  const [y, m, d] = v.split('-').map(Number);
+  const x = new Date(y, m - 1, d);
+  return (x.getFullYear() === y && x.getMonth() === m - 1 && x.getDate() === d) ? v : '';
+}
 
 function adoptStatus(raw) {
   if (!raw || typeof raw !== 'object' || !raw.id) return null;
@@ -488,7 +512,7 @@ function adoptStore(res) {
       /* A folder is there and its board.json would not parse — and neither
          would its .bak. Shown, named after its folder, never written. */
       return { id: row.id, name: folderName(row.dir) || row.id, icon: 'warning', unreadable: true,
-               group: row.group || '', notes: [], frames: [], links: [] };
+               group: row.group || '', notes: [], frames: [], links: [], ink: [] };
     }
     const d = Object.assign({}, row.data, { id: row.id, group: row.group || '' });
     /* The store gave this board a new id — its folder was a copy wearing
@@ -542,6 +566,13 @@ function paintVersion() {
   el.classList.toggle('hidden', !APP_VERSION);
 }
 
+// is version `a` older than `b`? '' (a store from before versions were written) is older than anything
+function versionBefore(a, b) {
+  if (!a) return true;
+  const pa = String(a).split('.').map((x) => parseInt(x, 10) || 0), pb = String(b).split('.').map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0); }
+  return false;
+}
 function stampVersion(res) {
   if (!APP_VERSION) return;
   const was = state.appVersion;
@@ -649,7 +680,7 @@ function adoptBoard(raw) {
     id: String(n.id), x: +n.x || 0, y: +n.y || 0,
     w: Math.max(n.pic ? PIC_MIN : NOTE_MIN_W, +n.w || 260), h: Math.max(n.pic ? PIC_MIN : NOTE_MIN_H, +n.h || 180),
     body: typeof n.body === 'string' ? n.body : '',
-    color: COLORS.includes(n.color) ? n.color : 'default',
+    color: okItemColor(n.color, 'default'),
     icon: okIcon(n.icon), iconColor: okIconColor(n.iconColor),
     z: +n.z || 1,
     remindAt: +n.remindAt || 0,
@@ -662,6 +693,7 @@ function adoptBoard(raw) {
        been parsed yet would lose it permanently. Resolution happens at paint
        time instead. */
     status: typeof n.status === 'string' ? n.status : '',
+    date: okDateKey(n.date),
     hist: adoptHistory(n.hist),
     // set only on notes the daily-note setting made; the value is its date key
     daily: typeof n.daily === 'string' ? n.daily : undefined,
@@ -679,9 +711,11 @@ function adoptBoard(raw) {
     id: String(f.id), x: +f.x || 0, y: +f.y || 0,
     w: Math.max(FRAME_MIN_W, +f.w || 600), h: Math.max(FRAME_MIN_H, +f.h || 420),
     title: typeof f.title === 'string' ? f.title : t('frame.default'),
-    color: COLORS.includes(f.color) ? f.color : 'blue',
+    color: okItemColor(f.color, 'blue'),
     icon: okIcon(f.icon), iconColor: okIconColor(f.iconColor),
     titlePos: TITLE_POS.includes(f.titlePos) ? f.titlePos : 'tl',
+    // pinned behind the notes, out of reach of a lasso (2.1, lockFrame())
+    locked: f.locked ? true : undefined,
     trashedFrom: typeof f.trashedFrom === 'string' ? f.trashedFrom : undefined,
     trashedAt: +f.trashedAt || undefined
   }));
@@ -692,6 +726,8 @@ function adoptBoard(raw) {
 
   const v = raw.view && typeof raw.view === 'object' ? raw.view : {};
   b.view = { x: +v.x || 0, y: +v.y || 0, z: clamp(+v.z || 1, ZOOM_MIN, ZOOM_MAX) };
+  b.ink = adoptInk(raw.ink);
+  b.inkBehind = !!raw.inkBehind;
   b.nextZ = maxOf(b.notes, (n) => n.z || 1, 1) + 1;   // a loop, not a spread — see maxOf()
   if (raw._renamedFrom) relinkBoardHost(b, raw._renamedFrom, b.id);
   return b;
@@ -720,7 +756,7 @@ function adopt(raw, keepSettings) {
     statuses: Array.isArray(raw.statuses)
       ? raw.statuses.map(adoptStatus).filter(Boolean)
       : DEFAULT_STATUSES(),
-    notes: [], frames: [], links: [], view: { x: 0, y: 0, z: 1 }, nextZ: 1
+    notes: [], frames: [], links: [], ink: [], view: { x: 0, y: 0, z: 1 }, nextZ: 1
   };
   const st = state.settings;
   // a board saved with a language that is no longer shipped falls back to auto
@@ -767,6 +803,11 @@ function adopt(raw, keepSettings) {
   st.gridSize = clamp(Math.round(+st.gridSize || 26), 12, 96);
   st.gridFade = clamp(Math.round(+st.gridFade || 100), 20, 160);
   if (!isHex(st.accentCustom)) st.accentCustom = '#7fd6c8';
+  /* 2.1 made Mono the default accent. A store last written by an older build
+     and still on the old default — mint — never chose it, so it moves to the
+     new default once. The stamp on the way out (stampVersion) makes this a
+     one-time step: anyone who picks mint again afterwards keeps it. */
+  if (st.accent === 'mint' && versionBefore(state.appVersion, '2.1.0')) st.accent = 'mono';
   if (!NOTE_SHAPES.includes(st.noteShape)) st.noteShape = 'soft';
   if (!NOTE_DENSITIES.includes(st.noteDensity)) st.noteDensity = 'cosy';
   if (!NOTE_FONTS.includes(st.noteFont)) st.noteFont = 'system';
@@ -774,12 +815,15 @@ function adopt(raw, keepSettings) {
   if (!MOTION_MODES.includes(st.motion)) st.motion = 'auto';
   st.zoomSpeed = clamp(Math.round(+st.zoomSpeed || 100), 40, 220);
   st.guides = st.guides !== false;
+  st.minimap = st.minimap !== false;
+  st.pen = healPen(st.pen);
+  st.sounds = !!st.sounds;
+  st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);
   if (!COLORS.includes(st.noteColor)) st.noteColor = 'default';
   st.noteW = clamp(Math.round(+st.noteW || 280), NOTE_MIN_W, 900);
   st.noteH = clamp(Math.round(+st.noteH || 190), NOTE_MIN_H, 900);
   st.confirmDelete = !!st.confirmDelete;
   st.focusMode = !!st.focusMode;
-  st.noteChrome = st.noteChrome !== false;
   st.showArchived = !!st.showArchived;
   st.daily = !!st.daily;
   st.capture = st.capture !== false;
@@ -825,7 +869,7 @@ function boardPayload(b) {
      it is open in front of you. Belt and braces: re-encryption keeps `enc`
      current, but if that ever failed the worst case must be "an older
      ciphertext on disk", never "the plaintext of the board you locked". */
-  if (b.enc) Object.assign(out, { notes: [], frames: [], links: [], view: { x: 0, y: 0, z: 1 }, nextZ: 1 });
+  if (b.enc) Object.assign(out, { notes: [], frames: [], links: [], ink: [], view: { x: 0, y: 0, z: 1 }, nextZ: 1 });
   return out;
 }
 const serialiseBoard = (b, pretty) => (pretty ? JSON.stringify(boardPayload(b), null, 2) : JSON.stringify(boardPayload(b)));
@@ -913,6 +957,38 @@ function dirtyDocs() {
   return { boards, settings: sj === lastWrittenSettings ? null : sj };
 }
 
+/* What a save call answered, acted on — per document. Its own function so
+   tools/test-app.js can hand it every shape of answer (MAP.md §7).
+
+   '' is the store saying settings.json failed; '*' is this side, or main,
+   saying the call itself never got there — a throw, a rejected promise, an
+   empty answer — so nothing landed. Reading '*' as '' once stamped every board
+   as written after a failed call, and none of them was retried. Returns the
+   set of board ids that did land. */
+function applySaveResult(payload, raw) {
+  let res = raw;
+  if (typeof res === 'boolean') res = { ok: res, errors: res ? [] : [{ id: '*', error: '?' }] };
+  if (!res || typeof res !== 'object') res = { ok: false, errors: [{ id: '*', error: 'no answer from the store' }] };
+  const errors = Array.isArray(res.errors) ? res.errors : [];
+  if (!res.ok && !errors.length) errors.push({ id: '*', error: res.error || '?' });
+  const failed = new Set(errors.map((e) => e.id));
+  const none = failed.has('*');
+  const landed = new Set();
+  if (payload.settings && !failed.has('') && !none) lastWrittenSettings = payload.settings;
+  (payload.boards || []).forEach((row) => {
+    if (none || failed.has(row.id)) return;
+    lastWrittenBoard.set(row.id, row.json);
+    landed.add(row.id);
+    maybeSnapshot(row.id, row.json);
+  });
+  if (errors.length) {
+    reportSaveFailure(errors.map((e) => e.error).filter(Boolean).join('; ') || res.error);
+    return landed;
+  }
+  if (saveBroken) { saveBroken = false; toast(t('msg.saveRecovered')); }
+  return landed;
+}
+
 /* The write itself, and the one place that decides whether it landed.
 
    The store returns { ok, errors: [{ id, error }] } per document and never
@@ -935,25 +1011,7 @@ function writeNow(sync) {
     return { id: b.id, name: boardDirName(b), group: b.group || '', json: serialiseBoard(b) };
   });
   const payload = { settings: d.settings, boards };
-
-  const settle = (raw) => {
-    let res = raw;
-    if (typeof res === 'boolean') res = { ok: res, errors: res ? [] : [{ id: '', error: '?' }] };
-    if (!res) res = { ok: true, errors: [] };
-    const errors = Array.isArray(res.errors) ? res.errors : [];
-    const failed = new Set(errors.map((e) => e.id));
-    if (payload.settings && !failed.has('')) lastWrittenSettings = payload.settings;
-    boards.forEach((row) => {
-      if (failed.has(row.id)) return;
-      lastWrittenBoard.set(row.id, row.json);
-      maybeSnapshot(row.id, row.json);
-    });
-    if (!res.ok || errors.length) {
-      reportSaveFailure(errors.map((e) => e.error).filter(Boolean).join('; ') || res.error);
-      return;
-    }
-    if (saveBroken) { saveBroken = false; toast(t('msg.saveRecovered')); }
-  };
+  const settle = (raw) => applySaveResult(payload, raw);
 
   /* The ordinary, debounced save goes off-thread. `sync` is only true on the
      way out — flushSave() runs from beforeunload, and a promise there never
@@ -965,11 +1023,11 @@ function writeNow(sync) {
     asyncWriting = true;
     let p;
     try { p = DATA.saveAsync(payload); }
-    catch (err) { asyncWriting = false; settle({ ok: false, errors: [{ id: '', error: String((err && err.message) || err) }] }); return; }
+    catch (err) { asyncWriting = false; settle({ ok: false, errors: [{ id: '*', error: String((err && err.message) || err) }] }); return; }
     /* Handed back so a caller that has to know the bytes landed — deleting a
        board's folder, exporting one — can wait for it. Nothing else does. */
     return Promise.resolve(p)
-      .then(settle, (err) => settle({ ok: false, errors: [{ id: '', error: String((err && err.message) || err) }] }))
+      .then(settle, (err) => settle({ ok: false, errors: [{ id: '*', error: String((err && err.message) || err) }] }))
       .finally(() => { asyncWriting = false; });
   }
 
@@ -978,7 +1036,7 @@ function writeNow(sync) {
     if (DATA) res = DATA.save(payload);
     else { localStorage.setItem('mental-board', serialise()); res = { ok: true, errors: [] }; }
   } catch (err) {
-    res = { ok: false, errors: [{ id: '', error: String((err && err.message) || err) }] };
+    res = { ok: false, errors: [{ id: '*', error: String((err && err.message) || err) }] };
   }
   settle(res);
 }
@@ -1052,7 +1110,7 @@ function saveDelay() {
   const n = state.notes.length + state.frames.length;
   return n > cullMin() ? Math.min(2000, 450 + n * 2) : 450;
 }
-function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); }
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); scheduleMinimap(); }
 // the close path, and the only caller that wants the blocking write
 function flushSave() { clearTimeout(saveTimer); saveTimer = null; save(true); }
 
@@ -1086,3 +1144,11 @@ function maybeSnapshot(id, json) {
    A board that is gone must not keep one either, or a later board reusing the
    id (it cannot, but) would be skipped. */
 function forgetWritten(id) { lastWrittenBoard.delete(id); snapped.delete(id); }
+/* True when what is on disk for this board is what is in memory — the same
+   comparison dirtyDocs() makes. For a caller about to do something that is
+   only safe once a write has landed (deleteBoard() removing a folder). */
+function boardLanded(id) {
+  syncActiveBoard();
+  const b = boardById(id);
+  return !!b && lastWrittenBoard.get(b.id) === serialiseBoard(b);
+}

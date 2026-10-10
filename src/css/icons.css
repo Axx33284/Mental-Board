@@ -10,9 +10,6 @@
 /* Material Symbols are filled paths, unlike the hand-drawn stroked .ic set. */
 .mi { width: 1em; height: 1em; fill: currentColor; display: block; flex: 0 0 auto; }
 
-.nh-grip { display: flex; align-items: center; font-size: 15px; }
-.nh-grip .mi { opacity: .55; }
-.nh-btn .mi { width: 15px; height: 15px; }
 .cm-item .mi { width: 16px; height: 16px; color: var(--dim); }
 .cm-item > span:not(.k) { flex: 1; }
 .fi-ic .mi { width: 16px; height: 16px; }
@@ -21,11 +18,10 @@
 /* the note's own icon: a badge above its text */
 .note-icon {
   display: none; align-items: center; justify-content: center;
-  width: 30px; height: 30px; margin: 2px 0 -2px 12px; border-radius: 9px;
+  width: 30px; height: 30px; margin: calc(var(--note-pad) - 4px) 0 2px calc(var(--note-pad) - 4px); border-radius: 9px;
   font-size: 22px; flex: 0 0 30px; color: var(--nc);
 }
 .note.has-icon .note-icon { display: flex; }
-.note-icon:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
 .note.has-icon .note-body { padding-top: 0; }
 
 .ft-icon {

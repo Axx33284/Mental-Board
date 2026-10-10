@@ -1,7 +1,7 @@
 /* Mental Board — edit-ops.js
    Create, delete, arrange, duplicate, the trash, undo, the clipboard, find, and the image export.
 
-   Part 13 of 17. These files are plain scripts sharing one global
+   Part 15 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -25,7 +25,7 @@ function addNote(worldPt, opts) {
     x: Math.round(c.x - w / 2), y: Math.round(c.y - h / 2),
     w, h,
     body: o.body || '',
-    color: COLORS.includes(o.color) ? o.color : (COLORS.includes(s.noteColor) ? s.noteColor : 'default'),
+    color: okItemColor(o.color, COLORS.includes(s.noteColor) ? s.noteColor : 'default'),
     icon: okIcon(o.icon), iconColor: 'auto',
     z: ++state.nextZ,
     remindAt: 0, reminded: false, repeat: '', hist: []
@@ -347,11 +347,15 @@ function duplicate(ids) {
   if (!canEditHere()) return;
   pushUndo();
   const made = [];
+  const newId = new Map();
+  // the ropes go with the copies, exactly as a copy and paste carries them
+  const idSet = new Set(ids);
+  const ropes = state.links.filter((l) => idSet.has(l.from) || idSet.has(l.to)).map((l) => ({ from: l.from, to: l.to }));
   ids.forEach((id) => {
     const it = itemById(id);
     if (!it) return;
     const copy = JSON.parse(JSON.stringify(it));
-    copy.id = uid(); copy.x += 34; copy.y += 34;
+    newId.set(id, copy.id = uid()); copy.x += 34; copy.y += 34;
     if (isFrame(id)) {
       copy.title = t('frame.copy', { title: it.title });
       state.frames.push(copy);
@@ -368,12 +372,13 @@ function duplicate(ids) {
      culling threshold. Without this the items that should now be unmounted sit
      in the document until the next pan. Same for updateEmpty() and the compass:
      the board just changed shape. */
+  retieLinks(ropes, newId);
   updateCulling();
-  refreshFrameCounts(); updateEmpty(); drawCompass(); save();
+  refreshFrameCounts(); updateEmpty(); drawCompass(); drawLinks(); save();
   setSelection(made, false);
 }
 
-function selectAll() { setSelection([...state.notes.map((n) => n.id), ...state.frames.map((f) => f.id)], false); }
+function selectAll() { setSelection([...state.notes.map((n) => n.id), ...state.frames.filter(frameSelectable).map((f) => f.id)], false); }
 
 /* --- an image pasted onto the canvas ------------------------------------
    Take a screenshot, click the board, Ctrl+V — and there it is, in a note of
@@ -634,15 +639,18 @@ function pictureTheme() {
 function exportPalette() {
   const cs = getComputedStyle(document.documentElement);
   const g = (v, fb) => (cs.getPropertyValue(v).trim() || fb);
+  // the default note's fill as a hex, for mixing a custom colour into (mixHex needs one)
+  const defaultBg = isHex(g('--c-default-b', '')) ? g('--c-default-b', '') : (isHex(g('--surface', '')) ? g('--surface', '') : '#191b25');
   return {
     bg: g('--bg', '#101118'),
     text: g('--text', '#e8eaf2'),
     dim: g('--dim', '#9aa0b4'),
     line: g('--line-2', 'rgba(255,255,255,.18)'),
     rope: isHex(state.settings.linkColor) ? state.settings.linkColor : g(`--c-${state.settings.linkColor}-c`, '#e05a5a'),
-    noteBg: (c) => g(`--c-${c}-b`, g('--surface', '#191b25')),
-    noteLine: (c) => g(`--c-${c}-l`, g('--line', 'rgba(255,255,255,.10)')),
-    noteInk: (c) => g(`--c-${c}-c`, g('--dim', '#9aa0b4'))
+    // a custom colour (a hex) is mixed against the default note, as on screen
+    noteBg: (c) => (isHex(c) ? mixHex(defaultBg, c, 0.2) : g(`--c-${c}-b`, g('--surface', '#191b25'))),
+    noteLine: (c) => (isHex(c) ? c : g(`--c-${c}-l`, g('--line', 'rgba(255,255,255,.10)'))),
+    noteInk: (c) => (isHex(c) ? c : g(`--c-${c}-c`, g('--dim', '#9aa0b4')))
   };
 }
 
@@ -701,9 +709,32 @@ function exportBlocks(html, max) {
 /* Draw one board onto a fresh canvas and hand back the element. Kept separate
    from the save so it can be called for a preview, or for a board that is not
    the one on screen. */
-function paintBoardCanvas(board, scale) {
-  const notes = board.notes, frames = board.frames, links = board.links;
-  const all = [...notes, ...frames];
+/* The pictures standing on a board, decoded and ready to draw. Each is read
+   through main as a data URL (mbFiles.readImage) — an <img> straight off
+   mbf:// is another origin and would taint the canvas, after which toDataURL()
+   refuses and there is no picture at all. Read before the theme swap, because
+   decoding is async and withTheme() must stay synchronous. A picture that will
+   not read stays the framed placeholder it always was. */
+async function loadExportPictures(board) {
+  const out = new Map();
+  for (const n of board.notes || []) {
+    if (!n.pic) continue;
+    const src = picSrc(n);
+    let data = /^data:/i.test(src) ? src : '';
+    if (!data && FILES && FILES.readImage) { try { data = FILES.readImage(src) || ''; } catch (_) { data = ''; } }
+    if (!data) continue;
+    const img = new Image();
+    img.src = data;
+    try { await img.decode(); out.set(n.id, img); } catch (_) {}
+  }
+  return out;
+}
+
+function paintBoardCanvas(board, scale, pictures) {
+  const notes = board.notes, frames = board.frames, links = board.links, ink = board.ink || [];
+  // a drawing counts towards the picture's edges like any note does
+  const inkRects = ink.map((st) => { const q = inkBox(st); return { x: q.x0, y: q.y0, w: q.x1 - q.x0, h: q.y1 - q.y0 }; });
+  const all = [...notes, ...frames, ...inkRects];
   if (!all.length) return null;
   const b = bboxOf(all);
   const pal = exportPalette();
@@ -754,12 +785,19 @@ function paintBoardCanvas(board, scale) {
   });
   ctx.restore();
 
+  // the drawing, in the picture's own colours, behind the notes or over them
+  const inkColor = (c) => (isHex(c) ? c : c === 'text' ? pal.text : pal.noteInk(c));
+  if (board.inkBehind) paintInkOnCanvas(ctx, ink, inkColor);
+
   // and the notes on top, in z order so overlaps come out the same way
   notes.slice().sort((n1, n2) => (n1.z || 0) - (n2.z || 0)).forEach((n) => {
-    /* A picture on the board. The picture itself cannot be drawn — an image
-       from the board's own folder would taint the canvas and the export would
-       refuse to save — so its place is: a box in the paper's colour with a
-       frame, where the picture sits, at its size. */
+    /* A picture on the board: the picture itself, from the data URL
+       loadExportPictures() read for it. One that could not be read keeps its
+       place as a box in the paper's colour with a frame and an image glyph. */
+    const decoded = n.pic && pictures && pictures.get(n.id);
+    if (decoded) {
+      try { ctx.drawImage(decoded, n.x, n.y, n.w, n.h); return; } catch (_) {}
+    }
     if (n.pic) {
       ctx.save();
       ctx.fillStyle = pal.surface2 || pal.noteBg('default');
@@ -828,20 +866,36 @@ function paintBoardCanvas(board, scale) {
 
     // the status pill, bottom-left, where it sits on the real note
     const st = statusById(n.status);
+    let px0 = n.x + 14;
+    const py = n.y + n.h - 26;
     if (st) {
       const label = statusName(st);
       ctx.font = `600 11px ${FONT}`;
       const pw = ctx.measureText(label).width + 26;
-      const py = n.y + n.h - 26;
       ctx.fillStyle = pal.noteInk(st.color); ctx.globalAlpha = 0.18;
-      roundRectPath(ctx, n.x + 14, py, pw, 18, 9); ctx.fill();
+      roundRectPath(ctx, px0, py, pw, 18, 9); ctx.fill();
       ctx.globalAlpha = 1;
       ctx.fillStyle = pal.noteInk(st.color);
-      ctx.beginPath(); ctx.arc(n.x + 23, py + 9, 3.5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillText(label, n.x + 31, py + 4);
+      ctx.beginPath(); ctx.arc(px0 + 9, py + 9, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillText(label, px0 + 17, py + 4);
+      px0 += pw + 6;
+    }
+    // the date pill beside it, in the colour of what the day means (§4s)
+    if (okDateKey(n.date)) {
+      const label = dateLabel(n.date);
+      const when = dateState(n);
+      const ink = pal.noteInk(when === 'late' ? 'red' : when === 'today' ? 'amber' : 'default');
+      ctx.font = `600 11px ${FONT}`;
+      const pw = ctx.measureText(label).width + 18;
+      ctx.fillStyle = ink; ctx.globalAlpha = 0.18;
+      roundRectPath(ctx, px0, py, pw, 18, 9); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = ink;
+      ctx.fillText(label, px0 + 9, py + 4);
     }
     ctx.restore();
   });
+  if (!board.inkBehind) paintInkOnCanvas(ctx, ink, inkColor);
 
   return cv;
 }
@@ -857,7 +911,8 @@ async function exportBoardImage(id) {
      paintBoardCanvas() — which is why withTheme() takes a callback rather than
      handing back a colour set. Everything inside is synchronous, so no frame is
      ever painted in the swapped theme. */
-  const cv = withTheme(pictureTheme(), () => paintBoardCanvas(board, 2));
+  const pictures = await loadExportPictures(board);
+  const cv = withTheme(pictureTheme(), () => paintBoardCanvas(board, 2, pictures));
   if (!cv) { toast(t('msg.exportEmpty')); return; }
   const name = (boardLabel(board).replace(/[^\w؀-ۿ -]+/g, '').trim() || 'board').slice(0, 40);
   const dataUrl = cv.toDataURL('image/png');

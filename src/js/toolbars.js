@@ -1,7 +1,7 @@
 /* Mental Board — toolbars.js
    The floating selection toolbar and the slash menu that sit over the editor.
 
-   Part 9 of 17. These files are plain scripts sharing one global
+   Part 11 of 21. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -105,29 +105,71 @@ function wrapSelection(tag, cls) {
   return el;
 }
 
+/* Size the selected text — the text, and nothing else.
+
+   This used to extract the whole selected range and put it back inside one
+   size span. Within a paragraph that is fine. Across blocks it is not: the
+   extracted fragment carries copies of every block the range cut through, so a
+   selection running from one column into the next came back as a <span>
+   holding a half-copy of the `.mb-cols` grid — a grid inside a column, inside a
+   paragraph — and the columns visibly fell apart. Lists and headings were
+   split the same way, only less obviously.
+
+   Now each text node in the range is sized where it stands. Block structure is
+   never touched, so there is nothing for any selection to break; a run that is
+   already the whole of a size span just has that span's size changed, rather
+   than gaining a second span around it. */
 function applyFontPx(px) {
   px = clamp(Math.round(px || 0), FS_MIN, FS_MAX);
   const s = getSelection();
-  if (!s.rangeCount || s.isCollapsed) return;
+  if (!s.rangeCount || s.isCollapsed || !editing) return;
   const r = s.getRangeAt(0);
-  const frag = r.extractContents();
-  if (frag.querySelectorAll) {
-    frag.querySelectorAll('span.mb-fs, span[class*="fs-"]').forEach((sp) => sp.replaceWith(...sp.childNodes));
-  }
-  const span = document.createElement('span');
-  span.className = 'mb-fs';
-  span.style.fontSize = px + 'px';
-  span.appendChild(frag);
-  r.insertNode(span);
-  // if the new span is the only thing inside an older size span, drop the outer
-  const outer = span.parentElement;
-  if (outer && outer !== editing && outer.classList.contains('mb-fs') && outer.childNodes.length === 1) {
-    outer.replaceWith(...outer.childNodes);
-  }
-  const nr = document.createRange(); nr.selectNodeContents(span);
+  const runs = textRunsIn(r, editing);
+  if (!runs.length) return;
+  const spans = runs.map((t) => {
+    const p = t.parentElement;
+    if (p && p !== editing && p.classList.contains('mb-fs') && p.childNodes.length === 1) {
+      p.style.fontSize = px + 'px';
+      return p;
+    }
+    const span = document.createElement('span');
+    span.className = 'mb-fs';
+    span.style.fontSize = px + 'px';
+    t.replaceWith(span);
+    span.appendChild(t);
+    return span;
+  });
+  const nr = document.createRange();
+  nr.setStartBefore(spans[0].firstChild); nr.setEndAfter(spans[spans.length - 1].lastChild);
   s.removeAllRanges(); s.addRange(nr);
   persistEdit();
   syncFontInput(px);
+}
+/* The text nodes a range covers, split at its two ends so each one lies wholly
+   inside it. Whitespace that only separates blocks is skipped (wrapping it
+   would put a span between two paragraphs), and so is anything in a part of
+   the note that is not text: an embed card, an inline icon. */
+function textRunsIn(r, root) {
+  const anchor = r.commonAncestorContainer.nodeType === 3 ? r.commonAncestorContainer.parentNode : r.commonAncestorContainer;
+  const walker = document.createTreeWalker(anchor, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  for (let n = walker.currentNode.nodeType === 3 ? walker.currentNode : walker.nextNode(); n; n = walker.nextNode()) {
+    if (!r.intersectsNode(n) || !root.contains(n)) continue;
+    const p = n.parentElement;
+    if (p && p.closest('.mb-embed, [contenteditable="false"], svg')) continue;
+    if (!n.textContent.trim() && p && /^(DIV|UL|OL|TABLE|TBODY|THEAD|TR)$/.test(p.tagName)) continue;
+    hits.push(n);
+  }
+  if (!hits.length) return hits;
+  // split the two ends; the end first, so splitting the start cannot move its offset
+  const last = hits[hits.length - 1];
+  if (last === r.endContainer && r.endOffset < last.length) last.splitText(r.endOffset);
+  const first = hits[0];
+  if (first === r.startContainer && r.startOffset > 0) {
+    if (r.startOffset >= first.length) hits.shift();
+    else hits[0] = first.splitText(r.startOffset);
+  }
+  return hits.filter((t) => t.length);
 }
 
 function stepFontSize(dir) {
@@ -503,9 +545,25 @@ function templateMatches(x, q) {
   if (!q) return true;
   return foldSearch(templateName(x)).includes(q);
 }
+/* How well a block's name answers what was typed: 0 is the name itself, 1 a
+   name that starts with it, 2 anywhere. Without this the list kept BLOCKS'
+   own order, so `/link` offered "Board link" first — it contains "link" and
+   sits above Link in the table — and Enter made a board link, which is how a
+   link typed with the slash menu ended up somewhere nobody asked for. */
+function blockRank(b, q) {
+  if (!q) return 0;
+  const names = [b.k, foldSearch(blockLabel(b)), foldSearch(FALLBACK['block.' + b.k] || '')];
+  if (names.some((s) => s === q)) return 0;
+  if (names.some((s) => s && s.startsWith(q))) return 1;
+  return 2;
+}
 function slashItems(q) {
   return [
-    ...BLOCKS.filter((b) => blockMatches(b, q)).map((b) => ({
+    ...BLOCKS.filter((b) => blockMatches(b, q))
+      .map((b, i) => ({ b, i, r: blockRank(b, q) }))
+      .sort((x, y) => x.r - y.r || x.i - y.i)
+      .map(({ b }) => b)
+      .map((b) => ({
       kind: 'block', ic: b.ic, name: blockLabel(b), desc: blockDesc(b), run: b
     })),
     ...userTemplates().filter((x) => templateMatches(x, q)).map((x) => ({

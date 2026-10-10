@@ -24,7 +24,7 @@ const UI = [
   'arrow_upward', 'arrow_downward', 'arrow_back', 'arrow_forward',
   'north_east', 'north_west', 'south_east', 'south_west',
   'palette', 'colorize', 'image', 'code', 'zoom_in', 'zoom_out', 'fit_screen',
-  'sticky_note_2', 'select_all', 'drag_indicator', 'more_horiz', 'undo', 'redo',
+  'sticky_note_2', 'select_all', 'more_horiz', 'undo', 'redo',
   'crop', 'crop_square', 'rotate_right', 'restart_alt', 'brush', 'draw', 'title',
   'text_fields', 'text_increase', 'text_decrease',
   'format_bold', 'format_italic', 'format_underlined', 'format_strikethrough',
@@ -42,7 +42,10 @@ const UI = [
      glyph with a small `close` badge over it. See .tb-stack in styles.css. */
   'table', 'add_row_below', 'add_column_right', 'table_rows', 'view_column',
   /* boards, reminders, history and locking */
-  'unarchive', 'alarm_off'
+  'unarchive', 'alarm_off',
+  /* 2.1: duplicate, and the pen */
+  'library_add', 'ink_pen', 'ink_highlighter', 'ink_eraser', 'flip_to_front', 'flip_to_back',
+  'delete_sweep', 'volume_up', 'arrow_selector_tool'
 ];
 
 /* Icons the user can stamp on a note or a workflow, or drop into note text with
