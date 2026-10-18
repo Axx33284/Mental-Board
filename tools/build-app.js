@@ -69,6 +69,9 @@ function appIsRunning() {
 const IGNORE = [
   /^\/App($|\/)/, /^\/\.build($|\/)/, /^\/dist($|\/)/,
   /^\/tools($|\/)/, /^\/admin($|\/)/, /^\/\.git($|\/)/, /^\/\.sandbox/,
+  /* Claude Code's own folder: settings, and the git worktrees of side sessions,
+     each a whole second copy of the project with a node_modules link inside. */
+  /^\/\.claude($|\/)/,
   /^\/(MAP|README|CLAUDE)\.md$/, /^\/\.gitattributes$/, /^\/\.gitignore$/,
   /^\/package-lock\.json$/, /\.map$/,
   /* prune leaves this behind. It is only npm's own bookkeeping, and there are
