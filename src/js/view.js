@@ -88,6 +88,7 @@ function applyView() {
   scheduleMount();                  // pan/zoom changes which notes are on screen
   syncInk();                        // and which strokes, on a board with many
   scheduleMinimap();
+  if (typeof padDirty === 'function') padDirty();   // a paired phone sees the board move (js/tablet.js)
 }
 /* The viewport's box, cached (2.1).
 

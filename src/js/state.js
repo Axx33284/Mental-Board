@@ -1121,7 +1121,9 @@ function saveDelay() {
   const n = state.notes.length + state.frames.length;
   return n > cullMin() ? Math.min(2000, 450 + n * 2) : 450;
 }
-function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); scheduleMinimap(); }
+/* Every change to the board ends here, which makes it the place a paired phone
+   hears that its picture is out of date (js/tablet.js, MAP.md §4x). */
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); scheduleMinimap(); if (typeof padDirty === 'function') padDirty(); }
 // the close path, and the only caller that wants the blocking write
 function flushSave() { clearTimeout(saveTimer); saveTimer = null; save(true); }
 

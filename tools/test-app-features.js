@@ -798,13 +798,15 @@ module.exports = [
      The phone's messages are fed to onPadMessage() exactly as main delivers
      them, already checked. The socket and the QR code are tools/test-tablet.js. */
   async ({ page, test, ok, BOARDS, fs, path }) => {
-    await test('2.2 a stroke from the phone lands where the window shows, with its pressure, and saves', async () => {
+    await test('2.2 a stroke from the phone lands in the region it maps to, with its pressure, and saves', async () => {
       const r = await page(async () => {
         const b = makeBoard('Twenty-two');
         state.boards.push(b);
         await switchBoard(b.id);
         state.view = { x: 100, y: 50, z: 2 }; applyView();
-        const vr = vpRect();
+        // a portrait phone: a tall slice down the middle of the window
+        onPadMessage({ t: 'size', a: 0.5, px: 1080 });
+        const p = padRect(), vr = vpRect();
         onPadMessage({ t: 'down', id: 'p1', x: 0.25, y: 0.5, p: 0.2, tool: 'brush', size: 1, color: 'blue' });
         const pts = [];
         for (let i = 1; i <= 10; i++) pts.push(0.25 + i * 0.02, 0.5, 0.2 + i * 0.07);
@@ -812,15 +814,17 @@ module.exports = [
         state.view.x += 400; applyView();                 // a pan from the mouse mid-stroke must not bend it
         onPadMessage({ t: 'up', id: 'p1' });
         const s = state.ink[0];
-        const want = { x: (0.25 * vr.width - 100) / 2, y: (0.5 * vr.height - 50) / 2 };
+        const want = { x: (p.x + 0.25 * p.w - 100) / 2, y: (p.y + 0.5 * p.h - 50) / 2 };
         const out = { n: state.ink.length, tool: s && s.tool, color: s && s.color, x: s && s.pts[0], y: s && s.pts[1], want,
-          wsGrow: !!(s && s.ws && s.ws[Math.floor(s.ws.length / 2)] > s.ws[1]), size: s && s.size };
+          wsGrow: !!(s && s.ws && s.ws[Math.floor(s.ws.length / 2)] > s.ws[1]), size: s && s.size,
+          slice: Math.abs(p.h - vr.height) < 1 && Math.abs(p.w - vr.height * 0.5) < 1 && Math.abs(p.x - (vr.width - p.w) / 2) < 1 };
         await saveNow();
         return out;
       });
       ok(r.n === 1 && r.tool === 'brush' && r.color === 'blue', JSON.stringify(r));
       ok(Math.abs(r.x - r.want.x) < 0.2 && Math.abs(r.y - r.want.y) < 0.2, 'mapped through the view at pen-down: ' + JSON.stringify(r));
       ok(r.wsGrow, 'pressure widens the brush');
+      ok(r.slice, 'a portrait phone is the full height, centred');
       ok(Math.abs(r.size - 5) < 0.01, 'the on-screen size divided by the zoom: ' + r.size);
       const dir = fs.readdirSync(BOARDS).find((d) => d.startsWith('Twenty-two'));
       const ink = JSON.parse(fs.readFileSync(path.join(BOARDS, dir, 'board.json'), 'utf8')).ink;
@@ -857,13 +861,48 @@ module.exports = [
         onPadMessage({ t: 'pan', dx: 0.1, dy: 0 });
         const panned = state.view.x - x0;
         onPadMessage({ t: 'zoom', f: 1.5, x: 0.5, y: 0.5 });
-        return { drawn, afterUndo, afterMore, hasBrush, afterErase, back, panned, w: vr.width, zoomed: state.view.z / z0 };
+        return { drawn, afterUndo, afterMore, hasBrush, afterErase, back, panned, w: padRect().w, zoomed: state.view.z / z0 };
       });
       ok(r.afterUndo === r.drawn - 1, 'undo takes the phone stroke: ' + JSON.stringify(r));
       ok(r.afterMore === r.afterUndo - 1, 'then the earlier phone stroke, never the mouse one: ' + JSON.stringify(r));
       ok(r.hasBrush === 1 && r.afterErase === 0 && r.back === 1, 'the eraser takes a stroke whole, Ctrl+Z brings it back: ' + JSON.stringify(r));
-      ok(Math.abs(r.panned - 0.1 * r.w) < 0.5, 'one finger pans the window: ' + JSON.stringify(r));
+      ok(Math.abs(r.panned - 0.1 * r.w) < 0.5, 'one finger pans by its own width: ' + JSON.stringify(r));
       ok(Math.abs(r.zoomed - 1.5) < 0.01, 'two zoom');
+    });
+
+    await test('2.2 the phone selects a stroke, moves it, recolours it and deletes it, through ink.js', async () => {
+      const r = await page(() => {
+        state.ink = []; drawInk();
+        const p = padRect();
+        // a pen stroke across the middle of the phone
+        onPadMessage({ t: 'down', id: 'q1', k: 50, x: 0.2, y: 0.5, p: 0.5, tool: 'pen', size: 1, color: 'text' });
+        onPadMessage({ t: 'move', id: 'q1', pts: [0.5, 0.5, 0.5, 0.8, 0.5, 0.5] });
+        onPadMessage({ t: 'up', id: 'q1' });
+        const id = state.ink[0].id, x0 = state.ink[0].pts[0];
+        // the arrow: touch the stroke and drag it a tenth of the phone to the right
+        onPadMessage({ t: 'down', id: 'q2', k: 51, x: 0.5, y: 0.5, p: 0.5, tool: 'select', size: 1, color: 'text' });
+        const picked = inkSel.has(id);
+        onPadMessage({ t: 'move', id: 'q2', pts: [0.55, 0.5, 0.5, 0.6, 0.5, 0.5] });
+        onPadMessage({ t: 'up', id: 'q2' });
+        const moved = state.ink[0].pts[0] - x0, want = 0.1 * p.w / state.view.z;
+        onPadMessage({ t: 'sel', act: 'color', color: 'green' });
+        const color = state.ink[0].color;
+        undo();
+        const undone = state.ink[0].color;
+        // a lasso round nothing lets go; one round the stroke takes it again
+        onPadMessage({ t: 'down', id: 'q3', k: 52, x: 0.05, y: 0.05, p: 0.5, tool: 'select', size: 1, color: 'text' });
+        onPadMessage({ t: 'move', id: 'q3', pts: [0.98, 0.98, 0.5] });
+        onPadMessage({ t: 'up', id: 'q3' });
+        const lassoed = inkSel.has(id);
+        onPadMessage({ t: 'sel', act: 'delete' });
+        const after = state.ink.length;
+        return { picked, moved, want, color, undone, lassoed, after, k: padK };
+      });
+      ok(r.picked, 'touching a stroke selects it');
+      ok(Math.abs(r.moved - r.want) < 0.5, 'dragging moves it by what the pen moved: ' + JSON.stringify(r));
+      ok(r.color === 'green' && r.undone === 'text', 'recolour, and Ctrl+Z takes it back: ' + JSON.stringify(r));
+      ok(r.lassoed && r.after === 0, 'a lasso takes it, delete removes it: ' + JSON.stringify(r));
+      ok(r.k === 52, 'the stroke numbers a picture reports: ' + r.k);
     });
 
     await test('2.2 a board that cannot be edited is never drawn on from the phone', async () => {

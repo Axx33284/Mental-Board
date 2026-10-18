@@ -54,8 +54,10 @@ theme change fades.
 **2.2, so far.** A phone with a pen is a wireless drawing tablet for the
 board: Settings ▸ Extra ▸ Pair a phone shows a QR code, the phone's browser
 opens a page this computer serves on the LAN, and the pen draws on the part of
-the board the window shows, in real time (§4x, `src/tablet.js`,
-`js/tablet.js`).
+the board outlined on the PC, in real time — the whole phone screen is the
+drawing surface and shows that part of the board live; the pen's button
+erases, and strokes can be selected, moved, recoloured and deleted from the
+phone (§4x, `src/tablet.js`, `js/tablet.js`).
 
 The things that make it more than a note wall:
 
@@ -126,7 +128,7 @@ The things that make it more than a note wall:
 | **Menu sounds** | js/sound.js §4v |
 | **Three graphics tiers, picked for the machine** | js/theme.js + js/view.js §4c |
 | **Mono accent, and a theme change that fades** | js/helpers.js + js/theme.js §4v |
-| **A phone with a pen as a wireless drawing tablet** | src/tablet.js + js/tablet.js §4x |
+| **A phone with a pen as a wireless drawing tablet, showing the board live** | src/tablet.js + js/tablet.js §4x |
 
 ---
 
@@ -161,9 +163,9 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/store.js` | ~860 | **The My Boards folder.** Runs in main. Scans the folder into boards, writes settings.json and each board.json atomically, lays a board's folder out (name, group, rename, move), keeps the files a board carries, copies them between boards, exports and imports whole boards, mirrors the folder for backup (never into itself), writes and reads JSON Canvas (§4t), reads a Samsung Notes file for a board and writes its pictures into that board's folder (`readSamsung`, `attachBuffer`, §4w), and migrates a 1.x board.json once. See §3. |
 | `src/sdocx.js` | ~520 | **A Samsung Notes .sdocx, decoded.** Runs in main, plain Node: its own bounded zip reader (zlib), then `note.note` (title, rich text), the pages in `pageIdInfo.dat` order, their layers and object records — strokes, shapes and lines, text boxes, pictures — and `media/mediaInfo.dat`. Everything sized is read from its size and anything not understood is counted and skipped. No dependency; written from a published description of the format, see §4w. |
 | `src/preload.js` | ~130 | The bridge. Six `contextBridge` globals (`mbPad` since 2.2), every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
-| `src/tablet.js` | ~360 | **A phone as a drawing tablet** (2.2). Runs in main, plain Node: picks the LAN address, serves the phone's page, speaks just enough WebSocket, enforces the pairing (one token, one phone, `resume` after a drop, Origin, private peers only), checks every message (`clean()`) and stops by itself. See §4x. |
+| `src/tablet.js` | ~360 | **A phone as a drawing tablet** (2.2). Runs in main, plain Node: picks the LAN address, serves the phone's page, speaks just enough WebSocket, enforces the pairing (one token, one phone, `resume` after a drop, Origin, private peers only), checks every message (`clean()`), sends the pictures of the board (`sendFrame()`, identical ones skipped) and stops by itself. See §4x. |
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
-| `src/tablet/phone.html` | ~330 | The page the phone opens: pen in, pressure, hover, palm rejection, fingers to pan and zoom, a fading echo. No text of its own — the `main.pad*` strings are injected. See §4x. |
+| `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
 | `src/js/*.js` | ~15300 | All app logic, in 23 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
@@ -181,7 +183,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
-| `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
+| `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~240 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last test fails on any that is not expected. `npm run test:app`. |
 | `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
@@ -629,7 +631,7 @@ no bundler and no build step — the only thing joining them is the order
 | `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `fillStubs` `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
 | `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
-| `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor`), and `paintInkOnCanvas` for the board picture. See §4v. |
+| `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
 | `editor.js` | ~1330 | The note editor — markdown shortcuts, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`), user templates, the paste sanitiser. |
 | `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
 | `toolbars.js` | ~650 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu (ranked by `blockRank`) — the chrome that sits over the editor. |
@@ -643,7 +645,7 @@ no bundler and no build step — the only thing joining them is the order
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
-| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, `padUndo`, `padPan`, the hover ring). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
+| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
 
 ### The load order is the only contract
@@ -1789,35 +1791,80 @@ phone browser ──WebSocket over Wi-Fi──▶ src/tablet.js (main) ──IPC
 | The LAN server, the pairing, a 30-line WebSocket, `clean()` | `src/tablet.js` | main (plain Node — tested without Electron) |
 | The QR code of the pairing address | `src/qr.js` | main (pure; byte mode, level M, versions 1–6) |
 | The page the phone opens | `src/tablet/phone.html` | the phone |
-| Pairing panel, strokes in, hover ring, pan/zoom, the phone's undo | `js/tablet.js` | the renderer |
-| The bridge | `window.mbPad` in `preload.js`: `start` `stop` `send` `addresses` `onState` `onMessage` | — |
+| Pairing panel, the phone's region and its outline, the pictures (`padDirty` → `padPump`), strokes in, select, hover ring, pan/zoom, the phone's undo | `js/tablet.js` | the renderer |
+| Photographing the region | `pad:frame` in `main.js` (`webContents.capturePage`), `sendFrame()` in `src/tablet.js` | main |
+| The bridge | `window.mbPad` in `preload.js`: `start` `stop` `send` `frame` `addresses` `onState` `onMessage` | — |
 | Strings | `main.pad*` (the phone page, via `MAIN_KEYS`) and `set.pad*` / `pad.*` | — |
 
-### Where a stroke lands: the phone is the window
+### Where a stroke lands: the phone is a region of the window (2.2.1)
 
-The phone's drawing area has the shape of the board's viewport on the PC, and
-a point a third of the way across the phone lands a third of the way across
-what you can see on the PC, at the zoom you are at. That is how a Wacom-style
-tablet works and it needs **no picture of the board on the phone**: you look
-at the computer, the S Pen's hover (Chrome reports it as `pointermove` with no
-buttons) shows as a ring on the PC (`#padCursor`), and fingers move the board
-under it — one pans, two pinch-zoom, a two-finger tap undoes. The phone shows
-only a frame and a 1.4-second fading echo of the line just drawn, so the pen
-feels attached even though you are not looking at it.
+2.2 made the phone *the whole window*, letterboxed to the PC's landscape
+shape — on a phone held upright that was a small box in the middle of the
+screen, and the user asked for the whole screen. So since 2.2.1 the mapping
+goes the other way: **the phone's drawing surface is the entire screen under
+its bar, in either orientation, and it maps to the biggest rectangle of that
+shape that fits in the board's viewport, centred** (`padRect()`). Held upright,
+that is a tall slice down the middle of the PC window; turned sideways, most of
+it. The PC outlines the rectangle while a phone is paired (`#padArea`, drawn
+just *outside* it so it is never in a picture). The phone tells the PC its
+shape (`size`: aspect and device-pixel width) on connect, on rotation and on
+going full screen; it asks for full screen on the first pen-down, which is a
+user gesture, and the ⛶ button toggles it.
 
-The view is snapshotted at pen-down (`map` in `beginPadStroke`), so a pan from
-the mouse half way through a stroke cannot bend it. Widths are the ink bar's
-on-screen sizes divided by the zoom, exactly as `beginInk()` does — a stroke
-from the phone is indistinguishable on disk from one drawn with the mouse.
-Pressure comes through as `p` (0–1; −1 means "none", a finger or a mouse) and
-drives the brush through the existing `brushWidths()`.
+A point a third of the way across the phone lands a third of the way across
+that rectangle, at the zoom you are at, and at about one phone pixel per PC
+pixel on an S22 Ultra held upright — notes are readable at 100%. The view is
+snapshotted at pen-down (`padMap()`), so a pan from the mouse half way through
+a stroke cannot bend it. Widths are the ink bar's on-screen sizes divided by
+the zoom, exactly as `beginInk()` does — a stroke from the phone is
+indistinguishable on disk from one drawn with the mouse. Pressure comes through
+as `p` (0–1; −1 means "none", a finger or a mouse) and drives the brush through
+the existing `brushWidths()`.
 
-Considered and left: mapping the phone to a fixed region of the board, or to
-the whole board. Both need the phone to show the board (a picture stream, and
-the board's content leaving the PC), and a fixed region is one more thing to
-set up before you can draw. "Handwrite a note" — ink that belongs to a note
-rather than the board — is the obvious next step and needs a note that can
-hold strokes; it is not in this prototype.
+### What the phone sees: pictures of the region, sent when it changes
+
+The phone shows the board under the pen, live — notes, pictures, the far-zoom
+ghosts, the ink from either side, the selection box — because it is shown
+**JPEG pictures of exactly that rectangle, taken by main**
+(`webContents.capturePage(rect)` → `toJPEG(72)`, at most 1100 px tall).
+
+Chosen over streaming world-coordinate geometry (note rectangles, ghost text
+bars, ink paths) for three reasons. It is *right* by construction: theme,
+fonts, pictures in notes, bidi text, the cork look, a menu open on the PC —
+geometry would need a second renderer for each, on the phone, kept in step
+forever. It is *cheap* where it matters: about 20 KB a picture for a portrait
+slice, measured; and a board at rest sends **nothing**. And it carries less
+than geometry would: pixels of one region, not the text of every note near
+it.
+
+What keeps it light on the Wi-Fi and the battery:
+
+- **Change-driven, not a frame rate.** `padDirty()` is called from
+  `applyView()`, `saveSoon()`, `drawInk()`, the live stroke (mouse or phone)
+  and `paintInkSelection()`; a picture is taken at most every 90 ms after one,
+  two animation frames later so the change is painted. A once-a-second tick
+  also asks, for anything those miss (a picture finishing loading, a theme
+  fading).
+- **One in flight.** The next picture waits for the phone's `got`, so a slow
+  network gets fewer pictures rather than a queue of stale ones (1.5 s
+  timeout).
+- **Identical pictures are not sent.** `sendFrame()` hashes the JPEG; the
+  idle tick costs the PC one capture a second and the phone a 60-byte message.
+  Measured in the sandbox: a half-second pan sent five pictures (~100 KB);
+  three idle seconds sent none.
+
+How the phone hides the round trip. Every picture comes with two numbers: the
+last of the phone's pans and zooms the PC had applied (`nav`) and the last of
+its strokes already drawn into it (`k`). The phone applies its own later pans
+and zooms to the picture at once (`navOps`, a matrix), and draws its own later
+strokes from their points (`mine`) at the width they will land with (`rw`, the
+region's width in PC pixels). Both are dropped as pictures catch up. So a line
+appears under the pen immediately, stays, and is replaced by the PC's own
+rendering of it a picture later — there is no fading echo any more, and
+nothing for it to fade from.
+
+Considered and left: "handwrite a note" — ink that belongs to a note rather
+than the board — needs a note that can hold strokes; not in this.
 
 ### Palm rejection, the pen button, the eraser
 
@@ -1828,8 +1875,12 @@ hold strokes; it is not in this prototype.
   is a contact wider than 48 px. Both are ignored for as long as they stay
   down. The S Pen's hover is what makes the first rule work: the pen is "near"
   before it touches.
-- **The S Pen's side button erases** for that one stroke — Chrome reports it
-  as the secondary button (`buttons & 2`); an eraser end is `buttons & 32`.
+- **The S Pen's side button erases while it is held.** Chrome on Android
+  reports it as the eraser on some builds (`button` 5, `buttons & 32`) and as
+  the secondary button on others (`button` 2, `buttons & 2`); all of them
+  count (`erasing(e)` in phone.html). Pressed or released *mid-line*, the line
+  ends and the other tool carries on from the same point. The hover dot turns
+  red while it is held.
 - The eraser from the phone takes whole strokes along the whole sweep, like
   `eraseAt()`, and takes its undo step at the first stroke it actually
   removes, so a sweep across nothing leaves no step to pop.
@@ -1837,6 +1888,20 @@ hold strokes; it is not in this prototype.
   never touches the board's undo stack, which would let a phone undo a note
   the person at the keyboard just deleted. Ctrl+Z on the PC undoes phone
   strokes like any others (each is an `ink` step).
+
+### Selecting, moving, recolouring, deleting from the phone
+
+The arrow on the phone's bar is ink.js's select tool (2.1), driven with the
+phone's points turned into client coordinates (`padClient()`): touch a stroke
+to select it and drag to move the selection, drag across empty board to lasso.
+The gesture *is* ink.js's `inkPick`, moved by `moveInkPick()` and settled by
+`endInkPick()`, so a move is one `ink` undo step and saves exactly as the
+mouse's does; only the hit radius is the phone's (12 px — a pen tip needs more
+room than a mouse). With strokes selected, the bin and the colours on the
+phone's bar send `sel` — `deleteInkSelection()` and `recolorInkSelection()`,
+the latter split out of `pickInkColor()` in 2.2.1 so both bars share it.
+Leaving the arrow lets go of the selection, as on the PC. The phone learns the
+selection's size from `view.sel` and sees the dashed box in the pictures.
 
 ### Security: a listening socket on the LAN, made boring
 
@@ -1862,17 +1927,22 @@ All of it is in `src/tablet.js`'s header; each point has a test in
   path; every other URL is a 404. The page has its own CSP (`script-src` a
   per-load nonce, `connect-src` exactly its own `ws://`), and the strings are
   injected with `<` escaped so a translation cannot close the script.
-- **The phone can only send.** Nothing about the board goes to it: the window's
-  aspect ratio, whether the board can be drawn on, and the nine ink colours.
-  Someone who did get in could scribble; they could not read a note.
+- **What reaches the phone is pictures of its region, while paired.** Since
+  2.2.1 the phone sees the board, so board content does cross the network:
+  JPEGs of the outlined rectangle, nothing else — no note text as data, no
+  board names, no files, nothing outside the rectangle. That rests on the
+  pairing above (one token, one phone, gone when pairing ends) and is said in
+  the Settings hint (`set.padHint`). Main photographs the region; the renderer
+  never handles the JPEG, and `cleanOut()` passes the `view` message's own
+  fields and nothing riding on them.
 - **Every message is re-checked in main** (`clean()`): known kinds, finite
   clamped numbers, ids `[\w-]{1,24}`, colours `text`/a name/`#rrggbb`, 64 KB a
   frame, 500 messages a second. The renderer still refuses a board that
   cannot be edited (`padCanDraw()`, a toast-free `canEditHere()`).
 - **Plain `http`/`ws`, on purpose.** A self-signed certificate is a full-page
   warning on the phone at every pairing, and what crosses the network is pen
-  positions on the user's own Wi-Fi. The cost: someone sniffing the same Wi-Fi
-  could see strokes and the token, and the phone page has no secure context —
+  positions and pictures of a region on the user's own Wi-Fi. The cost: someone
+  sniffing the same Wi-Fi could see strokes, those pictures and the token, and the phone page has no secure context —
   so no Wake Lock (keep the phone's screen awake yourself while drawing).
 
 ### The Windows firewall
@@ -1904,16 +1974,25 @@ saving, which a steady stream of pen events mostly keeps awake.
 ### Verified
 
 `npm test` covers the encoder (every length 1–106 read back with the RS
-syndromes checked), the server (`tools/test-tablet.js`), and the renderer
-(three 2.2 tests in `test-app-features.js`). By hand, in `npm run sandbox` with
-a desktop browser standing in for the phone on the PC's Wi-Fi address: pen,
-brush with synthetic pressure, hover ring, palm rejected, one-finger pan,
-pen-button erase, two-finger-tap undo, Stop closing the port and telling the
-phone. The QR code was decoded by an independent decoder (jsQR). **Not yet
-verified: a real S Pen on a real S22 Ultra over Wi-Fi, and the firewall
-prompt.**
+syndromes checked), the server (`tools/test-tablet.js` — now also `size`,
+`sel`, `got`, the arrow, and pictures: numbers then JPEG, a 70 KB one arriving
+whole, an identical one not re-sent, a returning phone getting it again), and
+the renderer (four 2.2 tests in `test-app-features.js`: the region at a
+portrait aspect, pressure, the phone's undo and eraser, pan and zoom, and
+select → move → recolour → undo → lasso → delete through ink.js). By hand, in
+`npm run sandbox` with the in-app browser at 375 × 812 standing in for the
+phone on the PC's Wi-Fi address and pen events synthesised in the page:
+the full-height portrait surface and landscape, the board live on the phone,
+a brush stroke staying put, the pen button (`buttons` 32) erasing mid-line,
+select/move/recolour/delete from the phone, a note added on the PC appearing
+on the phone, and the bandwidth figures above.
 
----
+**Only the real phone can confirm:** which `button`/`buttons` the S22 Ultra's
+Chrome (or Samsung Internet) reports for the S Pen button; S Pen hover and
+real pressure over Wi-Fi; palm rejection with a real hand; how full screen
+and rotation behave there; picture latency on the user's Wi-Fi; and the
+Windows Firewall prompt.
+
 
 ## 4o. Lining a note up with its neighbours
 
@@ -2937,7 +3016,13 @@ Two things that will waste your time if you don't know them:
 
 ## 7. Traps
 
-Five from 2.2's phone-as-tablet first (§4x):
+Six from 2.2's phone-as-tablet first (§4x):
+
+- **A hook into a file further down the load order is `typeof`-guarded.**
+  `applyView()`, `saveSoon()` and ink.js call `padDirty()`, which lives in
+  js/tablet.js, near the end of the order. Anything that runs one of them
+  while the scripts are still loading would hit an undefined function, so the
+  call is `if (typeof padDirty === 'function') padDirty();`.
 
 - **An http server's sockets are half-open.** A WebSocket peer that hangs up
   is heard as `end`, and `close` never comes until this side ends too.

@@ -146,6 +146,8 @@ contextBridge.exposeInMainWorld('mbPad', {
   stop: () => ipcRenderer.send('pad:stop'),
   send: (msg) => ipcRenderer.send('pad:send', msg),
   addresses: () => ipcRenderer.invoke('pad:addresses'),
+  // photograph this region of the window for the phone; resolves { sent }
+  frame: (req) => ipcRenderer.invoke('pad:frame', req),
   onState: (cb) => ipcRenderer.on('pad:state', (_e, s) => cb(s)),
   onMessage: (cb) => ipcRenderer.on('pad:msg', (_e, m) => cb(m))
 });
