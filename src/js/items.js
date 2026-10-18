@@ -1,7 +1,7 @@
 /* Mental Board — items.js
    Note and frame elements, the one drag/resize gesture engine, selection, and the camera.
 
-   Part 6 of 21. These files are plain scripts sharing one global
+   Part 6 of 22. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */

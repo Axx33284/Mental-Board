@@ -360,6 +360,59 @@ module.exports = [
     });
   },
 
+  /* ---- Samsung Notes (js/samsung.js, src/sdocx.js) ---- */
+  async ({ page, test, ok, BOARDS, fs, path }) => {
+    const IN = path.join(BOARDS, '..', 'samsung-in');
+    fs.mkdirSync(IN, { recursive: true });
+    const file = path.join(IN, 'Shopping.sdocx');
+    fs.writeFileSync(file, require('./fake-sdocx.js')());
+
+    await test('samsung: a note comes onto the board — text, picture, ink, one workflow — and one undo takes it off', async () => {
+      const r = await page(async (p) => {
+        const b = makeBoard('Phone');
+        state.boards.push(b);
+        await switchBoard(b.id);
+        await saveNow();
+        const count = () => ({ f: state.frames.length, n: state.notes.length, i: state.ink.length });
+        const before = count();
+        await importSamsungFiles([p], { x: 0, y: 0 });
+        const after = count();
+        const frame = state.frames[state.frames.length - 1];
+        const note = state.notes.find((n) => !n.pic);
+        const ink = state.ink.map((s) => [s.tool, s.color, s.pts.length]);
+        undo();
+        return { before, after, undone: count(), title: frame.title, body: note.body, ink, id: b.id };
+      }, file);
+      ok(r.after.f === r.before.f + 1 && r.after.n === r.before.n + 1 && r.after.i === r.before.i + 2, JSON.stringify(r));
+      ok(r.title === 'Groceries', 'the workflow is named after the note: ' + r.title);
+      ok(r.body.startsWith('<p><b>Milk</b> and eggs</p>'), 'bold kept: ' + r.body);
+      ok(r.body.includes(`<img class="mb-img" src="mbf://${r.id}/pic.png">`), 'the picture inline, from this board\'s folder: ' + r.body);
+      ok(r.ink.some((s) => s[0] === 'brush' && s[1] === '#3366cc'), 'the stroke is a brush in its own colour: ' + JSON.stringify(r.ink));
+      ok(r.ink.some((s) => s[0] === 'pen' && s[1] === 'text'), 'the square is a pen line in the theme\'s ink: ' + JSON.stringify(r.ink));
+      ok(JSON.stringify(r.undone) === JSON.stringify(r.before), 'undo: ' + JSON.stringify(r));
+    });
+
+    await test('samsung: rich text — headings, lists, to-dos, links, and nothing that is not ours', async () => {
+      const r = await page(() => {
+        const text = 'Title\nplain <b>\nbuy\nsell\nfirst\nsecond\nsee https://example.com\nmail me at a@b.co\n￼';
+        const at = (s) => text.indexOf(s);
+        const para = (type, i, v) => ({ type, start: i, end: i + 1, v });
+        return richToHtml({
+          text,
+          spans: [{ type: 3, start: 0, end: 5, value: 24 }, { type: 3, start: 6, end: text.length, value: 15 },
+            { type: 9, start: at('see'), end: at('see') + 23, kind: 3, url: '' }, { type: 9, start: at('mail'), end: at('mail') + 17, kind: 1, url: 'javascript:alert(1)' }],
+          paras: [para(5, 2, [2, 0, 1, 0]), para(5, 3, [2, 0, 0, 0]), para(5, 4, [4, 1, 0, 1]), para(5, 5, [4, 2, 0, 1])],
+          objects: [{ index: at('￼'), type: 22 }]
+        }, {}, 400);
+      });
+      ok(r.html.startsWith('<h1>Title</h1><p>plain &lt;b&gt;</p>'), r.html);
+      ok(r.html.includes('<ul class="mb-todo"><li class="done">buy</li><li>sell</li></ul><ol><li>first</li><li>second</li></ol>'), r.html);
+      ok(r.html.includes('<a href="https://example.com">see https://example.com</a>'), r.html);
+      ok(r.html.includes('<a href="mailto:a@b.co">') && !r.html.includes('javascript'), r.html);
+      ok(r.skipped === 1, 'the table is counted as not brought in');
+    });
+  },
+
   /* ---- 2.1: ropes you follow, text links, columns, paste, locks, ink ---- */
   async ({ page, test, ok, sleep, BOARDS, fs, path }) => {
     // a board of our own, so nothing above depends on what happens here

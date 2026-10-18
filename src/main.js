@@ -69,6 +69,9 @@ const S_EN = {
   'main.exportCanvas': 'Export for Obsidian — save as .canvas',
   'main.importCanvas': 'Import a .canvas board',
   'main.filterCanvas': 'JSON Canvas',
+  'main.importSamsung': 'Import from Samsung Notes',
+  'main.filterSamsungAll': 'Samsung Notes and its exports',
+  'main.filterSamsung': 'Samsung Notes',
   'main.exportImage': 'Export board as image',
   'main.backupFolder': 'Choose a backup folder',
   'main.insertImage': 'Insert image',
@@ -730,6 +733,20 @@ ipcMain.handle('canvas:import', async (e) => {
 });
 ipcMain.handle('canvas:read', (_e, p) => store.readCanvas(p));
 ipcMain.handle('canvas:resolve', (_e, dir, rels) => store.resolveCanvasFiles(dir, rels));
+/* Samsung Notes: its own file, and the exports it can make. Paths come back;
+   the renderer reads each for the open board. See js/samsung.js, MAP.md §4w. */
+ipcMain.handle('samsung:pick', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.importSamsung'), properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: t('main.filterSamsungAll'), extensions: ['sdocx', 'pdf', 'png', 'jpg', 'jpeg', 'txt'] },
+      { name: t('main.filterSamsung'), extensions: ['sdocx'] }
+    ]
+  });
+  return canceled ? [] : filePaths;
+});
+ipcMain.handle('samsung:read', (_e, p, id) => store.readSamsung(p, id));
 
 /* Save a board picture. Takes a data: URL because that is what a canvas
    produces, and decodes it here so the renderer never holds a Buffer. */

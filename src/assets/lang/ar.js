@@ -747,6 +747,9 @@ window.MB_LANG.ar = {
   'main.exportCanvas': 'تصدير لـ Obsidian — حفظ كملف ‎.canvas',
   'main.importCanvas': 'استيراد لوحة ‎.canvas',
   'main.filterCanvas': 'JSON Canvas',
+  'main.importSamsung': 'استيراد من Samsung Notes',
+  'main.filterSamsungAll': 'Samsung Notes وما يصدّره',
+  'main.filterSamsung': 'Samsung Notes',
   'main.exportImage': 'تصدير اللوحة كصورة',
   'main.backupFolder': 'اختر مجلد النسخ الاحتياطي',
   'main.insertImage': 'إدراج صورة',
@@ -862,6 +865,17 @@ window.MB_LANG.ar = {
     few: 'حُفظت في {path} ومعها {n} ملفات', many: 'حُفظت في {path} ومعها {n} ملفًا', other: 'حُفظت في {path} ومعها {n} ملف'
   },
   'msg.canvasEmpty': 'لا شيء في هذه اللوحة',
+  'page.importSamsung': 'استيراد من Samsung Notes…',
+  'msg.samsungImported': 'أُضيفت «{name}» من Samsung Notes',
+  'msg.samsungPartial': {
+    zero: 'أُضيفت «{name}»', one: 'أُضيفت «{name}» — تعذّرت قراءة شيء واحد فيها. صدّر الملاحظة بصيغة PDF من Samsung Notes لنسخة مطابقة.',
+    two: 'أُضيفت «{name}» — تعذّرت قراءة شيئين فيها. صدّر الملاحظة بصيغة PDF من Samsung Notes لنسخة مطابقة.',
+    few: 'أُضيفت «{name}» — تعذّرت قراءة {n} أشياء فيها. صدّر الملاحظة بصيغة PDF من Samsung Notes لنسخة مطابقة.',
+    many: 'أُضيفت «{name}» — تعذّرت قراءة {n} شيئًا فيها. صدّر الملاحظة بصيغة PDF من Samsung Notes لنسخة مطابقة.',
+    other: 'أُضيفت «{name}» — تعذّرت قراءة {n} شيء فيها. صدّر الملاحظة بصيغة PDF من Samsung Notes لنسخة مطابقة.'
+  },
+  'msg.samsungFailed': 'تعذّرت قراءة «{name}». إن كانت مقفلة فافتح قفلها في Samsung Notes، وإلا فصدّرها بصيغة PDF واستورد الملف.',
+  'msg.samsungEmpty': 'لا شيء في «{name}» يمكن إحضاره',
   'page.exportImage': 'تصدير كصورة…',
   'page.openFolder': 'فتح مجلّد هذه اللوحة',
   'page.noGroup': 'بلا مجموعة',
