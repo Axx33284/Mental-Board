@@ -293,7 +293,15 @@ function createWindow() {
      the window still has one. */
   win.on('close', (e) => {
     saveWinState(win);
-    if (quitting || !runInBackground) return;
+    /* A real close is the start of a quit, whichever way it came — so the
+       watchdog is armed here too, not only in before-quit: with Run in
+       background off, before-quit only fires after this close completes, and
+       a page that never answers beforeunload means it never does. (Not on a
+       Mac, where closing the last window does not quit.) */
+    if (quitting || !runInBackground) {
+      if (quitting || process.platform !== 'darwin') armQuitWatchdog();
+      return;
+    }
     e.preventDefault();
     win.hide();
     noteStillRunning();
@@ -343,8 +351,8 @@ function createWindow() {
      synchronous stretch as well as for a real hang — a save on a slow disk with
      a very large board can trip it — and killing the renderer to "fix" a window
      that was about to come back is the one response guaranteed to lose work. */
-  win.on('unresponsive', () => console.error('renderer unresponsive; leaving it to recover'));
-  win.on('responsive', () => console.log('renderer responsive again'));
+  win.on('unresponsive', () => { console.error('renderer unresponsive; leaving it to recover'); hangLog('renderer unresponsive'); });
+  win.on('responsive', () => { console.log('renderer responsive again'); hangLog('renderer responsive again'); });
 
   const sendMax = () => { if (!win.isDestroyed()) win.webContents.send('win:maximized', win.isMaximized()); };
   win.on('maximize', sendMax);
@@ -656,6 +664,57 @@ function buildTray() {
 }
 function destroyTray() { try { if (tray) tray.destroy(); } catch (_) {} tray = null; }
 
+/* ---------- a quit always ends the process ----------
+   app.quit() closes the window, and Chromium will not finish closing it until
+   the page has answered `beforeunload` — that is where flushSave() writes the
+   last of the board. A page that never answers (hung in a loop, or stuck in a
+   sendSync whose handler threw) therefore stalls the quit for ever: before-quit
+   has fired, will-quit never does, the tray icon and the LAN server stay up,
+   and all four processes sit there — with the window still on screen if it was
+   showing. 2.2.1 did exactly that twice in one day, and a process that will not
+   go blocks the rebuild (tools/build-app.js refuses while it runs) until it is
+   killed — which is the one exit that skips the final save anyway.
+
+   So the quit gets a deadline. A page that answers writes in milliseconds and
+   the process is gone long before it; QUIT_GRACE_MS is generous so that a page
+   which is merely busy (a big paste, an import) still gets to land its save.
+   Past it, the page is not coming back: what it holds since the last save is
+   lost whatever happens next, and keeping the process alive saves none of it.
+   Tear down what will-quit would have, and exit. tools/test-app.js quits a
+   page that never answers and checks every process goes. */
+const QUIT_GRACE_MS = 8000;
+let quitTimer = null;
+function armQuitWatchdog() {
+  if (quitTimer) return;
+  quitTimer = setTimeout(() => {
+    console.error(`quit: the page did not let the window close in ${QUIT_GRACE_MS / 1000} s; exiting without it`);
+    hangLog(`quit stalled ${QUIT_GRACE_MS / 1000} s on the page; forced exit`);
+    teardown();
+    app.exit(0);
+  }, QUIT_GRACE_MS);
+}
+// will-quit, or the watchdog in its place; every step is safe to repeat
+function teardown() {
+  try { globalShortcut.unregisterAll(); } catch (_) {}
+  try { if (playerServer) playerServer.close(); } catch (_) {}
+  try { tablet.stop('quit'); } catch (_) {}
+  destroyTray();
+}
+
+/* Why the page stopped answering is still unknown — it could not be made to
+   happen again on purpose. So the built app writes down when Chromium calls the page hung and
+   when a quit had to be forced, with the time, next to window-state.json. A
+   few lines a year at most; trimmed when it passes 64 KB. */
+function hangLog(what) {
+  try {
+    const file = path.join(dataDir(), 'hangs.log');
+    let size = 0;
+    try { size = fs.statSync(file).size; } catch (_) {}
+    if (size > 64 * 1024) fs.writeFileSync(file, '', 'utf8');
+    fs.appendFileSync(file, `${new Date().toISOString()} ${app.getVersion()} ${what}\n`, 'utf8');
+  } catch (_) {}
+}
+
 /* Say it once, ever. A window that vanishes into a tray without a word is
    indistinguishable from an app that closed, and the user finds out their
    reminders "did not work" days later. The marker sits beside the board so it
@@ -709,13 +768,11 @@ ipcMain.on('win:show', () => showMain());
 ipcMain.handle('win:is-maximized', (e) => !!BrowserWindow.fromWebContents(e.sender)?.isMaximized());
 
 /* ---------- IPC: paths + theme ---------- */
-ipcMain.on('paths:sync', (e) => {
-  e.returnValue = {
-    userData: dataDir(),
-    exeDir: path.dirname(process.execPath),
-    version: app.getVersion()
-  };
-});
+onSync('paths:sync', () => ({
+  userData: dataDir(),
+  exeDir: path.dirname(process.execPath),
+  version: app.getVersion()
+}), { userData: '', exeDir: '', version: '' });
 
 // 'system' | 'dark' | 'light' — drives the native window chrome + background
 ipcMain.on('theme:set', (_e, theme) => {
@@ -730,6 +787,22 @@ nativeTheme.on('updated', () => {
     mainWindow.webContents.send('theme:system-changed', nativeTheme.shouldUseDarkColors);
   }
 });
+
+/* A synchronous call always gets an answer. The page is frozen inside
+   sendSync until main sets returnValue, and a handler that throws first never
+   sets it — so the page stays frozen for good, and a frozen page cannot answer
+   beforeunload, which stalls any quit (see armQuitWatchdog). Each sync handler
+   below goes through here with the answer it gives when it fails. */
+function onSync(channel, fn, fallback) {
+  ipcMain.on(channel, (e, ...args) => {
+    try { e.returnValue = fn(...args); }
+    catch (err) {
+      console.error(`${channel} threw:`, err);
+      try { e.returnValue = typeof fallback === 'function' ? fallback(err) : fallback; } catch (_) { e.returnValue = null; }
+    }
+  });
+}
+const errText = (err) => String((err && err.message) || err);
 
 /* ---------- IPC: the store ----------
    Every call here returns a status the renderer has to act on; none throws.
@@ -746,21 +819,20 @@ ipcMain.on('store:save-sync', (e, payload) => {
   catch (err) { e.returnValue = { ok: false, errors: [{ id: '*', error: String((err && err.message) || err) }] }; }
 });
 ipcMain.handle('store:save', (_e, payload) => store.saveAllAsync(payload));
-ipcMain.on('store:snapshot', (e, id, json, day) => { e.returnValue = store.snapshot(id, json, day); });
-ipcMain.on('store:version-snapshot', (e, id, json, label) => { e.returnValue = store.versionSnapshot(id, json, label); });
-ipcMain.on('store:paths', (e) => {
-  e.returnValue = { root: store.rootDir(), userData: dataDir(), exeDir: path.dirname(process.execPath), version: app.getVersion() };
-});
+onSync('store:snapshot', (id, json, day) => store.snapshot(id, json, day), (err) => ({ ok: false, error: errText(err) }));
+onSync('store:version-snapshot', (id, json, label) => store.versionSnapshot(id, json, label), (err) => ({ ok: false, error: errText(err) }));
+onSync('store:paths', () => ({ root: store.rootDir(), userData: dataDir(), exeDir: path.dirname(process.execPath), version: app.getVersion() }),
+  () => ({ root: '', userData: '', exeDir: '', version: '' }));
 
 /* the files a board carries */
 ipcMain.handle('files:attach', (_e, src, id, name) => store.attachFile(src, id, name));
 ipcMain.handle('files:attach-bytes', (_e, dataUrl, id, name) => store.attachBytes(dataUrl, id, name));
-ipcMain.on('files:list', (e, id) => { e.returnValue = store.listFiles(id); });
+onSync('files:list', (id) => store.listFiles(id), []);
 ipcMain.handle('files:carry', (_e, urls, toId) => store.carryFiles(urls, toId));
 ipcMain.handle('files:unused', (_e, keep, onlyId) => store.cleanup(keep, false, onlyId));
 ipcMain.handle('files:remove-unused', (_e, keep, onlyId) => store.cleanup(keep, true, onlyId));
-ipcMain.on('files:read-image', (e, url) => { e.returnValue = store.readImage(url); });
-ipcMain.on('files:dir', (e, id) => { e.returnValue = id ? store.filesDir(id) : store.rootDir(); });
+onSync('files:read-image', (url) => store.readImage(url), null);
+onSync('files:dir', (id) => (id ? store.filesDir(id) : store.rootDir()), '');
 
 /* whole boards */
 ipcMain.handle('board:duplicate-files', (_e, fromId, toId, name, group) => store.duplicateFiles(fromId, toId, name, group));
@@ -870,7 +942,7 @@ ipcMain.handle('file:backup-all', async (e) => {
    renderer has asked twice by the time this runs, and a folder that can still
    be put back from the desktop costs nothing to keep that way. The renderer
    reloads afterwards so nothing in memory is written over the fresh start. */
-ipcMain.on('store:tally', (e) => { e.returnValue = store.tally(); });
+onSync('store:tally', () => store.tally(), { boards: 0, files: 0, bytes: 0 });
 ipcMain.handle('store:erase-all', async () => {
   try {
     const root = store.rootDir();
@@ -978,7 +1050,7 @@ function gpuInfo() {
   const software = /software|disabled/i.test(compositing) || EARLY.softwareRender === true;
   return { compositing, software, softwareRender: EARLY.softwareRender === true };
 }
-ipcMain.on('sys:info', (e) => { e.returnValue = gpuInfo(); });
+onSync('sys:info', () => gpuInfo(), { compositing: '', software: false, softwareRender: false });
 
 /* ---------- there is no updater ----------
    1.3 downloaded updates from a GitHub Releases feed and staged an NSIS
@@ -1076,14 +1148,9 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   // anything that ends the app comes through here, so the latch is set once
-  app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', () => { quitting = true; armQuitWatchdog(); });
 
-  app.on('will-quit', () => {
-    try { globalShortcut.unregisterAll(); } catch (_) {}
-    try { if (playerServer) playerServer.close(); } catch (_) {}
-    try { tablet.stop('quit'); } catch (_) {}
-    destroyTray();
-  });
+  app.on('will-quit', teardown);
 
   /* Only quit here when the window really closed, which with the tray on it
      never does — `close` hides it instead. With the setting off this is the

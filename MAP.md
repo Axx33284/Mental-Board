@@ -184,7 +184,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
 | `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
-| `tools/test-app.js` | ~240 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last test fails on any that is not expected. `npm run test:app`. |
+| `tools/test-app.js` | ~345 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last page test fails on any that is not expected. Then two quits, each in a fresh app driven over `--inspect` (§4k): the last edit lands and every process goes, and every process goes even when the page never answers. `npm run test:app`. |
 | `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
 | `admin/` | — | Six `.cmd` launchers: run, sandbox, check, back up (a dated copy of My Boards beside the project), open My Boards, and **Build App**, which is how the app gets updated. |
@@ -279,7 +279,7 @@ the whole board.** Copy it to a stick and it is complete, pictures included.
 Drop it into anyone's `My Boards` and it is listed at the next launch. Delete
 `My Boards` and the app starts as new. There is nothing anywhere else the user
 would miss — `%APPDATA%\Mental Board` holds only Chromium's files, the window
-rect and the tray-notice marker.
+rect, the tray-notice marker and `hangs.log` (§4k).
 
 Rules that carry over from 1.x, and still hold per file:
 
@@ -910,6 +910,49 @@ something you ask for. Four pieces, and each one is load-bearing:
 The Quit item in the tray menu is not optional. With the close button hiding,
 an app with no visible way out is one people end in Task Manager — which is the
 one exit that skips the final save.
+
+### A quit always ends the process (2.2.2)
+
+`app.quit()` closes the window, and Chromium does not finish closing it until
+the page has answered `beforeunload` (where `flushSave()` writes). A page that
+never answers — hung in a loop, or frozen in a `sendSync` whose handler threw —
+stalled the quit **for ever**: `before-quit` and the window's `close` fired,
+then nothing. `will-quit` never ran, so the tray icon and the LAN server stayed
+up, and all four processes stayed alive, with the window still on screen if it
+was showing. 2.2.1 did this twice in one day, and a process that will not go
+blocks `npm run build` (build-app.js refuses while it runs) until it is killed.
+
+- **`armQuitWatchdog()`** — armed in `before-quit` *and* in the `close` handler
+  whenever the close is real (`quitting || !runInBackground`), because with Run
+  in background off `before-quit` only comes *after* the close completes. Past
+  `QUIT_GRACE_MS` (8 s) it runs `teardown()` and `app.exit(0)`. A page that
+  answers writes in milliseconds and is gone long before that; a page that is
+  merely busy still gets 8 s to land its save. A page that never answers has
+  lost its unsaved seconds whatever happens, so keeping the process alive saves
+  nothing.
+- **`teardown()`** — what `will-quit` does (hotkey, player server, tablet,
+  tray), shared with the watchdog. Every step is safe to repeat.
+- **`onSync()`** — every synchronous IPC handler goes through it, so a throw
+  still sets `returnValue`. A sync handler that throws before setting it leaves
+  the page frozen inside `sendSync` for good, which is one way to get a page
+  that cannot answer `beforeunload`. A new sync channel goes through `onSync()`
+  with the answer it gives on failure.
+- **`hangs.log`** — in userData, beside `window-state.json`. One line when
+  Chromium calls the page unresponsive or responsive again, and one when a quit
+  had to be forced. *Why* the page stopped answering in 2.2.1 was not found —
+  the dev app, the built copy, a copy of the real boards, a paired phone
+  streaming strokes, a playing video, DevTools and a hidden window all quit
+  cleanly — so this is how the next one gets caught. Trimmed past 64 KB.
+
+`tools/test-app.js` ends with two quits, each in an app of its own: one checks
+an edit made just before Quit is on disk and every process is gone; the other
+hangs the page (`for (;;) {}`) and checks every process is still gone. Quit is
+asked for as the tray does — `app.quit()` in main — over the Node inspector
+(`--inspect`). Two traps in that harness: the inspector's `require` exists only
+while the expression runs, so capture modules before any timer; and the page's
+DevTools socket must stay open until the app has gone — **detaching DevTools
+from a hung page lets the quit through**, which makes the test pass without
+the fix.
 
 ---
 
@@ -2877,8 +2920,10 @@ then evaluates each test *in the page* over CDP — any app global can be called
 — and does the disk half (making `board.json` a directory so its write fails,
 say) from Node. Every `Runtime.exceptionThrown`, `console.error` and `Log`
 error is collected, and the last test fails on any that is not on the short
-expected list. It takes about a minute. Two tests were checked by breaking the
-fix they guard and watching them fail; keep it that way when adding one.
+expected list. Then two more apps are launched and quit (§4k). It takes about
+a minute and a half. Three tests were checked by breaking the fix they guard
+and watching them fail — the hung-page quit among them; keep it that way when
+adding one.
 
 `MUST_SHIP` in build-app.js now names `src/store.js` too — every save goes
 through it, and it was the one runtime file the guard did not check.

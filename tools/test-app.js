@@ -232,6 +232,91 @@ async function run() {
 const EXTRA = [];
 try { EXTRA.push(...require('./test-app-features.js')); } catch (err) { if (err.code !== 'MODULE_NOT_FOUND') throw err; }
 
+/* ---- quitting ----
+   Each of these ends the app it launched, so each gets an app of its own, after
+   the suite above. Quit is asked for the way the tray's Quit asks — app.quit()
+   in main, over the Node inspector (--inspect), because a tray menu cannot be
+   clicked from here. What it checks is the 2.2.1 bug: Quit left all four
+   processes running when the page did not answer beforeunload (main.js,
+   armQuitWatchdog). "Every process" is found by command line, which carries
+   the throwaway --user-data-dir. */
+function appProcesses(udd) {
+  const tag = path.basename(udd);
+  try {
+    const { execFileSync } = require('child_process');
+    if (process.platform === 'win32') {
+      const ps = `Get-CimInstance Win32_Process | Where-Object { $_.Name -ne 'powershell.exe' -and $_.CommandLine -like '*${tag}*' } | ForEach-Object { $_.ProcessId }`;
+      return execFileSync('powershell', ['-NoProfile', '-Command', ps], { encoding: 'utf8' }).split(/\s+/).filter(Boolean);
+    }
+    return execFileSync('ps', ['-eo', 'pid,args'], { encoding: 'utf8' }).split('\n').filter((l) => l.includes(tag)).map((l) => l.trim().split(' ')[0]);
+  } catch (_) { return ['?']; }
+}
+async function cdpAt(port, pick) {
+  for (let i = 0; i < 80; i++) {
+    try {
+      const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(pick);
+      if (target) {
+        const sock = new WebSocket(target.webSocketDebuggerUrl);
+        const waiting = new Map();
+        let n = 0;
+        sock.onmessage = (m) => { const d = JSON.parse(m.data); if (waiting.has(d.id)) { waiting.get(d.id)(d); waiting.delete(d.id); } };
+        await new Promise((r, j) => { sock.onopen = r; sock.onerror = j; });
+        // `require` exists only in the inspector's command line, and only while the expression runs
+        const ev = (expression) => new Promise((r) => {
+          const id = ++n;
+          waiting.set(id, (d) => r(d.result && d.result.result && d.result.result.value));
+          sock.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true, includeCommandLineAPI: true } }));
+        });
+        return { ev, fire: (expression) => sock.send(JSON.stringify({ id: ++n, method: 'Runtime.evaluate', params: { expression } })), close: () => sock.close() };
+      }
+    } catch (_) {}
+    await sleep(250);
+  }
+  throw new Error('nothing to attach to on port ' + port);
+}
+async function quitApp(name, prepare, within, after) {
+  const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-quit-test-'));
+  const boards = path.join(udd, 'My Boards');
+  fs.mkdirSync(path.join(boards, 'Good', 'files'), { recursive: true });
+  fs.writeFileSync(path.join(boards, 'settings.json'), JSON.stringify({ v: 3, settings: {}, boardOrder: ['good1'], activeBoard: 'good1' }));
+  fs.writeFileSync(path.join(boards, 'Good', 'board.json'), JSON.stringify({ mbBoard: 2, id: 'good1', name: 'Good', notes: [{ id: 'n1', x: 0, y: 0, w: 260, h: 180, body: '<p>one</p>' }], frames: [], links: [] }));
+  const rport = 9900 + Math.floor(Math.random() * 300), mport = rport + 400;
+  let proc = null, exited = false;
+  await test(name, async () => {
+    proc = spawn(require('electron'), ['.', `--user-data-dir=${udd}`, `--remote-debugging-port=${rport}`, `--inspect=${mport}`], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
+    proc.on('exit', () => { exited = true; });
+    const pg = await cdpAt(rport, (p) => p.type === 'page' && /index\.html/.test(p.url));
+    for (let i = 0; i < 80 && await pg.ev('typeof flushSave === "function" && !!document.querySelector("#notesLayer")') !== true; i++) await sleep(250);
+    await sleep(600);
+    const main = await cdpAt(mport, () => true);
+    await prepare(pg);
+    // what the tray's Quit does; the inspector has to be gone or the process waits for it on the way out
+    ok(await main.ev("(() => { const { app } = require('electron'); setTimeout(() => app.quit(), 300); return 1; })()") === 1, 'could not reach main');
+    main.close();       // the page's socket stays open: detaching DevTools from a hung page lets it go
+    const t0 = Date.now();
+    while (!exited && Date.now() - t0 < within) await sleep(100);
+    pg.close();
+    ok(exited, `the main process was still running ${within / 1000} s after Quit`);
+    await sleep(1500);
+    const left = appProcesses(udd);
+    ok(!left.length, 'still running after Quit: ' + left.join(', '));
+    if (after) after(fs.readFileSync(path.join(boards, 'Good', 'board.json'), 'utf8'));
+  });
+  if (proc && !exited) { try { process.platform === 'win32' ? spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }) : proc.kill(); } catch (_) {} await sleep(1500); }
+  try { fs.rmSync(udd, { recursive: true, force: true }); } catch (_) {}
+}
+async function quitSuite() {
+  console.log('\nquitting (an app each)');
+  await quitApp('Quit writes the last edit and ends every process', async (pg) => {
+    await pg.ev("(() => { state.notes[0].body = '<p>said on the way out</p>'; return 1; })()");
+  }, 5000, (json) => ok(json.includes('said on the way out'), 'the edit made just before Quit is not on disk'));
+  // a page that never answers beforeunload: before 2.2.2 this one never ended
+  await quitApp('Quit ends every process even when the page never answers', async (pg) => {
+    pg.fire('setTimeout(() => { for (;;) {} }, 0)');
+    await sleep(800);
+  }, 8000 + 5000);
+}
+
 (async () => {
   let code = 1;
   try {
@@ -244,6 +329,9 @@ try { EXTRA.push(...require('./test-app-features.js')); } catch (err) { if (err.
     await waitForApp();
     await sleep(600);                                // let init() finish its first paint
     await run();
+    try { ws && ws.close(); } catch (_) {}
+    if (child) { try { process.platform === 'win32' ? spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore' }) : child.kill(); } catch (_) {} child = null; }
+    await quitSuite();
     console.log(`\n${passed} passed, ${failed} failed`);
     code = failed ? 1 : 0;
   } catch (err) {
