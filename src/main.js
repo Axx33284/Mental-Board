@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const store = require('./store.js');
+const tablet = require('./tablet.js');
 
 /* ---------- mbf:// — a board's own files ----------
    A note never names a path on this disk. A picture it carries is
@@ -78,7 +79,20 @@ const S_EN = {
   'main.filterImages': 'Images',
   'main.crashTitle': 'Mental Board stopped responding',
   'main.crashBody': 'The window has been reloaded from the last save on disk. Anything typed in the few seconds before it stopped may not be there.',
-  'main.crashOk': 'Reload'
+  'main.crashOk': 'Reload',
+  'main.padTitle': 'Mental Board — drawing pad',
+  'main.padConnecting': 'Connecting…',
+  'main.padConnected': 'Connected',
+  'main.padAway': 'Reconnecting…',
+  'main.padEnded': 'This pairing has ended. Pair again from Settings on the computer.',
+  'main.padReadonly': 'The board open on the computer cannot be drawn on.',
+  'main.padPen': 'Pen',
+  'main.padMarker': 'Marker',
+  'main.padBrush': 'Brush',
+  'main.padEraser': 'Eraser (or hold the pen button)',
+  'main.padUndo': 'Undo the last stroke from this phone (or tap with two fingers)',
+  'main.padFingers': 'Let a finger draw too',
+  'main.padFull': 'Full screen'
 };
 let STRINGS = {};
 function t(key, vars) {
@@ -296,7 +310,15 @@ function createWindow() {
      that quietly lost one.
 
      `clean-exit` is not a crash: it is the normal teardown on the way out. */
+  /* A phone paired to a page that is about to be replaced would go on drawing
+     into nothing, with no Stop button anywhere: a reload or a crash ends the
+     pairing (src/tablet.js, MAP.md §4w). The main frame only: a video player
+     loading in an iframe is a navigation too, and must not end it. */
+  win.webContents.on('did-start-navigation', (_e, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) tablet.stop('reload');
+  });
   win.webContents.on('render-process-gone', (_e, details) => {
+    tablet.stop('reload');
     const reason = (details && details.reason) || 'unknown';
     console.error('renderer gone:', reason, details);
     if (reason === 'clean-exit' || quitting) return;
@@ -446,6 +468,35 @@ ipcMain.handle('embed:player-url', async (_e, kind, id) => {
   if (!port) return null;
   return `http://127.0.0.1:${port}/p/${playerToken}/${kind}/${id}`;
 });
+
+/* ---------- a phone as a drawing tablet (2.2) ----------
+   src/tablet.js does the listening; see its header and MAP.md §4w for why it
+   is safe to have a socket on the LAN at all. Main only wires it to the
+   window: Pair starts it, Stop and every way the renderer can go away stop it,
+   and what the phone draws is passed to the renderer as checked messages. The
+   renderer never learns the token and cannot open a port of its own. */
+function padStrings() {
+  return {
+    title: t('main.padTitle'), connecting: t('main.padConnecting'), connected: t('main.padConnected'),
+    away: t('main.padAway'), ended: t('main.padEnded'), readonly: t('main.padReadonly'),
+    pen: t('main.padPen'), marker: t('main.padMarker'), brush: t('main.padBrush'), eraser: t('main.padEraser'),
+    undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull')
+  };
+}
+const padSend = (ch, m) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, m); };
+const fromMain = (e) => mainWindow && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents;
+ipcMain.handle('pad:start', (e, address) => {
+  if (!fromMain(e)) return { ok: false, error: 'sender' };
+  return tablet.start({
+    address: typeof address === 'string' ? address : '',
+    strings: padStrings(),
+    onMessage: (m) => padSend('pad:msg', m),
+    onState: (s) => padSend('pad:state', s)
+  });
+});
+ipcMain.on('pad:stop', () => tablet.stop('stopped'));
+ipcMain.on('pad:send', (e, m) => { if (fromMain(e)) tablet.send(m); });
+ipcMain.handle('pad:addresses', () => tablet.addresses());
 
 /* ---------- what a video is called ----------
    One oEmbed request when a video card is made, and one download of its
@@ -988,6 +1039,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     try { globalShortcut.unregisterAll(); } catch (_) {}
     try { if (playerServer) playerServer.close(); } catch (_) {}
+    try { tablet.stop('quit'); } catch (_) {}
     destroyTray();
   });
 
