@@ -192,6 +192,7 @@ function drawInk() {
   let i = 0, ordered = true;
   for (const s of ink) { if (svg.children[i++] !== inkEls.get(s.id)) { ordered = false; break; } }
   if (!ordered) ink.forEach((s) => { const el = inkEls.get(s.id); if (el) svg.appendChild(el); });
+  if (typeof padDirty === 'function') padDirty();
 }
 function resetInk() { inkEls.clear(); const svg = $('inkSvg'); if (svg) svg.textContent = ''; }
 function inkViewRect() {
@@ -403,6 +404,7 @@ function paintLiveInk() {
   k.frame = 0;
   const { raw, pts } = inkPoints(k);
   k.el.setAttribute('d', k.s.tool === 'brush' ? inkBrushPath(pts, brushWidths(raw, k.s.size)) : inkLinePath(pts));
+  if (typeof padDirty === 'function') padDirty();   // the phone sees a mouse stroke as it is drawn
 }
 function finishInkStroke() {
   const k = inkStroke;
@@ -534,6 +536,7 @@ function paintInkSelection(dx, dy) {
   }
   const del = $('inkBar') && $('inkBar').querySelector('[data-ik="delsel"]');
   if (del) del.classList.toggle('hidden', !inkSel.size);
+  if (typeof padDirty === 'function') padDirty();
 }
 // the topmost stroke under a point — the last drawn wins, as it is drawn on top
 function inkHit(w, r) {
@@ -617,19 +620,21 @@ function deleteInkSelection() {
    pen alone; otherwise it is the pen's colour, and picking one with the eraser
    or the arrow in hand takes the pen back up. */
 function pickInkColor(c) {
-  if (state.settings.pen.tool === 'select' && inkSel.size) {
-    pushUndoInk();
-    for (const s of state.ink) {
-      if (!inkSel.has(s.id)) continue;
-      s.color = c;
-      const el = inkEls.get(s.id);
-      if (el) { if (s.tool === 'brush') el.style.fill = inkColorCss(c); else el.style.stroke = inkColorCss(c); }
-    }
-    saveSoon();
-    return;
-  }
+  if (state.settings.pen.tool === 'select' && inkSel.size) { recolorInkSelection(c); return; }
   const tool = state.settings.pen.tool;
   setPen({ color: c, tool: tool === 'eraser' || tool === 'select' ? 'pen' : tool });
+}
+// one undo step; also what the phone's colours do with strokes selected (js/tablet.js)
+function recolorInkSelection(c) {
+  if (!inkSel.size || !inkColorOk(c)) return;
+  pushUndoInk();
+  for (const s of state.ink) {
+    if (!inkSel.has(s.id)) continue;
+    s.color = c;
+    const el = inkEls.get(s.id);
+    if (el) { if (s.tool === 'brush') el.style.fill = inkColorCss(c); else el.style.stroke = inkColorCss(c); }
+  }
+  saveSoon();
 }
 function selectAllInk() {
   (state.ink || []).forEach((s) => inkSel.add(s.id));

@@ -899,7 +899,7 @@ window.MB_LANG.en = {
   'set.padStart': 'Pair a phone',
   'set.padStop': 'Stop',
   'set.padAddress': 'Network',
-  'set.padHint': 'The phone becomes this window: what you draw lands on the part of the board you can see here, and the pen’s hover shows as a ring. One finger pans, two fingers zoom, a two-finger tap undoes, and a palm on the glass does nothing. The phone is sent nothing of the board — only the window’s shape and the ink colours. Nothing listens until you press Pair, and it stops when you press Stop, when the phone leaves, or after five minutes if nobody scans.',
+  'set.padHint': 'The phone fills its screen with the part of this board outlined here, live — notes, pictures and drawing — and the pen draws on it. Hold the pen’s button to erase; the arrow selects strokes to move, recolour or delete. One finger pans, two fingers zoom, a two-finger tap undoes, and a palm on the glass does nothing. The phone is sent pictures of that outlined part only, and only while it is paired. Nothing listens until you press Pair, and it stops when you press Stop, when the phone leaves, or after five minutes if nobody scans.',
   'set.padFirewall': 'The phone has to be on the same Wi-Fi as this computer. The first time, Windows may ask whether Mental Board may use the network: allow it on private networks, or the phone cannot reach it. On a network Windows calls Public it will not connect.',
   'pad.waiting': 'Scan this with the phone’s camera, or type the address into its browser.',
   'pad.connected': 'Connected — {device}. Draw with the pen.',
@@ -921,4 +921,6 @@ window.MB_LANG.en = {
   'main.padUndo': 'Undo the last stroke from this phone (or tap with two fingers)',
   'main.padFingers': 'Let a finger draw too',
   'main.padFull': 'Full screen',
+  'main.padSelect': 'Select — touch a stroke or drag round several, then drag to move them',
+  'main.padDelete': 'Delete the selected strokes',
 };

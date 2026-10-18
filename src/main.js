@@ -95,7 +95,9 @@ const S_EN = {
   'main.padEraser': 'Eraser (or hold the pen button)',
   'main.padUndo': 'Undo the last stroke from this phone (or tap with two fingers)',
   'main.padFingers': 'Let a finger draw too',
-  'main.padFull': 'Full screen'
+  'main.padFull': 'Full screen',
+  'main.padSelect': 'Select — touch a stroke or drag round several, then drag to move them',
+  'main.padDelete': 'Delete the selected strokes'
 };
 let STRINGS = {};
 function t(key, vars) {
@@ -483,7 +485,8 @@ function padStrings() {
     title: t('main.padTitle'), connecting: t('main.padConnecting'), connected: t('main.padConnected'),
     away: t('main.padAway'), ended: t('main.padEnded'), readonly: t('main.padReadonly'),
     pen: t('main.padPen'), marker: t('main.padMarker'), brush: t('main.padBrush'), eraser: t('main.padEraser'),
-    undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull')
+    undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull'),
+    select: t('main.padSelect'), del: t('main.padDelete')
   };
 }
 const padSend = (ch, m) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, m); };
@@ -500,6 +503,28 @@ ipcMain.handle('pad:start', (e, address) => {
 ipcMain.on('pad:stop', () => tablet.stop('stopped'));
 ipcMain.on('pad:send', (e, m) => { if (fromMain(e)) tablet.send(m); });
 ipcMain.handle('pad:addresses', () => tablet.addresses());
+/* The phone sees the board (2.2.1): the renderer names the region of its own
+   window the phone maps to, main photographs exactly that and hands it to
+   tablet.js, which sends it unless it is the picture the phone already has.
+   Captured here because only main can; the renderer never sees the JPEG. The
+   region is clamped to the window, and the picture to at most PAD_MAX_H pixels
+   tall — a portrait slice of a 1080p window is about 450 × 1000 and 60 KB. */
+const PAD_MAX_H = 1100;
+ipcMain.handle('pad:frame', async (e, req) => {
+  if (!fromMain(e) || !req || !req.rect) return { sent: false };
+  const meta = { n: req.n, nav: req.nav, k: req.k };
+  try {
+    const [W, H] = mainWindow.getContentSize();
+    const r = req.rect;
+    const x = Math.max(0, Math.min(W - 1, Math.round(+r.x || 0))), y = Math.max(0, Math.min(H - 1, Math.round(+r.y || 0)));
+    const width = Math.max(1, Math.min(W - x, Math.round(+r.width || 0))), height = Math.max(1, Math.min(H - y, Math.round(+r.height || 0)));
+    let img = await mainWindow.webContents.capturePage({ x, y, width, height });
+    if (img.isEmpty()) return tablet.sendFrame(meta, null);
+    const size = img.getSize();
+    if (size.height > PAD_MAX_H) img = img.resize({ height: PAD_MAX_H, quality: 'good' });
+    return tablet.sendFrame(meta, img.toJPEG(72));
+  } catch (_) { return tablet.sendFrame(meta, null); }
+});
 
 /* ---------- what a video is called ----------
    One oEmbed request when a video card is made, and one download of its

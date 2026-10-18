@@ -30,10 +30,12 @@
    - **The Origin of the upgrade must be the page's own.** A web page some other
      site serves to a browser on the same network cannot open the socket even
      if it guessed the token.
-   - **The phone can only *send* strokes.** Nothing about the board — not a
-     note, not a name, not a picture — ever goes to the phone; what it is told
-     is the window's shape, whether the board can be drawn on, and the nine ink
-     colours. A stranger who got in could scribble; they could not read.
+   - **What the phone sees is a picture of one region, and only while
+     paired.** Since 2.2.1 the phone shows the board under the pen: JPEGs of
+     the part of the PC window it maps to (`sendFrame()`), captured by main.
+     No note text, file, board name or anything off that region is sent as
+     data. That is board content on the network, so it rests on the pairing
+     above being sound — one token, one phone, and gone when pairing ends.
    - **Every message is re-checked here** (`clean()`): known kinds only, numbers
      finite and clamped, at most 64 KB a frame and a few hundred a second.
 
@@ -106,7 +108,8 @@ const same = (a, b) => {
 
 /* ---- what the phone may say ---- */
 const num = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null);
-const TOOLS = ['pen', 'marker', 'brush', 'eraser'];
+const TOOLS = ['pen', 'marker', 'brush', 'eraser', 'select'];
+const int = (v, hi) => (Number.isInteger(v) && v >= 0 && v <= hi ? v : null);
 function clean(m) {
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return null;
   const id = typeof m.id === 'string' && /^[\w-]{1,24}$/.test(m.id) ? m.id : null;
@@ -117,7 +120,8 @@ function clean(m) {
       const size = Math.round(num(m.size, 0, 2) || 0);
       const color = typeof m.color === 'string' && /^(text|[a-z]{2,12}|#[0-9a-f]{6})$/i.test(m.color) ? m.color : 'text';
       const p = num(m.p, 0, 1);
-      return { t: 'down', id, x, y, p, tool: m.tool, size, color };
+      // k numbers the phone's strokes, so a frame can say which ones it already shows
+      return { t: 'down', id, x, y, p, tool: m.tool, size, color, k: int(m.k, 1e9) || 0 };
     }
     case 'move': {
       if (!id || !Array.isArray(m.pts) || !m.pts.length || m.pts.length % 3 || m.pts.length > 3 * 128) return null;
@@ -137,24 +141,40 @@ function clean(m) {
     case 'leave': return { t: 'leave' };
     case 'pan': {
       const dx = num(m.dx, -2, 2), dy = num(m.dy, -2, 2);
-      return dx == null || dy == null ? null : { t: 'pan', dx, dy };
+      return dx == null || dy == null ? null : { t: 'pan', dx, dy, n: int(m.n, 1e9) || 0 };
     }
     case 'zoom': {
       const f = num(m.f, 0.5, 2), x = num(m.x, -0.5, 1.5), y = num(m.y, -0.5, 1.5);
-      return f == null || x == null || y == null ? null : { t: 'zoom', f, x, y };
+      return f == null || x == null || y == null ? null : { t: 'zoom', f, x, y, n: int(m.n, 1e9) || 0 };
     }
     case 'undo': return { t: 'undo' };
+    // the phone's drawing area changed shape: its aspect, and how many device pixels wide it is
+    case 'size': {
+      const a = num(m.a, 0.2, 5), px = num(m.px, 50, 4000);
+      return a == null || px == null ? null : { t: 'size', a, px: Math.round(px) };
+    }
+    // the selection, from the phone: delete it, recolour it, or let it go
+    case 'sel': {
+      if (!['delete', 'color', 'clear'].includes(m.act)) return null;
+      const color = typeof m.color === 'string' && /^(text|[a-z]{2,12}|#[0-9a-f]{6})$/i.test(m.color) ? m.color : null;
+      if (m.act === 'color' && !color) return null;
+      return color ? { t: 'sel', act: m.act, color } : { t: 'sel', act: m.act };
+    }
+    // a picture of the board arrived and is on screen: the next one may be sent
+    case 'got': { const n = int(m.n, 1e9); return n == null ? null : { t: 'got', n }; }
     default: return null;
   }
 }
-// and what the renderer may tell it: the window's shape, whether it can be drawn on, the colours
+/* And what the renderer may tell it: whether the board can be drawn on, the
+   ink colours, how many strokes are selected, and the scale of the picture
+   (how many PC screen pixels wide the phone's region is, so a stroke drawn
+   locally on the phone has the width it will land with). The pictures themselves go through
+   sendFrame(). */
 function cleanOut(m) {
   if (!m || m.t !== 'view') return null;
-  const a = num(m.a, 0.1, 10);
-  if (a == null) return null;
   const pal = Array.isArray(m.pal) ? m.pal.slice(0, 16).filter((c) => c && typeof c.k === 'string' && typeof c.c === 'string')
     .map((c) => ({ k: c.k.slice(0, 12), c: c.c.slice(0, 40) })) : [];
-  return { t: 'view', a, ro: !!m.ro, pal };
+  return { t: 'view', ro: !!m.ro, pal, sel: int(m.sel, 1e6) || 0, rw: num(m.rw, 1, 20000) || 400 };
 }
 
 /* ---- a WebSocket, the 30 lines of RFC 6455 this needs ----
@@ -168,6 +188,14 @@ function wsSend(sock, text) {
   if (body.length < 126) head = Buffer.from([0x81, body.length]);
   else if (body.length < 65536) { head = Buffer.alloc(4); head[0] = 0x81; head[1] = 126; head.writeUInt16BE(body.length, 2); }
   else { head = Buffer.alloc(10); head[0] = 0x81; head[1] = 127; head.writeUInt32BE(0, 2); head.writeUInt32BE(body.length, 6); }
+  sock.write(Buffer.concat([head, body]));
+}
+function wsBinary(sock, body) {
+  if (!sock || sock.destroyed) return;
+  let head;
+  if (body.length < 126) head = Buffer.from([0x82, body.length]);
+  else if (body.length < 65536) { head = Buffer.alloc(4); head[0] = 0x82; head[1] = 126; head.writeUInt16BE(body.length, 2); }
+  else { head = Buffer.alloc(10); head[0] = 0x82; head[1] = 127; head.writeUInt32BE(0, 2); head.writeUInt32BE(body.length, 6); }
   sock.write(Buffer.concat([head, body]));
 }
 function wsControl(sock, op, body) {
@@ -313,6 +341,7 @@ function onUpgrade(me, req, sock) {
   sock.on('error', lost);
   me.silentTimer = setInterval(() => { if (Date.now() - me.lastHeard > SILENT_MS) lost(); }, 2000);
   wsReader(sock, (text) => onText(me, sock, text), lost);
+  me.lastFrame = '';
   wsSend(sock, JSON.stringify({ t: 'hello', resume: me.resume }));
   if (me.view) wsSend(sock, JSON.stringify(me.view));
   setState('connected', { device: describe(ua) });
@@ -348,6 +377,24 @@ function send(m) {
   return true;
 }
 
+/* A picture of the board region the phone maps to (2.2.1, MAP.md §4x): a
+   JPEG main captured, and what it shows — `n` its number, `nav` the last of the
+   phone's pans and zooms already applied, `k` the last of its strokes already
+   drawn into it. The text frame goes first and the picture right after it.
+   A picture identical to the last one is not sent again — the board at rest
+   costs the phone nothing — but its numbers are, so the phone still learns its
+   strokes have landed. Resolves whether a picture went. */
+function sendFrame(meta, jpeg) {
+  if (!pad || !pad.sock) return { sent: false };
+  const hash = jpeg ? crypto.createHash('sha1').update(jpeg).digest('hex') : '';
+  const img = !!jpeg && hash !== pad.lastFrame;
+  if (img) pad.lastFrame = hash;
+  const m = { t: 'frame', n: int(meta && meta.n, 1e9) || 0, nav: int(meta && meta.nav, 1e9) || 0, k: int(meta && meta.k, 1e9) || 0, img };
+  wsSend(pad.sock, JSON.stringify(m));
+  if (img) wsBinary(pad.sock, jpeg);
+  return { sent: img };
+}
+
 function stop(reason) {
   const me = pad;
   if (!me) return;
@@ -361,4 +408,4 @@ function stop(reason) {
 
 const status = () => (pad ? { state: pad.state, port: pad.port, host: pad.host } : { state: 'off' });
 
-module.exports = { start, stop, send, status, addresses, isPrivate, clean, cleanOut, describe };
+module.exports = { start, stop, send, sendFrame, status, addresses, isPrivate, clean, cleanOut, describe };

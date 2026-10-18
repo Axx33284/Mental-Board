@@ -105,10 +105,12 @@ function wsConnect(url, origin) {
         buf = Buffer.concat([buf, d]);
         while (buf.length >= 2) {
           let len = buf[1] & 0x7f, off = 2;
-          if (len === 126) { len = buf.readUInt16BE(2); off = 4; }
+          if (len === 126) { if (buf.length < 4) break; len = buf.readUInt16BE(2); off = 4; }
+          else if (len === 127) { if (buf.length < 10) break; len = buf.readUInt32BE(6); off = 10; }
           if (buf.length < off + len) break;
           const op = buf[0] & 0x0f;
           if (op === 1) got.push(JSON.parse(buf.subarray(off, off + len).toString()));
+          if (op === 2) got.push({ bin: len, head: buf.subarray(off, off + 2).toString('hex') });
           if (op === 8) closed = true;
           buf = buf.subarray(off + len);
         }
@@ -166,7 +168,7 @@ async function until(fn, ms) {
   });
   await test('a message is checked, clamped, or dropped', () => {
     assert.deepStrictEqual(tablet.clean({ t: 'down', id: 's1', x: 0.5, y: 2, p: 3, tool: 'brush', size: 9, color: 'red', extra: 1 }),
-      { t: 'down', id: 's1', x: 0.5, y: 1.5, p: 1, tool: 'brush', size: 2, color: 'red' });
+      { t: 'down', id: 's1', x: 0.5, y: 1.5, p: 1, tool: 'brush', size: 2, color: 'red', k: 0 });
     assert.strictEqual(tablet.clean({ t: 'down', id: 's1', x: 0, y: 0, tool: 'laser' }), null);
     assert.strictEqual(tablet.clean({ t: 'down', id: '../x', x: 0, y: 0, tool: 'pen' }), null);
     assert.strictEqual(tablet.clean({ t: 'down', id: 's1', x: 0, y: 0, tool: 'pen', color: 'url(javascript:1)' }).color, 'text');
@@ -174,6 +176,16 @@ async function until(fn, ms) {
     assert.strictEqual(tablet.clean({ t: 'move', id: 's1', pts: [0, 'x', 0] }), null);
     assert.strictEqual(tablet.clean({ t: 'move', id: 's1', pts: new Array(3 * 129).fill(0) }), null);
     assert.strictEqual(tablet.clean({ t: 'zoom', f: 100, x: 0, y: 0 }).f, 2);
+    assert.strictEqual(tablet.clean({ t: 'down', id: 's1', x: 0, y: 0, tool: 'select', k: 7 }).k, 7, 'the arrow, and the stroke number');
+    assert.strictEqual(tablet.clean({ t: 'down', id: 's1', x: 0, y: 0, tool: 'pen', k: -3 }).k, 0);
+    assert.deepStrictEqual(tablet.clean({ t: 'pan', dx: 0.1, dy: 0, n: 4 }), { t: 'pan', dx: 0.1, dy: 0, n: 4 });
+    assert.deepStrictEqual(tablet.clean({ t: 'size', a: 0.46, px: 1080.4 }), { t: 'size', a: 0.46, px: 1080 });
+    assert.strictEqual(tablet.clean({ t: 'size', a: 'tall', px: 1 }), null);
+    assert.deepStrictEqual(tablet.clean({ t: 'sel', act: 'color', color: 'red' }), { t: 'sel', act: 'color', color: 'red' });
+    assert.strictEqual(tablet.clean({ t: 'sel', act: 'color', color: 'url(x)' }), null, 'a colour that is not one');
+    assert.strictEqual(tablet.clean({ t: 'sel', act: 'move', dx: 1 }), null, 'moving is a gesture, not a command');
+    assert.deepStrictEqual(tablet.clean({ t: 'got', n: 3 }), { t: 'got', n: 3 });
+    assert.deepStrictEqual(tablet.cleanOut({ t: 'view', ro: 0, pal: [], sel: 2, rw: 420, notes: ['x'] }), { t: 'view', ro: false, pal: [], sel: 2, rw: 420 }, 'the view, and nothing riding on it');
     assert.strictEqual(tablet.clean({ t: 'eval', code: '1' }), null);
     assert.strictEqual(tablet.clean('down'), null);
     assert.strictEqual(tablet.cleanOut({ t: 'board', notes: [] }), null, 'nothing but the view goes to the phone');
@@ -222,9 +234,20 @@ async function until(fn, ms) {
     await until(() => msgs.length >= 3 && a.got.some((m) => m.t === 'pong'));
     assert.deepStrictEqual(msgs.map((m) => m.t), ['down', 'move', 'up'], 'only our three');
     assert.strictEqual(a.got.find((m) => m.t === 'pong').n, 123);
-    assert.ok(tablet.send({ t: 'view', a: 1.6, ro: false, pal: [{ k: 'text', c: 'rgb(0, 0, 0)' }] }));
+    assert.ok(tablet.send({ t: 'view', rw: 412, ro: false, pal: [{ k: 'text', c: 'rgb(0, 0, 0)' }] }));
     await until(() => a.got.some((m) => m.t === 'view'));
-    assert.strictEqual(a.got.find((m) => m.t === 'view').a, 1.6);
+    assert.strictEqual(a.got.find((m) => m.t === 'view').rw, 412);
+
+    // pictures: the numbers, then the JPEG; an identical one is not sent again, its numbers are
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), crypto.randomBytes(70000)]);
+    assert.deepStrictEqual(tablet.sendFrame({ n: 1, nav: 2, k: 3 }, jpeg), { sent: true });
+    assert.deepStrictEqual(tablet.sendFrame({ n: 2, nav: 2, k: 4 }, jpeg), { sent: false }, 'the same picture twice');
+    await until(() => a.got.filter((m) => m.t === 'frame').length === 2);
+    const fr = a.got.filter((m) => m.t === 'frame' || m.bin);
+    assert.deepStrictEqual(fr.map((m) => (m.bin ? 'bin' : m.img)), [true, 'bin', false], 'numbers, picture, numbers');
+    assert.strictEqual(fr[1].bin, jpeg.length, 'a picture bigger than 64 KB arrives whole');
+    assert.strictEqual(fr[1].head, 'ffd8');
+    assert.strictEqual(fr[2].k, 4, 'the phone still hears its stroke landed');
 
     // a drop: away, then only the resume secret gets back in — the token is spent
     a.sock.destroy();
@@ -235,6 +258,7 @@ async function until(fn, ms) {
     assert.strictEqual(b.status, 101, 'resume');
     await until(() => b.got.some((m) => m.t === 'view'));
     assert.ok(b.got.some((m) => m.t === 'view'), 'told the view again on the way back');
+    assert.deepStrictEqual(tablet.sendFrame({ n: 3 }, jpeg), { sent: true }, 'a phone that came back gets the picture again');
 
     tablet.stop('stopped');
     await until(() => b.isClosed());

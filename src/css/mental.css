@@ -1183,6 +1183,13 @@ body[data-perf="lite"]:is([data-cork="cork"], [data-cork="wood"]) .lk-dot { filt
   border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
 }
 #padCursor.hidden { display: none; }
+/* the part of the window the phone shows and draws on (2.2.1): the line sits
+   outside the box, so the pictures taken of the box never contain it */
+#padArea {
+  position: fixed; z-index: 2147482990; pointer-events: none; border-radius: 4px;
+  outline: 1.5px dashed var(--accent); outline-offset: 3px;
+}
+#padArea.hidden { display: none; }
 
 /* ─────────────── 66. the ghost of a note's text, at far zoom ───────────────
    A far-zoom stub draws its text as bars (js/items.js noteGhost): every bar is
