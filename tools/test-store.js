@@ -33,6 +33,7 @@ async function test(name, fn) {
 }
 const board = (id, name, extra) => ({ id, name, group: '', json: JSON.stringify(Object.assign({ mbBoard: 2, id, name, notes: [], frames: [], links: [] }, extra || {})) });
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
+const fakeSdocx = require('./fake-sdocx.js');
 
 (async () => {
   console.log('store.js');
@@ -290,6 +291,42 @@ const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
     assert.ok(store.writeCanvas(path.join(root, 'out', 'x.json'), '{}', 'a1', [], 'f').error);
     assert.ok(store.writeCanvas(out, '{"nodes":[]}', 'a1', ['p.png'], '..\\escape').error);
     assert.ok(store.writeCanvas(out, 'not json', 'a1', [], 'f').error);
+  });
+
+  await test('a Samsung note: text, a picture, a stroke and a shape come out; nothing else is taken', async ({ store, root }) => {
+    store.saveAll({ boards: [board('a1', 'Ideas')] });
+    const file = path.join(root, 'Shopping.sdocx');
+    fs.writeFileSync(file, fakeSdocx());
+    const r = await store.readSamsung(file, 'a1');
+    assert.ok(!r.error, r.error);
+    const d = r.data;
+    assert.strictEqual(r.kind, 'sdocx');
+    assert.strictEqual(d.title, 'Groceries');
+    assert.strictEqual(d.body.text, 'Milk and eggs\n￼');
+    assert.ok(d.body.spans.some((s) => s.type === 5 && s.value === 1 && s.start === 0 && s.end === 4), 'bold over "Milk"');
+    // the picture: written into the board's own folder, addressed by mbf://
+    const pic = d.media[d.body.objects[0].media];
+    assert.ok(pic && /^mbf:\/\/a1\//.test(pic.url), 'the inline picture resolves');
+    assert.ok(fs.existsSync(path.join(root, 'My Boards', 'Ideas', 'files', pic.name)));
+    // the stroke: a seed point, then signed 1/32 deltas; BGRA colour; the pen size
+    assert.strictEqual(d.strokes.length, 2, 'a stroke and a shape; the garbage object is skipped');
+    const s = d.strokes.find((x) => !x.shape);
+    assert.deepStrictEqual(s.pts, [100, 200, 101, 199.5, 101, 202.5]);
+    assert.strictEqual(s.color, 0xff3366cc);
+    assert.strictEqual(s.size, 6);
+    assert.deepStrictEqual(s.ps, [0.5, 0.75, 0.25]);
+    // the shape: its saved path, edges cut into short steps, closed
+    const sh = d.strokes.find((x) => x.shape);
+    assert.deepStrictEqual(sh.pts.slice(0, 2), [10, 10]);
+    assert.deepStrictEqual(sh.pts.slice(-2), [10, 10]);
+    assert.ok(sh.pts.length > 10, 'edges densified');
+    assert.strictEqual(sh.size, 3);
+    // not a zip, and a .txt export
+    fs.writeFileSync(path.join(root, 'bad.sdocx'), 'not a zip');
+    assert.ok((await store.readSamsung(path.join(root, 'bad.sdocx'), 'a1')).error);
+    fs.writeFileSync(path.join(root, 'n.txt'), '﻿hello');
+    assert.deepStrictEqual(await store.readSamsung(path.join(root, 'n.txt'), 'a1'), { kind: 'text', name: 'n', text: 'hello' });
+    assert.ok((await store.readSamsung(path.join(root, 'n.exe'), 'a1')).error);
   });
 
   for (const r of tmpRoots) { try { fs.rmSync(r, { recursive: true, force: true }); } catch (_) {} }

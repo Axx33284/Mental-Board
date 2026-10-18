@@ -2,8 +2,9 @@
 
 ## Read `MAP.md` first
 
-The app is `src/js/*.js` (21 scripts) and `src/css/*.css` (9 sheets), with
-`src/main.js`, `src/store.js` (the My Boards folder) and `src/preload.js`. `MAP.md`
+The app is `src/js/*.js` (22 scripts) and `src/css/*.css` (9 sheets), with
+`src/main.js`, `src/store.js` (the My Boards folder), `src/sdocx.js` (Samsung
+Notes files) and `src/preload.js`. `MAP.md`
 §4 and §5 say which file holds what — use them instead of grepping the whole
 tree. It also covers how to run, how the one-copy build works, and the traps
 that have already bitten a session.

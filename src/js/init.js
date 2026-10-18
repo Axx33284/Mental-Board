@@ -1,7 +1,7 @@
 /* Mental Board — init.js
    Pointer routing, the keyboard map, init(), and STATIC_ICONS — every listener in one place.
 
-   Part 21 of 21. These files are plain scripts sharing one global
+   Part 22 of 22. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -399,11 +399,19 @@ async function onCanvasDrop(e) {
     await importCanvasFile(FILES && FILES.pathOf ? FILES.pathOf(files[0]) : '');
     return;
   }
+  /* A Samsung Notes file is read, not filed away: its text, handwriting and
+     pictures come onto the board (samsung.js, MAP.md §4w). */
+  const samsung = files.filter((f) => /\.sdocx$/i.test(f.name || ''));
+  if (samsung.length && FILES && FILES.pathOf) {
+    await importSamsungFiles(samsung.map((f) => FILES.pathOf(f)).filter(Boolean), pt);
+    if (samsung.length === files.length) return;
+  }
 
   /* Spread several drops along a row from where the pointer was, so they do not
      land on top of each other. */
   let i = 0;
   for (const f of files) {
+    if (samsung.includes(f)) continue;
     const at = { x: pt.x + i * 40, y: pt.y + i * 40 };
     await noteFromDroppedFile(f, at);
     i++;

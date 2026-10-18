@@ -2,7 +2,7 @@
    The page menu at the top right of the canvas, and what a board can decide
    for itself: its font, its text size, its background, its group.
 
-   Part 18 of 21. These files are plain scripts sharing one global
+   Part 18 of 22. These files are plain scripts sharing one global
    scope, loaded in the order index.html lists them — that order is the only
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
@@ -112,6 +112,7 @@ function openPageMenu() {
   html += label('page.files', 'folder_open');
   html += row('import', 'upload', te('page.import'));
   html += row('importCanvas', 'upload', te('page.importCanvas'));
+  if (!dead && !bin) html += row('importSamsung', 'smartphone', te('page.importSamsung'));
   if (!dead) html += row('export', 'download', te('page.export'));
   if (!dead && !bin) html += row('exportCanvas', 'share', te('page.exportCanvas'));
   if (!dead && !locked) html += row('image', 'image', te('page.exportImage'));
@@ -150,6 +151,7 @@ function openPageMenu() {
       case 'import': done(); importOneBoard(); break;
       case 'export': done(); exportOneBoard(b.id); break;
       case 'importCanvas': done(); importCanvas(); break;
+      case 'importSamsung': done(); importSamsung(); break;
       case 'exportCanvas': done(); exportCanvas(b.id); break;
       case 'image': done(); exportBoardImage(b.id); break;
       case 'folder': done(); openBoardFiles(); break;

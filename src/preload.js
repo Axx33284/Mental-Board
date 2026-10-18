@@ -59,6 +59,11 @@ contextBridge.exposeInMainWorld('mbData', {
   importCanvas: () => ipcRenderer.invoke('canvas:import'),
   readCanvas: (p) => ipcRenderer.invoke('canvas:read', p),
   resolveCanvas: (dir, rels) => ipcRenderer.invoke('canvas:resolve', dir, rels),
+  /* Samsung Notes. pickSamsung asks for files (an .sdocx, or a PDF, picture or
+     .txt it exported) and hands back paths; readSamsung reads one for a board,
+     writing the pictures in it into that board's folder. See js/samsung.js. */
+  pickSamsung: () => ipcRenderer.invoke('samsung:pick'),
+  readSamsung: (p, boardId) => ipcRenderer.invoke('samsung:read', p, boardId),
   duplicateFiles: (fromId, toId, name, group) => ipcRenderer.invoke('board:duplicate-files', fromId, toId, name, group),
   removeBoardDir: (id) => ipcRenderer.invoke('board:remove-dir', id)
 });

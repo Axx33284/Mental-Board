@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-one scripts or nine sheets holds the thing you are after, so you never
+twenty-two scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-one ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + twenty-two ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -102,6 +102,7 @@ The things that make it more than a note wall:
 | **The board as columns by status, drag to change** | js/views.js §4u |
 | **A minimap of the whole board** | js/views.js §4u |
 | **Obsidian: export and import as JSON Canvas** | js/canvas.js + store.js §4t |
+| **Samsung Notes: text, handwriting, shapes and pictures from an .sdocx** | js/samsung.js + src/sdocx.js §4w |
 | **Videos from the + menu, and a clip that cannot play says so** | js/init.js + js/media.js §4n |
 | **Tests: the store, and the real app driven over CDP** | tools/test-*.js §6 |
 | **A note with no head; everything in the right-click menu** | js/items.js + js/menus.js §4v |
@@ -132,11 +133,12 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           21 plain scripts, one global scope, no bundler   (§4)
+  js/           22 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png
   main.js       Electron main
   store.js      the My Boards folder — every read and write of user data (§3)
+  sdocx.js      reads a Samsung Notes file; required by store.js       (§4w)
   preload.js    the bridge: a list of IPC calls, no disk work of its own
 tools/        build + checks, never shipped
 admin/        double-clickable .cmd wrappers
@@ -146,10 +148,11 @@ App/          the built app (generated; deleted and rewritten by every build)
 | File | Lines | What it is |
 |------|-------|------------|
 | `src/main.js` | ~1000 | Electron main. Window, native theme, the tray and the quick-capture hotkey, the loopback player origin, the `mbf://` protocol that serves a board's own files, the store's IPC handlers, the dialogs, the GPU check, the `shell:open-local` guard (§4m), the JSON Canvas dialogs (§4t), and the permission policy (§7). |
-| `src/store.js` | ~860 | **The My Boards folder.** Runs in main. Scans the folder into boards, writes settings.json and each board.json atomically, lays a board's folder out (name, group, rename, move), keeps the files a board carries, copies them between boards, exports and imports whole boards, mirrors the folder for backup (never into itself), writes and reads JSON Canvas (§4t), and migrates a 1.x board.json once. See §3. |
+| `src/store.js` | ~860 | **The My Boards folder.** Runs in main. Scans the folder into boards, writes settings.json and each board.json atomically, lays a board's folder out (name, group, rename, move), keeps the files a board carries, copies them between boards, exports and imports whole boards, mirrors the folder for backup (never into itself), writes and reads JSON Canvas (§4t), reads a Samsung Notes file for a board and writes its pictures into that board's folder (`readSamsung`, `attachBuffer`, §4w), and migrates a 1.x board.json once. See §3. |
+| `src/sdocx.js` | ~520 | **A Samsung Notes .sdocx, decoded.** Runs in main, plain Node: its own bounded zip reader (zlib), then `note.note` (title, rich text), the pages in `pageIdInfo.dat` order, their layers and object records — strokes, shapes and lines, text boxes, pictures — and `media/mediaInfo.dat`. Everything sized is read from its size and anything not understood is counted and skipped. No dependency; written from a published description of the format, see §4w. |
 | `src/preload.js` | ~110 | The bridge. Five `contextBridge` globals, every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | ~15000 | All app logic, in 21 plain scripts sharing one global scope. See §4. |
+| `src/js/*.js` | ~15000 | All app logic, in 22 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
@@ -163,9 +166,10 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/check-lang.js` | 115 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Covers the fifteen renderer scripts **and `main.js` + `preload.js`**. Run via `npm run check:lang`. |
 | `tools/check-icons.js` | 95 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
-| `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files. `npm run test:store`. |
+| `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
+| `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
 | `tools/test-app.js` | ~240 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last test fails on any that is not expected. `npm run test:app`. |
-| `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
+| `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
 | `admin/` | — | Six `.cmd` launchers: run, sandbox, check, back up (a dated copy of My Boards beside the project), open My Boards, and **Build App**, which is how the app gets updated. |
 | `.gitattributes` | — | Line endings. `*.cmd` is pinned to CRLF — a batch file checked out with LF fails in ways that look like anything but that. |
@@ -190,7 +194,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-one scripts that follow. Between them they hold one mutable `state`,
+twenty-two scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -202,7 +206,7 @@ never touch individual elements.
 
 | Global | Gives you |
 |--------|-----------|
-| `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` — and JSON Canvas (§4t): `pickCanvasPath(suggested)` `writeCanvas(file,json,id,names,folder)` `importCanvas()` `readCanvas(path)` `resolveCanvas(dir,rels)` |
+| `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` — and JSON Canvas (§4t): `pickCanvasPath(suggested)` `writeCanvas(file,json,id,names,folder)` `importCanvas()` `readCanvas(path)` `resolveCanvas(dir,rels)` — and Samsung Notes (§4w): `pickSamsung()` `readSamsung(path,boardId)` |
 | `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
 | `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
@@ -592,10 +596,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-one files
+## 4. `src/js/` — the app, in twenty-two files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), and 2.2 one (`samsung.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -622,6 +626,7 @@ no bundler and no build step — the only thing joining them is the order
 | `settings.js` | ~1500 | The settings panel and every dialog behind it (the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()` and the stats cache. See §5b. |
 | `page.js` | ~345 | **The page menu** at the top right and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
+| `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
 
@@ -1440,6 +1445,39 @@ The board is built in the shape a saved board has and passed through
 `adoptBoard()`, so it is healed and validated like any other. A `.canvas`
 dropped on the board is imported (`onCanvasDrop`); the page menu has *Export
 for Obsidian* and *Import a .canvas*.
+
+## 4w. Samsung Notes — `js/samsung.js`, `src/sdocx.js`
+
+Page menu ▸ *Import from Samsung Notes…*, or drop `.sdocx` files on the
+canvas. Each note lands in the open board as one workflow named after it,
+several in a row, one undo step each.
+
+**Why the .sdocx and not an export.** Samsung's exports each lose something:
+Word drops handwriting to pictures, image/PDF flatten everything, .txt keeps
+only typed text. The .sdocx is a zip of size-delimited records, described in
+the reverse-engineering notes of github.com/twangodev/sdocx (GPL — only the
+*description* was used; `sdocx.js` is written fresh) and checked against the
+four real notes in huggingface.co/datasets/twangodev/sdocx-compatibility
+(CC-BY): 83 and 41 strokes, 6 shapes, 7 inline pictures and every styled run
+came out matching Samsung's own PDFs. Because every record is sized, an
+object the reader does not understand is stepped over exactly, counted, and
+reported; it never shifts what comes after.
+
+| In the .sdocx | On the board |
+|---|---|
+| typed text (`note.note` body) | one note: bold, italic, underline, strike, highlight, links, Samsung headings and big text as h1/h2, bullets, numbers, to-dos; pictures inline |
+| handwriting (type-1 strokes) | ink: a pressure-varying stroke is the brush (width per point), see-through is the marker, black is the theme's ink |
+| shapes and lines (types 7, 8) | ink, the saved outline path; edges cut into short steps so the pen's smoothing keeps corners |
+| text boxes, pictures on a page | notes / pictures where they stood |
+| tables, code blocks, `.spi` pictures, eraser strokes, unknown objects | counted; the toast says how many and points at Samsung's PDF export |
+
+Pages are stacked, cropped to what is on them and scaled so a page is 900
+world px wide (`SAMSUNG_PAGE_W`); the typed text sits to their left.
+Pictures are written into the board's `files\` by `store.readSamsung`, so the
+renderer only ever sees `mbf://` URLs. A PDF, PNG/JPEG or .txt picked in the
+same dialog goes the ordinary way (document card, picture, note). A locked
+note, or one that is not a zip, gets a toast saying to unlock it or export a
+PDF. Limits: 512 MB file, 256 MB per entry, 4 M points.
 
 ## 4u. The agenda, the board as columns, and the minimap
 
@@ -2934,7 +2972,7 @@ Six from 2.1 first, because they are the freshest:
   not measurably slower at any size this app will see. **Do not reintroduce the
   spread**; it looks tidier and it is a cliff.
 
-- **Two files may not declare the same top-level function.** The twenty-one scripts
+- **Two files may not declare the same top-level function.** The twenty-two scripts
   share one global scope, so a second `function foo()` silently replaces the
   first — and which one wins is decided by nothing more interesting than the
   `<script>` order. `roundRectPath()` was declared in *both* media.js and

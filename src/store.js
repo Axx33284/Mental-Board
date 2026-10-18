@@ -395,12 +395,15 @@ async function attachFile(srcPath, id, suggested) {
   } catch (err) { return { error: errMsg(err) }; }
 }
 async function attachBytes(dataUrl, id, suggested) {
+  const m = /^data:([\w.+-]+\/[\w.+-]+);base64,([\s\S]+)$/.exec(String(dataUrl || ''));
+  if (!m) return { error: 'not a data url' };
+  return attachBuffer(Buffer.from(m[2], 'base64'), id, suggested);
+}
+// bytes already in main (a picture out of a Samsung note) → a file the board carries
+async function attachBuffer(buf, id, suggested) {
   try {
-    const m = /^data:([\w.+-]+\/[\w.+-]+);base64,([\s\S]+)$/.exec(String(dataUrl || ''));
-    if (!m) return { error: 'not a data url' };
     const key = String(id || '').toLowerCase();
     if (!boardDir(key)) return { error: 'no board' };
-    const buf = Buffer.from(m[2], 'base64');
     if (buf.length > MAX_ATTACH) return { error: 'too big' };
     const dir = filesDir(key);
     await fsp.mkdir(dir, { recursive: true });
@@ -849,11 +852,57 @@ function migrateLegacy(oldDir) {
   } catch (err) { return { error: errMsg(err) }; }
 }
 
+/* ---------- Samsung Notes ----------
+   A Samsung Notes file, read for the board `id` (MAP.md §4w). The .sdocx is
+   decoded by sdocx.js; the pictures in it are written into that board's own
+   files\ here, so what goes back to the renderer names `mbf://` URLs and
+   never a path. Of Samsung's other exports a .txt is read here, its text
+   handed back to become a note; a picture or a PDF is attached by the
+   renderer as a drop would be. */
+const MAX_SAMSUNG = 512 * 1024 * 1024;
+const round1 = (v) => Math.round(v * 10) / 10;
+async function readSamsung(p, id) {
+  try {
+    const file = String(p || '');
+    const name = path.basename(file).replace(/\.[^.]+$/, '');
+    const st = await fsp.stat(file);
+    if (!st.isFile()) return { error: 'not a file' };
+    if (/\.txt$/i.test(file)) {
+      if (st.size > 8 * 1024 * 1024) return { error: 'too big' };
+      let text = await fsp.readFile(file, 'utf8');
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      return { kind: 'text', name, text };
+    }
+    if (!/\.sdocx$/i.test(file)) return { error: 'not a samsung note' };
+    if (st.size > MAX_SAMSUNG) return { error: 'too big' };
+    const key = String(id || '').toLowerCase();
+    if (!boardDir(key)) return { error: 'no board' };
+    const d = require('./sdocx.js').readSdocx(await fsp.readFile(file));
+    const media = {};
+    for (const [mid, m] of Object.entries(d.media)) {
+      const base = safeName(m.name.replace(/\.[^.]+$/, '')) || 'picture';
+      const r = await attachBuffer(m.data, key, `${base}.${m.ext}`);
+      if (r && r.url) media[mid] = { url: r.url, name: r.name };
+    }
+    const strokes = d.strokes.map((s) => ({
+      page: s.page, color: s.color >>> 0, size: s.size, shape: !!s.shape,
+      pts: s.pts.map(round1), ps: s.ps ? s.ps.map((v) => Math.round(v * 100) / 100) : null
+    }));
+    return {
+      kind: 'sdocx', name,
+      data: {
+        title: d.title, width: d.width, pages: d.pages, body: d.body, boxes: d.boxes, strokes,
+        images: d.images.filter((m) => media[m.media]), media, skipped: d.skipped
+      }
+    };
+  } catch (err) { return { error: errMsg(err) }; }
+}
+
 module.exports = {
   init, rootDir, scan, saveAll, saveAllAsync, snapshot, versionSnapshot,
   boardDir, filesDir, resolveFile, parseFileUrl, fileUrl, safeName,
   attachFile, attachBytes, listFiles, carryFiles, cleanup, readImage, pathOfUrl,
   duplicateFiles, removeBoardDir, exportBoard, readExternal, adoptExternalFiles,
   mirrorTo, backupAllTo, tally, reset, migrateLegacy, settingsFile, backupsDir,
-  writeCanvas, readCanvas, resolveCanvasFiles
+  writeCanvas, readCanvas, resolveCanvasFiles, attachBuffer, readSamsung
 };

@@ -81,7 +81,7 @@ const IGNORE = [
    broken app rather than a fat one: drop assets/ and the app starts with no
    glyphs and every string showing its own key. Checked, not assumed. */
 const MUST_SHIP = [
-  '/src/main.js', '/src/preload.js', '/src/store.js', '/src/index.html',
+  '/src/main.js', '/src/preload.js', '/src/store.js', '/src/sdocx.js', '/src/index.html',
   /* One from each half of the split app, and the two ends of each load order:
      the first and last script, the first and last stylesheet. A mistake in
      IGNORE that swallowed src/js or src/css would take one of these with it. */
