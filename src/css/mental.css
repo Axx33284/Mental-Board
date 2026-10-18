@@ -1193,8 +1193,8 @@ body[data-perf="lite"]:is([data-cork="cork"], [data-cork="wood"]) .lk-dot { filt
 .note-ghost {
   flex: 1; min-height: 0; pointer-events: none;
   --gc0: color-mix(in srgb, currentColor 9%, transparent);
-  --gc1: color-mix(in srgb, currentColor 30%, transparent);
-  --gc2: color-mix(in srgb, currentColor 52%, transparent);
-  --gc3: color-mix(in srgb, currentColor 80%, transparent);
+  --gc1: color-mix(in srgb, currentColor 38%, transparent);
+  --gc2: color-mix(in srgb, currentColor 68%, transparent);
+  --gc3: color-mix(in srgb, currentColor 90%, transparent);
 }
 .note.is-done .note-ghost { opacity: .55; }

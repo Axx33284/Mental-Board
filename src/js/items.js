@@ -146,11 +146,12 @@ function stubNote(el, n) {
    as a board that failed to load. Real text at 0.3× is worse: two-pixel
    glyphs, laid out and rasterised for nothing anybody can read.
 
-   So a stub draws what text looks like from across the room — a bar per line,
-   the width the line really is, headings taller and darker, a dot before a
+   So a stub draws what text looks like from across the room — each line of
+   the note's real words, wrapped where they really wrap, a dash per word with
+   the gaps where the spaces are, headings taller and darker, a dot before a
    bullet, a box before a to-do, a block where a picture is. It is **one
    element** whatever the note holds: every bar is a layer of that element's
-   own background (`linear-gradient(c, c) x y / w h no-repeat`), so there is
+   own background (one gradient per line, a hard-edged stop pair per word), so there is
    no text layout, no glyphs and no extra nodes — the browser paints a few
    flat rectangles, which is the cheapest thing it can do.
 
@@ -169,7 +170,7 @@ const GHOST_CH = { mono: .6, wide: .58, narrow: .45, hand: .48 };   // average g
 const GHOST_PAD = { thin: 6, cosy: 14, roomy: 28 };
 const GHOST_RTL = /^[^A-Za-zÀ-ɏ֐-ࣿיִ-ﻼ]*[֐-ࣿיִ-ﻼ]/;
 
-// the note's blocks, in order: { k: kind, n: characters, rtl, done }
+// the note's blocks, in order: { k: kind, n: characters, words: [lengths], lead, rtl, done }
 function ghostBlocks(html) {
   const out = [];
   let cur = null, todo = 0, quote = 0, pre = 0, text = '';
@@ -181,7 +182,10 @@ function ghostBlocks(html) {
     for (const part of parts) {
       const s = cur.k === 'code' ? part.replace(/\s+$/, '') : part.replace(/\s+/g, ' ').trim();
       if (s || cur.k === 'todo' || cur.k === 'li' || cur.k === 'code') {
-        out.push({ k: cur.k, done: cur.done, n: s.length, rtl: GHOST_RTL.test(s) });
+        // the words, as lengths: a line of the ghost is these, with the gaps between
+        const lead = cur.k === 'code' ? s.length - s.replace(/^\s+/, '').length : 0;
+        const words = s.trim() ? s.trim().split(/\s+/).map((w) => w.length) : [];
+        out.push({ k: cur.k, done: cur.done, n: s.length, words, lead, rtl: GHOST_RTL.test(s) });
       }
     }
     cur = null; text = '';
@@ -248,7 +252,7 @@ function noteGhost(n) {
   // a deterministic wobble so full lines are not all ruler-straight
   let seed = 0;
   for (let i = 0; i < n.id.length; i++) seed = (seed * 31 + n.id.charCodeAt(i)) | 0;
-  const wob = () => { seed = (seed * 1103515245 + 12345) | 0; return .86 + ((seed >>> 16) % 1000) / 1000 * .14; };
+  const wob = () => { seed = (seed * 1103515245 + 12345) | 0; return ((seed >>> 16) % 1000) / 1000; };
 
   let codeTop = -1;
   const blocks = ghostBlocks(n.body || '');
@@ -274,19 +278,45 @@ function noteGhost(n) {
     y += bi ? gap : 0;
     // mirrored for a right-to-left line: the marker and the indent on the right
     const mx = (x, w) => (b.rtl ? x0 * 2 + W - x - w : x);
-    const qh = Math.min(H - y, Math.max(lh, Math.ceil(b.n / cpl) * lh));
+    const qh = Math.min(H - y, Math.max(lh, Math.ceil(b.n / cpl) * lh) - (lh - fz * .9));
     if (b.k === 'quote') bar(mx(x0, 3), y, 3, qh, 1);
     if (b.k === 'li') bar(mx(x0 + .45 * f, f * .28), y + lh / 2 - f * .14, f * .28, f * .28, 2);
     if (b.k === 'todo') bar(mx(x0 + .2 * f, f * .72), y + lh / 2 - f * .36, f * .72, f * .72, b.done ? 3 : 1);
-    let left = b.n;
-    const lines = Math.max(1, Math.ceil(left / cpl));
-    for (let li = 0; li < lines; li++) {
-      const full = left > cpl;
-      const w = full ? bw * wob() : bw * Math.max(.12, left / cpl);
-      left -= cpl;
-      if (b.n) {
-        const bx = mx(x0 + ind, w);
-        if (!bar(bx, y + (lh - th) / 2, w, th, alpha)) { y = H; break; }
+    /* Wrap the real words at the note's width, then draw each line as **one**
+       layer: a gradient with a hard-edged stop pair per word, so the gaps fall
+       where the spaces are. That is what makes it read as text from across
+       the room rather than as a rule — the eye picks up word shapes long
+       before it can read a letter — and it costs no more than a plain bar. */
+    const cw = em * fz, sp = cw * .62;            // one character, one space
+    const lines = [];
+    let line = [], used = 0;
+    const lead = Math.min(cpl - 4, b.lead || 0);
+    for (let wl of b.words) {
+      while (wl > 0) {
+        const room = cpl - lead - used - (line.length ? 1 : 0);
+        if (wl <= room) { line.push(wl); used += wl + (line.length > 1 ? 1 : 0); wl = 0; break; }
+        if (line.length && wl <= cpl - lead) { lines.push(line); line = []; used = 0; continue; }
+        const part = Math.max(1, room);            // a word longer than the line breaks anywhere
+        line.push(part); lines.push(line); line = []; used = 0; wl -= part;
+      }
+    }
+    if (line.length || !lines.length) lines.push(line);
+    for (const words of lines) {
+      if (words.length) {
+        let x = 0;
+        const stops = [];
+        const c = `var(--gc${alpha})`;
+        words.forEach((wl, i) => {
+          const w = wl * cw * (.9 + wob() * .2 - .1);
+          if (i) { stops.push(`transparent ${x.toFixed(1)}px ${(x + sp).toFixed(1)}px`); x += sp; }
+          stops.push(`${c} ${x.toFixed(1)}px ${(x + w).toFixed(1)}px`);
+          x += w;
+        });
+        const w = Math.min(bw - lead * cw, x);
+        const bx = mx(x0 + ind + lead * cw, w);
+        const yy = y + (lh - th) / 2;
+        if (yy + th > H) { y = H; break; }
+        layers.push(`linear-gradient(${b.rtl ? 'to left' : 'to right'},${stops.join(',')}) ${bx.toFixed(1)}px ${yy.toFixed(1)}px/${w.toFixed(1)}px ${th.toFixed(1)}px no-repeat`);
       }
       y += lh;
     }
