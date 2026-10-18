@@ -1164,3 +1164,18 @@ body[data-perf="lite"]:is([data-cork="cork"], [data-cork="wood"]) .lk-line,
 body[data-perf="lite"]:is([data-cork="cork"], [data-cork="wood"]) .lk-dot { filter: none; }
 
 .cm-colors .cm-rope-auto::after { display: none; }
+
+/* ─────────────── 66. the ghost of a note's text, at far zoom ───────────────
+   A far-zoom stub draws its text as bars (js/items.js noteGhost): every bar is
+   one background layer of this one element, coloured --gc0..3. They are the
+   note's own ink mixed down, so a dark theme gets light bars and a heading
+   reads darker than the line under it. In the flow, so the status pill sits
+   at the bottom of the card where it is on a finished note. */
+.note-ghost {
+  flex: 1; min-height: 0; pointer-events: none;
+  --gc0: color-mix(in srgb, currentColor 9%, transparent);
+  --gc1: color-mix(in srgb, currentColor 30%, transparent);
+  --gc2: color-mix(in srgb, currentColor 52%, transparent);
+  --gc3: color-mix(in srgb, currentColor 80%, transparent);
+}
+.note.is-done .note-ghost { opacity: .55; }

@@ -243,12 +243,34 @@ function syncMounted() {
      screenful; filling them before the cull built every one of them for
      nothing. */
   if (!farMode) fillStubs(want, R);
+  else restubMounted();
   /* The ropes are culled to the same rectangle, so panning has to sweep them
      too or a rope stays mounted for a note that left the document — or worse,
      never appears for one that arrived. Cheap: the test is four comparisons per
      rope and only the visible handful are redrawn. */
   drawLinks();
   refreshFrameCounts();
+}
+
+/* The other direction (2.2). Going out past FAR_Z, the notes already on
+   screen are finished ones, and far-zoom CSS only hid their text: a blank card
+   that still carried its whole body. Each goes back to being a stub, so it
+   shows the ghost of its text (items.js noteGhost) and the document sheds the
+   body. Here rather than in applyFarMode() because the exemptions end later:
+   the note being edited keeps its caret until the edit closes, and nothing a
+   gesture is holding is touched until it lets go — after either, the next
+   sweep catches it. A picture is never a stub. Measured at 0.3 ms a frame over
+   3,000 mounted notes, almost all of them already stubs. */
+function restubMounted() {
+  let byId = null;
+  els.forEach((el, id) => {
+    if (el.dataset.stub || el.classList.contains('frame') || el.classList.contains('pic')) return;
+    if (editNote && editNote.id === id) return;
+    if (gesture && ((gesture.it && gesture.it.id === id) ||
+        (gesture.items && gesture.items.some(({ it }) => it.id === id)))) return;
+    const n = (byId || (byId = noteIndex())).get(id);
+    if (n && !n.pic) stubNote(el, n);
+  });
 }
 
 /* Finish the stubs that are staying on screen — a few at a time (2.1).

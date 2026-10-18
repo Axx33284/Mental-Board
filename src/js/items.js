@@ -49,12 +49,7 @@ function makeNote(n, stub) {
      worth, and a blank rectangle where a picture was reads as a broken board.
      Never stubbed. See pictures.js. */
   if (n.pic) { fillPicture(el, n); return el; }
-  if (stub) {
-    el.dataset.stub = '1';
-    el.innerHTML = '<div class="note-status hidden"></div>';
-    paintNoteStatus(el, n);
-    return el;
-  }
+  if (stub) { stubNote(el, n); return el; }
   fillNote(el, n);
   return el;
 }
@@ -132,6 +127,174 @@ function repaintNoteBody(el, n) {
 function unstub(el, n) {
   if (el && el.dataset && el.dataset.stub && n) fillNote(el, n);
   return el;
+}
+
+/* The inside of a stub: the ghost of the text, and the status pill. Also how a
+   finished note goes back to being a stub when the view zooms out past FAR_Z
+   (applyFarMode) — without that, every note that was already on screen kept
+   its whole body in the document only for CSS to hide it, which is both the
+   heavy case and the blank one. */
+function stubNote(el, n) {
+  el.dataset.stub = '1';
+  el.innerHTML = '<div class="note-ghost"></div><div class="note-status hidden"></div>';
+  el.firstChild.style.background = noteGhost(n);
+  paintNoteStatus(el, n);
+}
+
+/* ---- the ghost of a note's text (2.2) ----
+   A stub used to be a blank coloured rectangle, and a board of blanks reads
+   as a board that failed to load. Real text at 0.3× is worse: two-pixel
+   glyphs, laid out and rasterised for nothing anybody can read.
+
+   So a stub draws what text looks like from across the room — a bar per line,
+   the width the line really is, headings taller and darker, a dot before a
+   bullet, a box before a to-do, a block where a picture is. It is **one
+   element** whatever the note holds: every bar is a layer of that element's
+   own background (`linear-gradient(c, c) x y / w h no-repeat`), so there is
+   no text layout, no glyphs and no extra nodes — the browser paints a few
+   flat rectangles, which is the cheapest thing it can do.
+
+   The lines come from the stored HTML through a tokeniser (no DOM parse: the
+   first zoom-out on a 3,000-note board reads every one of them), wrapped
+   against the note's width at the board's own font size, density and face,
+   so a ghost stands where its text will be when you zoom back in and the
+   change reads as the board coming into focus. Bars are `currentColor`
+   mixed down, so they follow the theme and a dark note. Cached per note on
+   everything that changes the shape. */
+const GHOST_MAX = 3000;
+const ghostCache = new Map();
+const GHOST_TAG = /<(\/?)([a-z][a-z0-9]*)\b([^>]*)>/gi;
+const GHOST_BLOCK = /^(p|div|li|h[1-6]|blockquote|pre|tr|ul|ol|br|hr|img|table)$/;
+const GHOST_CH = { mono: .6, wide: .58, narrow: .45, hand: .48 };   // average glyph width in ems
+const GHOST_PAD = { thin: 6, cosy: 14, roomy: 28 };
+const GHOST_RTL = /^[^A-Za-zÀ-ɏ֐-ࣿיִ-ﻼ]*[֐-ࣿיִ-ﻼ]/;
+
+// the note's blocks, in order: { k: kind, n: characters, rtl, done }
+function ghostBlocks(html) {
+  const out = [];
+  let cur = null, todo = 0, quote = 0, pre = 0, text = '';
+  const flush = () => {
+    if (!cur) return;
+    const raw = text.replace(/&[#a-z0-9]+;/gi, 'x');
+    // code keeps its own line breaks; everything else is one run of words
+    const parts = cur.k === 'code' ? raw.split('\n') : [raw];
+    for (const part of parts) {
+      const s = cur.k === 'code' ? part.replace(/\s+$/, '') : part.replace(/\s+/g, ' ').trim();
+      if (s || cur.k === 'todo' || cur.k === 'li' || cur.k === 'code') {
+        out.push({ k: cur.k, done: cur.done, n: s.length, rtl: GHOST_RTL.test(s) });
+      }
+    }
+    cur = null; text = '';
+  };
+  const open = (k, a) => { flush(); cur = { k, done: / class="[^"]*\bdone\b/.test(a || '') }; };
+  let last = 0, m;
+  GHOST_TAG.lastIndex = 0;
+  while ((m = GHOST_TAG.exec(html))) {
+    text += html.slice(last, m.index);
+    last = GHOST_TAG.lastIndex;
+    const close = m[1] === '/', tag = m[2].toLowerCase(), a = m[3];
+    if (!GHOST_BLOCK.test(tag)) continue;
+    if (tag === 'ul' || tag === 'ol') {
+      flush();
+      if (/mb-todo/.test(a)) todo += close ? -1 : 1;
+      continue;
+    }
+    if (tag === 'blockquote') { flush(); quote += close ? -1 : 1; continue; }
+    if (tag === 'pre') {
+      flush();
+      pre += close ? -1 : 1;
+      out.push({ k: close ? 'code-end' : 'code-start' });
+      if (!close) cur = { k: 'code' };
+      continue;
+    }
+    if (tag === 'img') { flush(); out.push({ k: 'img' }); continue; }
+    if (tag === 'hr') { flush(); out.push({ k: 'hr' }); continue; }
+    if (tag === 'br') {                // a line break inside a block is another line of it
+      if (cur) { const k = cur.k === 'todo' || cur.k === 'li' ? 'p' : cur.k; flush(); cur = { k }; }
+      continue;
+    }
+    if (close) { flush(); continue; }
+    open(tag === 'li' ? (todo > 0 ? 'todo' : 'li') :
+         /^h[1-3]$/.test(tag) ? tag : pre ? 'code' : quote ? 'quote' : 'p', a);
+  }
+  text += html.slice(last);
+  if (!cur && text.trim()) cur = { k: 'p' };
+  flush();
+  return out;
+}
+
+function noteGhost(n) {
+  const s = state.settings || {};
+  const fs = (s.fontScale || 100) / 100;
+  const small = document.body.classList.contains('small-text');
+  const face = document.body.dataset.notefont || '';
+  const pad = GHOST_PAD[document.body.dataset.density] || 14;
+  const key = `${n.w}|${n.h}|${fs}|${small}|${face}|${pad}|${!!n.icon}|${document.body.dataset.cork || ''}`;
+  const hit = ghostCache.get(n.id);
+  if (hit && hit.body === n.body && hit.key === key) return hit.css;
+
+  const f = (small ? 12 : 14) * fs;               // the body's font size, world px
+  const em = GHOST_CH[face] || .5;
+  const x0 = pad, W = Math.max(8, n.w - pad * 2);
+  const H = n.h - pad - 12;                        // leave the bottom padding and the pill row
+  let y = pad - 2 + 6 + (/cork|wood/.test(document.body.dataset.cork || '') ? 8 : 0);
+  const layers = [];
+  const bar = (x, yy, w, h, a) => {
+    if (yy + h > H || w < 1) return false;
+    layers.push(`linear-gradient(var(--gc${a}),var(--gc${a})) ${x.toFixed(1)}px ${yy.toFixed(1)}px/${w.toFixed(1)}px ${h.toFixed(1)}px no-repeat`);
+    return true;
+  };
+  if (n.icon) { bar(x0 - 4, pad - 4, 30, 30, 2); y = pad - 4 + 32; }
+  // a deterministic wobble so full lines are not all ruler-straight
+  let seed = 0;
+  for (let i = 0; i < n.id.length; i++) seed = (seed * 31 + n.id.charCodeAt(i)) | 0;
+  const wob = () => { seed = (seed * 1103515245 + 12345) | 0; return .86 + ((seed >>> 16) % 1000) / 1000 * .14; };
+
+  let codeTop = -1;
+  const blocks = ghostBlocks(n.body || '');
+  for (let bi = 0; bi < blocks.length && y < H && layers.length < 40; bi++) {
+    const b = blocks[bi];
+    if (b.k === 'code-start') { codeTop = y; y += .3 * f; continue; }
+    if (b.k === 'code-end') {
+      if (codeTop >= 0) layers.push(`linear-gradient(var(--gc0),var(--gc0)) ${x0}px ${codeTop.toFixed(1)}px/${W}px ${(y - codeTop + .3 * f).toFixed(1)}px no-repeat`);
+      codeTop = -1; y += .9 * f; continue;
+    }
+    if (b.k === 'hr') { y += .85 * f; bar(x0, y, W, Math.max(1, f * .08), 0); y += .85 * f; continue; }
+    if (b.k === 'img') { const ih = Math.min(W * .56, H - y - 4); if (ih > 6) bar(x0, y + .5 * f, W, ih, 0); y += ih + f; continue; }
+
+    const m = b.k === 'h1' ? 1.62 : b.k === 'h2' ? 1.32 : b.k === 'h3' ? 1.12 : b.k === 'code' ? .875 : 1;
+    const head = m > 1.05;
+    const fz = f * m, lh = fz * (head ? 1.25 : 1.55);
+    const gap = head ? .7 * fz : b.k === 'li' || b.k === 'todo' ? .18 * f : b.k === 'code' ? 0 : .38 * f;
+    const ind = b.k === 'li' || b.k === 'todo' ? 1.35 * f : b.k === 'quote' ? .85 * f + 3 : b.k === 'code' ? 12 : 0;
+    const bw = W - ind - (b.k === 'code' ? 12 : 0);
+    const cpl = Math.max(4, Math.floor(bw / (em * fz)));
+    const th = fz * (head ? .72 : .54);            // how thick a line of this text looks
+    const alpha = head ? 3 : b.done || b.k === 'quote' ? 1 : 2;
+    y += bi ? gap : 0;
+    // mirrored for a right-to-left line: the marker and the indent on the right
+    const mx = (x, w) => (b.rtl ? x0 * 2 + W - x - w : x);
+    const qh = Math.min(H - y, Math.max(lh, Math.ceil(b.n / cpl) * lh));
+    if (b.k === 'quote') bar(mx(x0, 3), y, 3, qh, 1);
+    if (b.k === 'li') bar(mx(x0 + .45 * f, f * .28), y + lh / 2 - f * .14, f * .28, f * .28, 2);
+    if (b.k === 'todo') bar(mx(x0 + .2 * f, f * .72), y + lh / 2 - f * .36, f * .72, f * .72, b.done ? 3 : 1);
+    let left = b.n;
+    const lines = Math.max(1, Math.ceil(left / cpl));
+    for (let li = 0; li < lines; li++) {
+      const full = left > cpl;
+      const w = full ? bw * wob() : bw * Math.max(.12, left / cpl);
+      left -= cpl;
+      if (b.n) {
+        const bx = mx(x0 + ind, w);
+        if (!bar(bx, y + (lh - th) / 2, w, th, alpha)) { y = H; break; }
+      }
+      y += lh;
+    }
+  }
+  const css = layers.join(',');
+  if (ghostCache.size > GHOST_MAX) ghostCache.clear();
+  ghostCache.set(n.id, { body: n.body, key, css });
+  return css;
 }
 
 // the icon shown on a note: a badge above the text, Notion-style
@@ -609,6 +772,7 @@ function endGesture() {
   if (!gesture) return;
   const g = gesture;
   gesture = null;
+  if (farMode) scheduleMount();   // what it held may go back to being a ghost now
   document.querySelectorAll('.dragging').forEach((el) => el.classList.remove('dragging'));
   clearGuides();
   $('marquee').classList.add('hidden');

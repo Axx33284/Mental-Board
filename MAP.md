@@ -608,7 +608,7 @@ no bundler and no build step — the only thing joining them is the order
 | `sound.js` | ~400 | **Menu sounds** and **typing sounds** (2.1, both in Settings ▸ Extra): `keySfx` `KEY_SWITCHES` `wireKeySounds`, and `sfx(kind)` — move, select, back, open, toggle — synthesised with Web Audio through a generated room reverb, and `wireSounds()`, which hears menus by delegation and a MutationObserver. Off unless `settings.sounds`. See §4v. |
 | `theme.js` | ~340 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, **`applyThemeFaded(ms)`** (a View Transition crossfade, §4v), `applyLang`, `applySettings`, and the graphics tiers: `gpuName` `detectPerf` `resolvedPerf` (§4c). See §3d. |
 | `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `fillStubs` `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
-| `items.js` | ~780 | `makeNote` (no head since 2.1) `makeFrame`, **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
+| `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
 | `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor`), and `paintInkOnCanvas` for the board picture. See §4v. |
 | `editor.js` | ~1330 | The note editor — markdown shortcuts, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`), user templates, the paste sanitiser. |
@@ -1808,7 +1808,9 @@ bug in any of them cannot reach most people.
 | **Viewport culling** | `syncMounted()` §5 | Only items within `cullPad()` screen px of the viewport (700 / 520 / 380 by tier) are in the document. Panning mounts and unmounts, one sweep per animation frame. |
 | **Stubs filled a few at a time** | `fillStubs()` §5 | Coming back in from far zoom, the stubs that stay on screen are filled nearest the middle first, inside a per-frame budget (7 / 5 / 4 ms); the rest wait for the next frame. Only stubs are looked at, through one index — this used to be a `state.notes.find()` per visible note per frame. |
 | **The viewport box, cached** | `vpRect()` §5 | `getBoundingClientRect()` forces a synchronous layout whenever the document changed, which during a pan on a big board is always. The box is cached and dropped by a ResizeObserver, `resize` and `applySettings()`. |
-| **Far zoom** | `applyFarMode()` §5 + `body.far-zoom` | Below `FAR_Z` (0.34 Full, 0.42 Balanced, 0.5 Light) note bodies, heads and handles leave the layout. Culling cannot help at fit-everything zoom — every note really is on screen — but at that scale nothing is readable, so what is left is the coloured rectangle, which is all you could see anyway. |
+| **Far zoom** | `applyFarMode()` §5 + `body.far-zoom` | Below `FAR_Z` (0.34 Full, 0.42 Balanced, 0.5 Light) every note is a **stub**: its colour, its place, its status pill and the *ghost* of its text — no body, no handles, no glyphs. Culling cannot help at fit-everything zoom — every note really is on screen — but at that scale nothing is readable. |
+| **The text ghost (2.2)** | `noteGhost()` `ghostBlocks()` in items.js + mental.css §66 | A stub draws a bar per line of its text — the line's real width, headings taller and darker, bullet dots, to-do boxes, a block for a picture or a code block, right-aligned for Arabic — as background layers of **one** `.note-ghost` element. No layout, no glyphs, no extra nodes. Lines come from a regex tokeniser over the stored HTML (no DOM parse), wrapped at the board's font size, density and face, so the ghost stands where the text will be on the way back in. Cached per note on body + size + metrics: all 3,000 notes of the perf board in 9 ms, and no measurable change to a far-zoom pan frame. Bars are `currentColor` mixed down (`--gc0..3`), so they follow the theme. |
+| **Re-stubbing on the way out (2.2)** | `restubMounted()` §5, from `syncMounted()` | Notes already on screen when the view crosses `FAR_Z` used to stay finished with their body hidden by CSS — blank cards still carrying their whole text. Each sweep in far zoom turns any finished note back into a stub, except the one being edited and those a gesture holds; `exitEdit()` and `endGesture()` ask for a sweep so those follow as soon as they are let go. 0.3 ms a frame over 3,000 mounted notes. |
 | **Rope culling + reuse** | `drawLinks()` §10 | One `<g>` per rope, built once and updated in place, and only the ropes near the viewport are in the document at all. Gated on the same `culling` flag. |
 | **Partial rope redraw** | `drawLinks(moving)` §10 | During a drag only the ropes tied to the notes under the pointer are recomputed. Everything else is standing still. |
 | **Geometry-only undo** | `pushUndoGeom()` §14b | A drag stores four numbers per item instead of the whole board as JSON. |
@@ -2632,6 +2634,9 @@ Every part of that is load-bearing, and 1.3 is why:
   *this* folder's `AppMental Board.exe`, found by path: a copy built in another
   project folder locks its own files, not these. If the paths cannot be read it
   falls back to refusing on the name alone.
+- **Task Manager shows `FileDescription`, not the exe name**, so
+  `win32metadata.FileDescription` is the product name, "Mental Board". It was the
+  package description until 2.1, and the app was listed under that sentence.
 - **It reads the packaged `app.asar` back and checks `MUST_SHIP` is in it.** A
   mistake in `IGNORE` produces a build that packages without complaint,
   launches, and is missing its icons or its translations — which looks like a UI
@@ -2893,7 +2898,10 @@ Six from 2.1 first, because they are the freshest:
   written in. `safeClass()` splits and filters; `al-` is on the list because
   that is the only record of an image's alignment.
 
-- **A far-zoom note has no `.note-body`.** Below `FAR_Z` notes mount as stubs —
+- **A far-zoom note has no `.note-body` — even one that had one a moment ago.**
+  Since 2.2 `restubMounted()` turns finished notes back into stubs on every
+  far-zoom sweep, so an element reference taken before a zoom-out may have lost
+  its body. Below `FAR_Z` notes mount as stubs —
   see §4c — so `els.get(id)` can hand back an element that is a coloured
   rectangle and nothing else. **Anything that reaches for a `.note-body`, a head
   button or a resize handle must go through `ensureMounted(id)`**, which fills a
@@ -3466,6 +3474,10 @@ Six from 2.1 first, because they are the freshest:
 - **`contain: paint` on a note makes it unresizable.** The eight handles and the
   icon badge hang outside the border box on purpose, and paint containment clips
   to it — so they become invisible *and* unhittable. `layout style` only.
+- **The ghost's layers are not escaped, so nothing from the note may reach
+  them but numbers.** `noteGhost()` builds a `background` string; every value
+  in it is a computed px figure or a `--gcN` name. Putting a colour, a class or
+  any text from `n.body` into that string would make note content CSS.
 - **`body.far-zoom` must exempt the note being edited.** It works by taking the
   body out of the layout with `display: none`, and doing that to a focused
   `contenteditable` takes the caret with it — Ctrl+0 mid-sentence would throw
@@ -3497,8 +3509,8 @@ These were considered and left out; they are not oversights.
   language the app speaks, and the content would still be a guess about somebody
   else's week. See §4b.
 - **A far-zoom note is a stub, but the stub is not a virtualised body.** Below
-  `FAR_Z` a note now mounts as the div, its colour, its place and its status
-  pill and nothing else — `makeNote(n, stub)` — with `fillNote()` adding the
+  `FAR_Z` a note now mounts as the div, its colour, its place, its status
+  pill and the ghost of its text (§4c) and nothing else — `makeNote(n, stub)` — with `fillNote()` adding the
   text, the head, the handles and the listeners on the way back in. That took
   fit-everything on 3,000 notes from 330ms to 77ms and a pan frame there from
   9.2ms to 1.5ms. What is still *not* done is virtualising the body of a note

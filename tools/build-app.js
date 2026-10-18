@@ -148,7 +148,10 @@ async function main() {
       quiet: false,
       win32metadata: {
         CompanyName: String(pkg.author).replace(/\s*<.*$/, ''),
-        FileDescription: pkg.description,
+        /* What Task Manager calls the process — it shows FileDescription, not
+           the exe's name. This was the package description, a whole sentence,
+           so the app was listed as "An infinite canvas for your head…". */
+        FileDescription: pkg.productName,
         ProductName: pkg.productName,
         OriginalFilename: EXE
       }

@@ -160,6 +160,7 @@ function exitEdit() {
   editBefore = '';
   if (!editDirty) popUndo();
   editDirty = false;
+  if (farMode) scheduleMount();   // zoomed out mid-edit: it becomes a ghost like the rest
 }
 
 /* --- keyboard inside a note ------------------------------------------- */
