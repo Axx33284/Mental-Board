@@ -19,8 +19,9 @@
     "check": "npm run check:lang && npm run check:icons && npm run check:crlf",
     "build": "npm run check && npm test && node tools/build-app.js",
     "test:store": "node tools/test-store.js",
+    "test:tablet": "node tools/test-tablet.js",
     "test:app": "node tools/test-app.js",
-    "test": "npm run test:store && npm run test:app"
+    "test": "npm run test:store && npm run test:tablet && npm run test:app"
   },
   "devDependencies": {
     "@electron/packager": "^18.3.6",

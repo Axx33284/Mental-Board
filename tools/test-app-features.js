@@ -792,5 +792,94 @@ module.exports = [
       ok(r.def === false, 'off by default');
       ok(r.log.includes('open') && r.log.includes('move') && r.log.includes('back'), 'heard: ' + r.log.join(','));
     });
+  },
+
+  /* ---- 2.2: a phone as a drawing tablet (js/tablet.js, MAP.md §4w) ----
+     The phone's messages are fed to onPadMessage() exactly as main delivers
+     them, already checked. The socket and the QR code are tools/test-tablet.js. */
+  async ({ page, test, ok, BOARDS, fs, path }) => {
+    await test('2.2 a stroke from the phone lands where the window shows, with its pressure, and saves', async () => {
+      const r = await page(async () => {
+        const b = makeBoard('Twenty-two');
+        state.boards.push(b);
+        await switchBoard(b.id);
+        state.view = { x: 100, y: 50, z: 2 }; applyView();
+        const vr = vpRect();
+        onPadMessage({ t: 'down', id: 'p1', x: 0.25, y: 0.5, p: 0.2, tool: 'brush', size: 1, color: 'blue' });
+        const pts = [];
+        for (let i = 1; i <= 10; i++) pts.push(0.25 + i * 0.02, 0.5, 0.2 + i * 0.07);
+        onPadMessage({ t: 'move', id: 'p1', pts });
+        state.view.x += 400; applyView();                 // a pan from the mouse mid-stroke must not bend it
+        onPadMessage({ t: 'up', id: 'p1' });
+        const s = state.ink[0];
+        const want = { x: (0.25 * vr.width - 100) / 2, y: (0.5 * vr.height - 50) / 2 };
+        const out = { n: state.ink.length, tool: s && s.tool, color: s && s.color, x: s && s.pts[0], y: s && s.pts[1], want,
+          wsGrow: !!(s && s.ws && s.ws[Math.floor(s.ws.length / 2)] > s.ws[1]), size: s && s.size };
+        await saveNow();
+        return out;
+      });
+      ok(r.n === 1 && r.tool === 'brush' && r.color === 'blue', JSON.stringify(r));
+      ok(Math.abs(r.x - r.want.x) < 0.2 && Math.abs(r.y - r.want.y) < 0.2, 'mapped through the view at pen-down: ' + JSON.stringify(r));
+      ok(r.wsGrow, 'pressure widens the brush');
+      ok(Math.abs(r.size - 5) < 0.01, 'the on-screen size divided by the zoom: ' + r.size);
+      const dir = fs.readdirSync(BOARDS).find((d) => d.startsWith('Twenty-two'));
+      const ink = JSON.parse(fs.readFileSync(path.join(BOARDS, dir, 'board.json'), 'utf8')).ink;
+      ok(ink.length === 1 && ink[0].tool === 'brush', 'on disk');
+    });
+
+    await test('2.2 the phone erases, undoes only its own strokes, pans and zooms', async () => {
+      const r = await page(() => {
+        const vr = vpRect();
+        // a stroke from the mouse: the phone's undo must leave it alone
+        toggleInk(true); setPen({ tool: 'pen', size: 1 });
+        const at = (x, y) => ({ clientX: vr.left + x, clientY: vr.top + y, pointerId: 7, pointerType: 'mouse', pressure: 0.5, timeStamp: 0, target: $('viewport') });
+        beginInk(at(50, 50)); onInkMove(at(120, 60)); endInkGesture(); toggleInk(false);
+        onPadMessage({ t: 'down', id: 'p2', x: 0.6, y: 0.2, p: 0.5, tool: 'pen', size: 1, color: 'text' });
+        onPadMessage({ t: 'move', id: 'p2', pts: [0.7, 0.2, 0.5, 0.8, 0.2, 0.5] });
+        onPadMessage({ t: 'up', id: 'p2' });
+        const drawn = state.ink.length;
+        onPadMessage({ t: 'undo' });
+        const afterUndo = state.ink.length;
+        onPadMessage({ t: 'undo' }); onPadMessage({ t: 'undo' });
+        const afterMore = state.ink.length;
+        // a brush stroke from the phone, then the phone's eraser swept across it
+        onPadMessage({ t: 'down', id: 'p4', x: 0.3, y: 0.6, p: 0.5, tool: 'brush', size: 1, color: 'red' });
+        onPadMessage({ t: 'move', id: 'p4', pts: [0.35, 0.6, 0.5, 0.4, 0.6, 0.5, 0.45, 0.6, 0.5] });
+        onPadMessage({ t: 'up', id: 'p4' });
+        const hasBrush = state.ink.filter((k) => k.tool === 'brush').length;
+        onPadMessage({ t: 'down', id: 'e1', x: 0.38, y: 0.5, p: 0.5, tool: 'eraser', size: 1, color: 'text' });
+        onPadMessage({ t: 'move', id: 'e1', pts: [0.38, 0.7, 0.5] });
+        onPadMessage({ t: 'up', id: 'e1' });
+        const afterErase = state.ink.filter((k) => k.tool === 'brush').length;
+        undo();
+        const back = state.ink.filter((k) => k.tool === 'brush').length;
+        const x0 = state.view.x, z0 = state.view.z;
+        onPadMessage({ t: 'pan', dx: 0.1, dy: 0 });
+        const panned = state.view.x - x0;
+        onPadMessage({ t: 'zoom', f: 1.5, x: 0.5, y: 0.5 });
+        return { drawn, afterUndo, afterMore, hasBrush, afterErase, back, panned, w: vr.width, zoomed: state.view.z / z0 };
+      });
+      ok(r.afterUndo === r.drawn - 1, 'undo takes the phone stroke: ' + JSON.stringify(r));
+      ok(r.afterMore === r.afterUndo - 1, 'then the earlier phone stroke, never the mouse one: ' + JSON.stringify(r));
+      ok(r.hasBrush === 1 && r.afterErase === 0 && r.back === 1, 'the eraser takes a stroke whole, Ctrl+Z brings it back: ' + JSON.stringify(r));
+      ok(Math.abs(r.panned - 0.1 * r.w) < 0.5, 'one finger pans the window: ' + JSON.stringify(r));
+      ok(Math.abs(r.zoomed - 1.5) < 0.01, 'two zoom');
+    });
+
+    await test('2.2 a board that cannot be edited is never drawn on from the phone', async () => {
+      const r = await page(() => {
+        // as a locked board not opened this session: what canEditHere() refuses
+        const b = activeBoard();
+        b.unreadable = true;
+        const before = state.ink.length;
+        onPadMessage({ t: 'down', id: 'p3', x: 0.5, y: 0.5, p: 0.5, tool: 'pen', size: 1, color: 'text' });
+        onPadMessage({ t: 'move', id: 'p3', pts: [0.6, 0.6, 0.5] });
+        onPadMessage({ t: 'up', id: 'p3' });
+        const ro = !padCanDraw();
+        delete b.unreadable;
+        return { ro, before, after: state.ink.length };
+      });
+      ok(r.ro && r.after === r.before, JSON.stringify(r));
+    });
   }
 ];

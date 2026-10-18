@@ -1,0 +1,326 @@
+<!doctype html>
+<!-- Mental Board — the phone's half of drawing from a phone (2.2, MAP.md §4w).
+
+     Served by src/tablet.js, never loaded by the app window. It holds no text
+     of its own: every word is a `main.pad*` string the app hands in, so it is
+     in the language the app is in. The script's nonce is fresh on every load,
+     and it is the only script the page's CSP lets run.
+
+     The pen draws; fingers move the board on the computer (one pans, two zoom,
+     a two-finger tap undoes); a palm on the glass does nothing. What the phone
+     shows is the outline of the computer's window and a fading echo of what
+     you just drew — the board itself stays on the computer, which is where you
+     look, the way you would with a drawing tablet.
+
+     The three placeholders (the title, the nonce, the strings) are written
+     in capitals between double underscores, and appear nowhere else in this
+     file — tablet.js fills them by plain text replacement. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#121318">
+<title>__TITLE__</title>
+<style>
+  :root { color-scheme: dark; --bg: #121318; --panel: #1c1e26; --line: #343846; --text: #e8e9ee; --dim: #8b8fa0; --accent: #7aa2ff; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font: 13px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; padding-top: max(6px, env(safe-area-inset-top));
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; touch-action: manipulation; }
+  #bar button { appearance: none; border: 1px solid transparent; background: none; color: var(--text); border-radius: 9px;
+    min-width: 38px; height: 38px; padding: 0 6px; display: grid; place-items: center; font: inherit; }
+  #bar button.on { background: rgba(122, 162, 255, .18); border-color: var(--accent); }
+  #bar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .sep { width: 1px; height: 26px; background: var(--line); margin: 0 3px; }
+  .sw { width: 24px; height: 24px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .sz i { display: block; border-radius: 50%; background: currentColor; }
+  #status { margin-inline-start: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--dim);
+    white-space: nowrap; padding: 0 4px; min-width: 0; flex: 1 1 60px; overflow: hidden; }
+  #stText { overflow: hidden; text-overflow: ellipsis; }
+  .dot { flex: none; }
+  #status.ok { color: #6fd08c; } #status.bad { color: #f0a35a; } #status.off { color: #ef6b6b; }
+  #rtt { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #stage { flex: 1; position: relative; display: grid; place-items: center; padding: 10px; touch-action: none; }
+  #frame { position: relative; border: 1px solid var(--line); border-radius: 6px; background: #181a21; touch-action: none; }
+  #frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #hoverDot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; border: 1.5px solid var(--accent); pointer-events: none; display: none; }
+  #msg { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; color: var(--dim); font-size: 15px; pointer-events: none; }
+  #msg.show { display: grid; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button data-tool="pen" class="on"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></button>
+  <button data-tool="marker"><svg viewBox="0 0 24 24"><path d="M5 19h6M9 15l-2-2 9-9 4 4-9 9z" stroke-width="2.6"/></svg></button>
+  <button data-tool="brush"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-7 7c-1 1-3 1-4 0l-2-2c-1-1-1-3 0-4zM7 15c-2 0-3 2-3 5 3 0 5-1 5-3"/></svg></button>
+  <button data-tool="eraser"><svg viewBox="0 0 24 24"><path d="M8 20h12M5 15l9-9 5 5-8 8H8z"/></svg></button>
+  <span class="sep"></span>
+  <button class="sz" data-size="0"><i style="width:4px;height:4px"></i></button>
+  <button class="sz on" data-size="1"><i style="width:8px;height:8px"></i></button>
+  <button class="sz" data-size="2"><i style="width:13px;height:13px"></i></button>
+  <span class="sep"></span>
+  <span id="swatches" style="display:flex;gap:2px"></span>
+  <span class="sep"></span>
+  <button id="undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/></svg></button>
+  <button id="fingers"><svg viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v4c0 4-2 7-6 7s-6-3-7-6l-1-3a1.6 1.6 0 013-1l1 2"/></svg></button>
+  <button id="full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  <span id="status"><span class="dot"></span><span id="stText"></span><span id="rtt"></span></span>
+</div>
+<div id="stage">
+  <div id="frame"><canvas id="cv"></canvas><div id="hoverDot"></div></div>
+  <div id="msg"></div>
+</div>
+<script nonce="__NONCE__">
+'use strict';
+const S = __STRINGS__;
+const $ = (id) => document.getElementById(id);
+const tip = { pen: S.pen, marker: S.marker, brush: S.brush, eraser: S.eraser };
+document.querySelectorAll('[data-tool]').forEach((b) => { b.title = b.ariaLabel = tip[b.dataset.tool] || ''; });
+$('undo').title = $('undo').ariaLabel = S.undo || '';
+$('fingers').title = $('fingers').ariaLabel = S.fingers || '';
+$('full').title = $('full').ariaLabel = S.full || '';
+
+/* ---- what the pen is ---- */
+const pen = { tool: 'pen', size: 1, color: 'text' };
+let fingerDraws = false;
+let aspect = 16 / 10, readOnly = false, palette = [{ k: 'text', c: '#e8e9ee' }];
+const colorOf = (k) => (palette.find((p) => p.k === k) || palette[0]).c;
+function paintBar() {
+  document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === pen.tool));
+  document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('on', +b.dataset.size === pen.size));
+  document.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('on', b.dataset.color === pen.color));
+  $('fingers').classList.toggle('on', fingerDraws);
+}
+function paintSwatches() {
+  const box = $('swatches');
+  box.textContent = '';
+  palette.forEach((p) => {
+    const b = document.createElement('button');
+    b.dataset.color = p.k;
+    b.innerHTML = '<span class="sw"></span>';
+    b.firstChild.style.setProperty('--c', p.c);
+    b.addEventListener('click', () => { pen.color = p.k; if (pen.tool === 'eraser') pen.tool = 'pen'; paintBar(); });
+    box.appendChild(b);
+  });
+  if (!palette.some((p) => p.k === pen.color)) pen.color = 'text';
+  paintBar();
+}
+document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => { pen.tool = b.dataset.tool; paintBar(); }));
+document.querySelectorAll('[data-size]').forEach((b) => b.addEventListener('click', () => { pen.size = +b.dataset.size; paintBar(); }));
+$('undo').addEventListener('click', () => send({ t: 'undo' }));
+$('fingers').addEventListener('click', () => { fingerDraws = !fingerDraws; paintBar(); });
+$('full').addEventListener('click', () => {
+  const d = document;
+  if (d.fullscreenElement) d.exitFullscreen().catch(() => {});
+  else d.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+});
+
+/* ---- the frame: the computer's window, as big as fits ---- */
+const frame = $('frame'), cv = $('cv'), ctx = cv.getContext('2d');
+let box = null;
+function layout() {
+  const st = $('stage').getBoundingClientRect();
+  const W = st.width - 20, H = st.height - 20;
+  let w = W, h = W / aspect;
+  if (h > H) { h = H; w = H * aspect; }
+  frame.style.width = Math.max(10, w) + 'px';
+  frame.style.height = Math.max(10, h) + 'px';
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  box = null;
+}
+const rect = () => box || (box = frame.getBoundingClientRect());
+window.addEventListener('resize', layout);
+const r5 = (v) => Math.round(v * 1e5) / 1e5;
+const norm = (e) => { const r = rect(); return { x: r5((e.clientX - r.left) / r.width), y: r5((e.clientY - r.top) / r.height) }; };
+
+/* ---- the connection ---- */
+const token = (location.pathname.match(/\/t\/([0-9a-f]{32})$/) || [])[1] || '';
+let ws = null, open = false, ended = false, tries = 0;
+let resume = '';
+try { resume = sessionStorage.getItem('mb-resume-' + token) || ''; } catch (_) {}
+function connect() {
+  if (ended) return;
+  setStatus('bad', S.connecting);
+  ws = new WebSocket(`ws://${location.host}/ws/${resume ? 'r/' + resume : token}`);
+  ws.onopen = () => { open = true; tries = 0; setStatus('ok', S.connected); };
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+    if (m.t === 'hello') { resume = m.resume; try { sessionStorage.setItem('mb-resume-' + token, resume); } catch (_) {} }
+    else if (m.t === 'view') {
+      if (Math.abs(m.a - aspect) > 0.001) { aspect = m.a; layout(); }
+      readOnly = !!m.ro;
+      if (m.pal && m.pal.length) { palette = m.pal; paintSwatches(); }
+      showMsg(readOnly ? S.readonly : '');
+    }
+    else if (m.t === 'pong') $('rtt').textContent = Math.max(0, Math.round(performance.now() - m.n)) + ' ms';
+    else if (m.t === 'bye') { ended = true; setStatus('off', S.ended); showMsg(S.ended); }
+  };
+  ws.onclose = () => {
+    open = false;
+    $('rtt').textContent = '';
+    if (ended) return;
+    // refused before it ever opened, with no way back in: this pairing is over
+    if (tries > 4 || (!resume && tries > 1)) { ended = true; setStatus('off', S.ended); showMsg(S.ended); return; }
+    setStatus('bad', S.away);
+    setTimeout(connect, Math.min(4000, 300 * 2 ** tries++));
+  };
+}
+function send(m) { if (open && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+function setStatus(cls, text) { $('status').className = cls; $('stText').textContent = text || ''; }
+function showMsg(text) { $('msg').textContent = text || ''; $('msg').classList.toggle('show', !!text); }
+setInterval(() => send({ t: 'ping', n: performance.now() }), 2000);
+
+/* ---- the pen ----
+   A stroke is down → move… → up, each move carrying every point the browser
+   coalesced since the last event, so a fast line on a 240 Hz digitiser
+   arrives whole. Sent at once rather than batched to a frame: a frame of
+   batching is 8–16 ms of lag added for nothing, and a socket with Nagle off
+   handles a few hundred small messages a second without noticing. */
+let stroke = null;          // { id, pid, tool, pts: [[x,y]] }
+let lastPen = 0;            // when the pen was last near the glass — touches then are a palm
+let sid = 0;
+const echo = [];            // what was just drawn, fading out
+const drawsWith = (e) => e.pointerType === 'pen' || e.pointerType === 'mouse' || (e.pointerType === 'touch' && fingerDraws);
+const pressure = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? r5(e.pressure) : -1);
+
+frame.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'pen') lastPen = performance.now();
+  if (!drawsWith(e)) { touchDown(e); return; }
+  if (stroke || readOnly || !open) return;
+  e.preventDefault();
+  try { frame.setPointerCapture(e.pointerId); } catch (_) {}
+  /* The S Pen's side button, or an eraser end, erases for this one stroke —
+     the way the button does on a Wacom pen. Chrome reports the S Pen button
+     as the secondary button (2) and an eraser end as 32. */
+  const tool = (e.buttons & 2) || (e.buttons & 32) ? 'eraser' : pen.tool;
+  const p = norm(e);
+  stroke = { id: 's' + Date.now().toString(36) + (sid++), pid: e.pointerId, tool, pts: [[p.x, p.y]], color: colorOf(pen.color) };
+  send({ t: 'down', id: stroke.id, x: p.x, y: p.y, p: pressure(e), tool, size: pen.size, color: pen.color });
+  $('hoverDot').style.display = 'none';
+}, { passive: false });
+
+frame.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'pen') lastPen = performance.now();
+  if (stroke && e.pointerId === stroke.pid) {
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    const list = evs.length ? evs : [e];
+    const pts = [];
+    for (const q of list) { const p = norm(q); pts.push(p.x, p.y, pressure(q)); stroke.pts.push([p.x, p.y]); }
+    send({ t: 'move', id: stroke.id, pts });
+    paintEcho();
+    return;
+  }
+  // the S Pen hovering a few millimetres off the glass: a cursor on the computer
+  if (e.pointerType === 'pen' && !e.buttons) { hover(e); return; }
+  if (e.pointerType === 'touch') touchMove(e);
+});
+function endStroke(e) {
+  if (stroke && e.pointerId === stroke.pid) {
+    send({ t: 'up', id: stroke.id });
+    if (stroke.tool !== 'eraser') echo.push({ pts: stroke.pts, color: stroke.color, size: pen.size, tool: stroke.tool, at: performance.now() });
+    stroke = null;
+    paintEcho();
+    return;
+  }
+  if (e.pointerType === 'touch') touchUp(e);
+}
+frame.addEventListener('pointerup', endStroke);
+frame.addEventListener('pointercancel', endStroke);
+frame.addEventListener('pointerleave', (e) => { if (e.pointerType === 'pen' && !stroke) { send({ t: 'leave' }); $('hoverDot').style.display = 'none'; } });
+frame.addEventListener('contextmenu', (e) => e.preventDefault());
+
+let hoverQ = null;
+function hover(e) {
+  const p = norm(e);
+  const d = $('hoverDot');
+  d.style.display = 'block'; d.style.left = p.x * 100 + '%'; d.style.top = p.y * 100 + '%';
+  if (!hoverQ) requestAnimationFrame(() => { send(Object.assign({ t: 'hover' }, hoverQ)); hoverQ = null; });
+  hoverQ = p;
+}
+
+/* ---- fingers: move the board on the computer, never draw on it ----
+   Palm rejection is two rules. A touch while the pen has been near the glass
+   in the last 600 ms is a hand resting on it, and so is a contact wider than
+   a fingertip (Android reports the contact's size). Both are ignored for as
+   long as they stay down. */
+const touches = new Map();  // pointerId -> { x, y, sx, sy, palm }
+let tapStart = 0, tapMoved = false, navQ = null;
+function touchDown(e) {
+  const palm = performance.now() - lastPen < 600 || Math.max(e.width || 0, e.height || 0) > 48;
+  const p = norm(e);
+  touches.set(e.pointerId, { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, palm });
+  const live = [...touches.values()].filter((t) => !t.palm);
+  if (live.length === 2) { tapStart = performance.now(); tapMoved = false; }
+  try { frame.setPointerCapture(e.pointerId); } catch (_) {}
+}
+function touchMove(e) {
+  const t = touches.get(e.pointerId);
+  if (!t || t.palm || stroke) return;
+  const live = [...touches.entries()].filter(([, v]) => !v.palm);
+  const before = live.map(([, v]) => ({ x: v.x, y: v.y }));
+  const p = norm(e);
+  if (Math.hypot(e.clientX - t.sx, e.clientY - t.sy) > 10) tapMoved = true;
+  t.x = p.x; t.y = p.y;
+  const after = live.map(([, v]) => ({ x: v.x, y: v.y }));
+  const q = navQ || (navQ = { dx: 0, dy: 0, f: 1, cx: 0.5, cy: 0.5 });
+  if (live.length === 1) { q.dx += after[0].x - before[0].x; q.dy += after[0].y - before[0].y; }
+  else if (live.length >= 2) {
+    const r = rect();
+    const dist = (a, b) => Math.hypot((a.x - b.x) * r.width, (a.y - b.y) * r.height) || 1;
+    const c0 = { x: (before[0].x + before[1].x) / 2, y: (before[0].y + before[1].y) / 2 };
+    const c1 = { x: (after[0].x + after[1].x) / 2, y: (after[0].y + after[1].y) / 2 };
+    q.dx += c1.x - c0.x; q.dy += c1.y - c0.y;
+    q.f *= dist(after[0], after[1]) / dist(before[0], before[1]);
+    q.cx = c1.x; q.cy = c1.y;
+  }
+  if (!q.queued) {
+    q.queued = true;
+    requestAnimationFrame(() => {
+      const n = navQ; navQ = null;
+      if (Math.abs(n.dx) + Math.abs(n.dy) > 0) send({ t: 'pan', dx: r5(n.dx), dy: r5(n.dy) });
+      if (Math.abs(n.f - 1) > 0.002) send({ t: 'zoom', f: Math.round(n.f * 1e4) / 1e4, x: r5(n.cx), y: r5(n.cy) });
+    });
+  }
+}
+function touchUp(e) {
+  const t = touches.get(e.pointerId);
+  touches.delete(e.pointerId);
+  // two fingers down and up again without moving: undo, as in most drawing apps
+  if (t && !t.palm && tapStart && !tapMoved && performance.now() - tapStart < 300) { send({ t: 'undo' }); tapStart = 0; }
+  if (!touches.size) tapStart = 0;
+}
+
+/* ---- the echo: what you just drew, for a second, so the pen feels attached ---- */
+const W_PX = { pen: [2, 4, 8], marker: [12, 20, 32], brush: [5, 10, 20] };
+let echoRaf = 0;
+function paintEcho() { if (!echoRaf) echoRaf = requestAnimationFrame(drawEcho); }
+function drawEcho() {
+  echoRaf = 0;
+  const r = rect(), now = performance.now();
+  ctx.clearRect(0, 0, r.width, r.height);
+  for (let i = echo.length - 1; i >= 0; i--) if (now - echo[i].at > 1400) echo.splice(i, 1);
+  const all = echo.map((s) => ({ s, a: 1 - (now - s.at) / 1400 }));
+  if (stroke && stroke.tool !== 'eraser') all.push({ s: { pts: stroke.pts, color: stroke.color, size: pen.size, tool: stroke.tool }, a: 1 });
+  for (const { s, a } of all) {
+    ctx.globalAlpha = Math.max(0, a) * (s.tool === 'marker' ? 0.4 : 1);
+    ctx.strokeStyle = s.color; ctx.lineWidth = W_PX[s.tool][s.size] * 0.7; ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.beginPath();
+    s.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * r.width, y * r.height) : ctx.moveTo(x * r.width, y * r.height)));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  if (echo.length || stroke) paintEcho();
+}
+
+layout();
+paintSwatches();
+if (token) connect(); else { ended = true; setStatus('off', S.ended); showMsg(S.ended); }
+</script>
+</body>
+</html>

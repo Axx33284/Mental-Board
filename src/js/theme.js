@@ -197,7 +197,11 @@ const MAIN_KEYS = [
   'main.exportBoard', 'main.importBoard', 'main.exportImage',
   'main.backupFolder', 'main.insertImage',
   'main.filterJson', 'main.filterPng', 'main.filterImages',
-  'main.crashTitle', 'main.crashBody', 'main.crashOk'
+  'main.crashTitle', 'main.crashBody', 'main.crashOk',
+  // the phone's drawing page (src/tablet/phone.html) speaks the app's language too
+  'main.padTitle', 'main.padConnecting', 'main.padConnected', 'main.padAway',
+  'main.padEnded', 'main.padReadonly', 'main.padPen', 'main.padMarker',
+  'main.padBrush', 'main.padEraser', 'main.padUndo', 'main.padFingers', 'main.padFull'
 ];
 function sendMainStrings() {
   if (!WIN || !WIN.setStrings) return;

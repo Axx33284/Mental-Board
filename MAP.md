@@ -51,6 +51,12 @@ be drawn on — pen, marker, brush, eraser (`js/ink.js`). Menus can make sounds
 machine. The default accent is Mono — white on dark, black on light — and a
 theme change fades.
 
+**2.2, so far.** A phone with a pen is a wireless drawing tablet for the
+board: Settings ▸ Extra ▸ Pair a phone shows a QR code, the phone's browser
+opens a page this computer serves on the LAN, and the pen draws on the part of
+the board the window shows, in real time (§4x, `src/tablet.js`,
+`js/tablet.js`).
+
 The things that make it more than a note wall:
 
 | Feature | Where it lives |
@@ -120,6 +126,7 @@ The things that make it more than a note wall:
 | **Menu sounds** | js/sound.js §4v |
 | **Three graphics tiers, picked for the machine** | js/theme.js + js/view.js §4c |
 | **Mono accent, and a theme change that fades** | js/helpers.js + js/theme.js §4v |
+| **A phone with a pen as a wireless drawing tablet** | src/tablet.js + js/tablet.js §4x |
 
 ---
 
@@ -140,6 +147,9 @@ src/          the app — this is what gets packaged
   store.js      the My Boards folder — every read and write of user data (§3)
   sdocx.js      reads a Samsung Notes file; required by store.js       (§4w)
   preload.js    the bridge: a list of IPC calls, no disk work of its own
+  tablet.js     main: the LAN server a phone draws through (§4x)
+  qr.js         main: the QR code of its pairing address (§4x)
+  tablet/       phone.html — the page the phone opens (§4x)
 tools/        build + checks, never shipped
 admin/        double-clickable .cmd wrappers
 App/          the built app (generated; deleted and rewritten by every build)
@@ -150,9 +160,12 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/main.js` | ~1000 | Electron main. Window, native theme, the tray and the quick-capture hotkey, the loopback player origin, the `mbf://` protocol that serves a board's own files, the store's IPC handlers, the dialogs, the GPU check, the `shell:open-local` guard (§4m), the JSON Canvas dialogs (§4t), and the permission policy (§7). |
 | `src/store.js` | ~860 | **The My Boards folder.** Runs in main. Scans the folder into boards, writes settings.json and each board.json atomically, lays a board's folder out (name, group, rename, move), keeps the files a board carries, copies them between boards, exports and imports whole boards, mirrors the folder for backup (never into itself), writes and reads JSON Canvas (§4t), reads a Samsung Notes file for a board and writes its pictures into that board's folder (`readSamsung`, `attachBuffer`, §4w), and migrates a 1.x board.json once. See §3. |
 | `src/sdocx.js` | ~520 | **A Samsung Notes .sdocx, decoded.** Runs in main, plain Node: its own bounded zip reader (zlib), then `note.note` (title, rich text), the pages in `pageIdInfo.dat` order, their layers and object records — strokes, shapes and lines, text boxes, pictures — and `media/mediaInfo.dat`. Everything sized is read from its size and anything not understood is counted and skipped. No dependency; written from a published description of the format, see §4w. |
-| `src/preload.js` | ~110 | The bridge. Five `contextBridge` globals, every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
+| `src/preload.js` | ~130 | The bridge. Six `contextBridge` globals (`mbPad` since 2.2), every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
+| `src/tablet.js` | ~360 | **A phone as a drawing tablet** (2.2). Runs in main, plain Node: picks the LAN address, serves the phone's page, speaks just enough WebSocket, enforces the pairing (one token, one phone, `resume` after a drop, Origin, private peers only), checks every message (`clean()`) and stops by itself. See §4x. |
+| `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
+| `src/tablet/phone.html` | ~330 | The page the phone opens: pen in, pressure, hover, palm rejection, fingers to pan and zoom, a fading echo. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | ~15000 | All app logic, in 22 plain scripts sharing one global scope. See §4. |
+| `src/js/*.js` | ~15300 | All app logic, in 23 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
@@ -163,11 +176,12 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/fetch-icons.js` | 203 | Downloads the icon set into `assets/icons.js`. Run via `npm run icons`. Needs network; excluded from the package. |
 | `tools/fetch-fonts.js` | 87 | Downloads the Arabic face into `assets/fonts/`. Run via `npm run fonts`. Needs network; excluded from the package. |
 | `tools/app-source.js` | 79 | The app's scripts as one string, in `index.html`'s order. Both checkers read it, so neither keeps its own copy of the load order — the copy is what drifts. Also exposes `mainJs()`: `main.js` and `preload.js` are *not* in that order (they do not run in the page) but main draws the tray, the notification and every native dialog, so its strings have to be checked too. |
-| `tools/check-lang.js` | 115 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Covers the fifteen renderer scripts **and `main.js` + `preload.js`**. Run via `npm run check:lang`. |
+| `tools/check-lang.js` | 115 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Covers the renderer scripts **and the main-process files** — `main.js`, `preload.js`, `store.js`, and since 2.2 `tablet.js` and `qr.js` (`MAIN_FILES` in `tools/app-source.js`). Run via `npm run check:lang`. |
 | `tools/check-icons.js` | 95 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
+| `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~240 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last test fails on any that is not expected. `npm run test:app`. |
 | `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
@@ -202,7 +216,7 @@ yourself, then `saveSoon()`.** Notes and frames live in *world* coordinates;
 `#world` is a single `translate() scale()` transform, so panning and zooming
 never touch individual elements.
 
-### The five preload globals
+### The six preload globals
 
 | Global | Gives you |
 |--------|-----------|
@@ -210,6 +224,7 @@ never touch individual elements.
 | `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
 | `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
+| `window.mbPad` | `start(address)` `stop()` `send(msg)` `addresses()` `onState(cb)` `onMessage(cb)` — the phone as a tablet (§4x). The renderer never sees the token and cannot pick a port; `send` passes only the `view` message. |
 | `window.mbSys` | `info()` → `{ compositing, software, softwareRender }` — whether Chromium is drawing this window without a GPU. See §4c. |
 
 **Every one of these is a thin IPC call; the work is in `src/store.js`, in
@@ -236,7 +251,7 @@ skipped: true }` / `{ ok: false, error }` — never `null`, which used to mean
 both "already done today" and "the write failed". `maybeSnapshot()` latches a
 board id only after a success, so a failed snapshot is retried.
 
-All five are absent when the page is opened in a plain browser; the renderer
+All six are absent when the page is opened in a plain browser; the renderer
 falls back to `localStorage` (the 1.x one-document shape) and degrades the file
 features. That fallback is deliberate — it makes the UI debuggable without
 launching Electron.
@@ -599,7 +614,7 @@ Two traps that are already handled:
 ## 4. `src/js/` — the app, in twenty-two files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), and 2.2 one (`samsung.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`) and 2.2 two (`samsung.js`, `tablet.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -628,6 +643,7 @@ no bundler and no build step — the only thing joining them is the order
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
+| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, `padUndo`, `padPan`, the hover ring). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
 
 ### The load order is the only contract
@@ -1754,6 +1770,151 @@ app's glyphs (`--ico-event`, `--ico-more`, built in `paintStaticIcons()`).
 
 ---
 
+## 4x. A phone as a drawing tablet (2.2)
+
+Settings ▸ Extra ▸ **Pair a phone**. A QR code appears; the phone's camera
+opens a page this computer serves, and from then on the pen on the phone draws
+on the board here, in real time, with no cable and nothing installed on the
+phone. Built for a Galaxy S22 Ultra with its S Pen; works with any phone or
+tablet browser that has Pointer Events (a finger can draw too, if asked).
+
+```
+phone browser ──WebSocket over Wi-Fi──▶ src/tablet.js (main) ──IPC──▶ js/tablet.js (renderer) ──▶ js/ink.js
+ src/tablet/phone.html                   checks every message      onPadMessage()               the same stroke,
+ pointer events, pressure                one phone, one token      the window → world            undo step and save
+```
+
+| Piece | File | Runs in |
+|---|---|---|
+| The LAN server, the pairing, a 30-line WebSocket, `clean()` | `src/tablet.js` | main (plain Node — tested without Electron) |
+| The QR code of the pairing address | `src/qr.js` | main (pure; byte mode, level M, versions 1–6) |
+| The page the phone opens | `src/tablet/phone.html` | the phone |
+| Pairing panel, strokes in, hover ring, pan/zoom, the phone's undo | `js/tablet.js` | the renderer |
+| The bridge | `window.mbPad` in `preload.js`: `start` `stop` `send` `addresses` `onState` `onMessage` | — |
+| Strings | `main.pad*` (the phone page, via `MAIN_KEYS`) and `set.pad*` / `pad.*` | — |
+
+### Where a stroke lands: the phone is the window
+
+The phone's drawing area has the shape of the board's viewport on the PC, and
+a point a third of the way across the phone lands a third of the way across
+what you can see on the PC, at the zoom you are at. That is how a Wacom-style
+tablet works and it needs **no picture of the board on the phone**: you look
+at the computer, the S Pen's hover (Chrome reports it as `pointermove` with no
+buttons) shows as a ring on the PC (`#padCursor`), and fingers move the board
+under it — one pans, two pinch-zoom, a two-finger tap undoes. The phone shows
+only a frame and a 1.4-second fading echo of the line just drawn, so the pen
+feels attached even though you are not looking at it.
+
+The view is snapshotted at pen-down (`map` in `beginPadStroke`), so a pan from
+the mouse half way through a stroke cannot bend it. Widths are the ink bar's
+on-screen sizes divided by the zoom, exactly as `beginInk()` does — a stroke
+from the phone is indistinguishable on disk from one drawn with the mouse.
+Pressure comes through as `p` (0–1; −1 means "none", a finger or a mouse) and
+drives the brush through the existing `brushWidths()`.
+
+Considered and left: mapping the phone to a fixed region of the board, or to
+the whole board. Both need the phone to show the board (a picture stream, and
+the board's content leaving the PC), and a fixed region is one more thing to
+set up before you can draw. "Handwrite a note" — ink that belongs to a note
+rather than the board — is the obvious next step and needs a note that can
+hold strokes; it is not in this prototype.
+
+### Palm rejection, the pen button, the eraser
+
+- **Only the pen draws.** `pointerType === 'pen'` (and `mouse`, so a desktop
+  browser can stand in during testing). A finger moves the board unless "Let a
+  finger draw" is on.
+- **A touch within 600 ms of the pen being near the glass is a palm**, and so
+  is a contact wider than 48 px. Both are ignored for as long as they stay
+  down. The S Pen's hover is what makes the first rule work: the pen is "near"
+  before it touches.
+- **The S Pen's side button erases** for that one stroke — Chrome reports it
+  as the secondary button (`buttons & 2`); an eraser end is `buttons & 32`.
+- The eraser from the phone takes whole strokes along the whole sweep, like
+  `eraseAt()`, and takes its undo step at the first stroke it actually
+  removes, so a sweep across nothing leaves no step to pop.
+- **The phone's undo takes back the phone's own last stroke** (`padMine`). It
+  never touches the board's undo stack, which would let a phone undo a note
+  the person at the keyboard just deleted. Ctrl+Z on the PC undoes phone
+  strokes like any others (each is an `ink` step).
+
+### Security: a listening socket on the LAN, made boring
+
+All of it is in `src/tablet.js`'s header; each point has a test in
+`tools/test-tablet.js`.
+
+- **Off by default, never persisted, and it stops by itself.** Nothing listens
+  until Pair. It stops on Stop, on quit, on a renderer reload or crash
+  (`did-start-navigation` main frame, `render-process-gone`), five minutes
+  after Pair if nobody scanned, and a minute after the phone drops off if it
+  does not come back. There is no setting to leave on by accident.
+- **One phone, one use of the token.** 128 random bits in the QR code open
+  exactly one WebSocket. That socket is handed a second secret, `resume`, the
+  only way back in after a Wi-Fi blip (the page keeps it in `sessionStorage`).
+  A photo of the code taken after pairing opens nothing.
+- **Bound to one private IPv4 address**, never `0.0.0.0`; a peer outside
+  10/8, 172.16/12, 192.168/16 (or loopback) is dropped on connect. With more
+  than one adapter the panel offers a choice; Wi-Fi is ranked first and
+  Hyper-V/WSL/VPN adapters last.
+- **The Origin of the upgrade must be the page's own** — a page from another
+  site in a browser on the same network cannot open the socket.
+- **It serves one page and no files.** The page is read once from a fixed
+  path; every other URL is a 404. The page has its own CSP (`script-src` a
+  per-load nonce, `connect-src` exactly its own `ws://`), and the strings are
+  injected with `<` escaped so a translation cannot close the script.
+- **The phone can only send.** Nothing about the board goes to it: the window's
+  aspect ratio, whether the board can be drawn on, and the nine ink colours.
+  Someone who did get in could scribble; they could not read a note.
+- **Every message is re-checked in main** (`clean()`): known kinds, finite
+  clamped numbers, ids `[\w-]{1,24}`, colours `text`/a name/`#rrggbb`, 64 KB a
+  frame, 500 messages a second. The renderer still refuses a board that
+  cannot be edited (`padCanDraw()`, a toast-free `canEditHere()`).
+- **Plain `http`/`ws`, on purpose.** A self-signed certificate is a full-page
+  warning on the phone at every pairing, and what crosses the network is pen
+  positions on the user's own Wi-Fi. The cost: someone sniffing the same Wi-Fi
+  could see strokes and the token, and the phone page has no secure context —
+  so no Wake Lock (keep the phone's screen awake yourself while drawing).
+
+### The Windows firewall
+
+Listening on a LAN address makes Windows Defender Firewall ask, the first time,
+whether `Mental Board.exe` (or `electron.exe` under `npm start`) may accept
+connections. The panel says what to answer — **allow on private networks**.
+The app never touches firewall rules itself: no installer, no `netsh`, no
+elevation (CLAUDE.md, MAP.md §6). If the dialog was dismissed, Windows blocks
+the app silently and the phone just never connects; and on a network Windows
+classifies as **Public** inbound connections are blocked whatever was chosen.
+The fix for both is in Windows Security ▸ Firewall ▸ Allow an app. A connection
+from the PC itself (a desktop browser standing in for the phone) does not go
+through the firewall, so it proves nothing about this — test with a real
+phone once.
+
+### Latency
+
+Pen events are sent the moment they arrive, each carrying every point
+`getCoalescedEvents()` gathered (an S Pen samples at 240 Hz; the S22 Ultra's
+screen runs at 120), not batched to a frame — a frame of batching is 8–16 ms of
+lag for nothing. The server sets `setNoDelay(true)` so Nagle does not hold
+small writes back, answers the page's 2-second ping itself (the RTT shown on
+the phone is the network, not the renderer), and the renderer paints the live
+stroke on the next animation frame. On a home Wi-Fi network the round trip is
+a few milliseconds; the spikes, when they come, are the phone's Wi-Fi power
+saving, which a steady stream of pen events mostly keeps awake.
+
+### Verified
+
+`npm test` covers the encoder (every length 1–106 read back with the RS
+syndromes checked), the server (`tools/test-tablet.js`), and the renderer
+(three 2.2 tests in `test-app-features.js`). By hand, in `npm run sandbox` with
+a desktop browser standing in for the phone on the PC's Wi-Fi address: pen,
+brush with synthetic pressure, hover ring, palm rejected, one-finger pan,
+pen-button erase, two-finger-tap undo, Stop closing the port and telling the
+phone. The QR code was decoded by an independent decoder (jsQR). **Not yet
+verified: a real S Pen on a real S22 Ultra over Wi-Fi, and the firewall
+prompt.**
+
+---
+
 ## 4o. Lining a note up with its neighbours
 
 `guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
@@ -2268,7 +2429,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row. Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c). Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
@@ -2628,8 +2789,9 @@ That is also the answer to "how do I look at the app without installing it".
 | The tests (store, then the real app) | `npm test` |
 | **Update the app you double-click** | **`npm run build`** |
 
-**`npm test` is two runs.** `tools/test-store.js` requires store.js fresh per
-test against a temp folder and looks at the disk. `tools/test-app.js` starts
+**`npm test` is three runs.** `tools/test-store.js` requires store.js fresh per
+test against a temp folder and looks at the disk. `tools/test-tablet.js` drives
+the phone-as-tablet server and the QR encoder in plain Node on 127.0.0.1 (§4x). `tools/test-app.js` starts
 Electron on this repo with a throwaway `--user-data-dir` and a random debug
 port, seeds a board that will not parse, waits for `applySaveResult` to exist,
 then evaluates each test *in the page* over CDP — any app global can be called
@@ -2774,6 +2936,24 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+Five from 2.2's phone-as-tablet first (§4x):
+
+- **An http server's sockets are half-open.** A WebSocket peer that hangs up
+  is heard as `end`, and `close` never comes until this side ends too.
+  `src/tablet.js` listens for both; with only `close` a dropped phone stayed
+  "connected" and its minute to come back never started.
+- **The bytes that arrive with a 101 are in the `upgrade` event's `head`.** A
+  test client that only listens for `data` misses the server's first frame.
+- **`canEditHere()` toasts.** Anything that asks it on a timer — the phone's
+  once-a-second view check — shows the toast once a second on a locked board.
+  `padCanDraw()` is the silent version.
+- **`did-start-loading` fires for iframes.** Stopping the pairing on it would
+  end it whenever a video player loaded; main stops on a main-frame
+  `did-start-navigation` instead.
+- **A template placeholder named in the template's own comment is replaced
+  there** — `String.replace` with a string takes the first match. The phone
+  page's comment describes its placeholders without spelling them.
 
 Six from 2.1 first, because they are the freshest:
 

@@ -82,6 +82,9 @@ const IGNORE = [
    glyphs and every string showing its own key. Checked, not assumed. */
 const MUST_SHIP = [
   '/src/main.js', '/src/preload.js', '/src/store.js', '/src/sdocx.js', '/src/index.html',
+  /* main require()s these at load (2.2), and the page is read when a phone
+     pairs: miss any of them and the app will not start, or pairing fails. */
+  '/src/tablet.js', '/src/qr.js', '/src/tablet/phone.html',
   /* One from each half of the split app, and the two ends of each load order:
      the first and last script, the first and last stylesheet. A mistake in
      IGNORE that swallowed src/js or src/css would take one of these with it. */

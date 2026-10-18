@@ -1035,6 +1035,7 @@ function init() {
   wireColsBar();
   wireSounds();
   wireKeySounds();
+  wirePad();
   watchVpRect();
   wireExtras();
   paintStaticIcons();
@@ -1461,6 +1462,9 @@ const STATIC_ICONS = [
   ['label:has([data-t="set.keySounds"]) .row-ic', 'keyboard'],
   ['label:has([data-t="set.keyVol"]) .row-ic', 'graphic_eq'],
   ['label:has([data-t="set.cork"]) .row-ic', 'push_pin'],
+  ['h3:has([data-t="set.pad"]) .sec-ic', 'draw'],
+  ['label:has([data-t="set.padPair"]) .row-ic', 'smartphone'],
+  ['#padBtn .b-ic', 'wifi'],
   ['#btnResetAll .b-ic', 'restart_alt'],
   ['label:has([data-t="set.soundVol"]) .row-ic', 'graphic_eq'],
   ['#setGuides + .row-ic', 'straighten'],

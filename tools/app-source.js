@@ -65,7 +65,7 @@ function appCss() {
    out of the checkers meant every string in them was invisible to check-lang,
    so the rule that no English may be hardcoded held everywhere except the one
    process that talks to the operating system. */
-const MAIN_FILES = ['main.js', 'preload.js', 'store.js'];
+const MAIN_FILES = ['main.js', 'preload.js', 'store.js', 'tablet.js', 'qr.js'];
 function mainFiles() {
   return MAIN_FILES.filter((p) => fs.existsSync(path.join(SRC, p)));
 }

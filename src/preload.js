@@ -134,3 +134,18 @@ contextBridge.exposeInMainWorld('mbTheme', {
 contextBridge.exposeInMainWorld('mbSys', {
   info: () => ipcRenderer.sendSync('sys:info')
 });
+
+/* A phone as a drawing tablet (2.2, src/tablet.js, MAP.md §4w). `start` opens
+   the pairing and resolves { ok, url, qr, address, addresses, until } or
+   { ok: false, error }; the renderer is never told the token by any other
+   route and cannot choose a port. `onState` hears waiting / connected / away /
+   off, `onMessage` hears the phone's strokes, already checked in main. `send`
+   tells the phone the window's shape and colours — nothing else gets through. */
+contextBridge.exposeInMainWorld('mbPad', {
+  start: (address) => ipcRenderer.invoke('pad:start', address || ''),
+  stop: () => ipcRenderer.send('pad:stop'),
+  send: (msg) => ipcRenderer.send('pad:send', msg),
+  addresses: () => ipcRenderer.invoke('pad:addresses'),
+  onState: (cb) => ipcRenderer.on('pad:state', (_e, s) => cb(s)),
+  onMessage: (cb) => ipcRenderer.on('pad:msg', (_e, m) => cb(m))
+});

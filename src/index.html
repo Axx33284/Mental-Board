@@ -772,6 +772,28 @@
             </div>
           </div>
           <p class="set-note dim sub" data-t="set.corkHint"></p>
+
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.pad"></span></h3>
+          <!-- A phone as a drawing tablet (2.2, js/tablet.js + src/tablet.js,
+               MAP.md §4w). Nothing listens until Pair is pressed; there is no
+               setting to persist, on purpose — every pairing is asked for. -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.padPair"></span></label>
+            <button class="btn small" id="padBtn"><span class="b-ic"></span><span id="padBtnLabel" data-t="set.padStart"></span></button>
+          </div>
+          <div class="pad-box hidden" id="padBox">
+            <div class="pad-qr" id="padQr"></div>
+            <div class="pad-info">
+              <p class="pad-status" id="padStatus"></p>
+              <p class="pad-url" id="padUrl"></p>
+              <div class="set-row hidden" id="padAddrRow">
+                <label><span data-t="set.padAddress"></span></label>
+                <span class="sel-wrap"><select id="padAddr" class="sel" data-t-aria="set.padAddress"></select><span class="sel-chev"></span></span>
+              </div>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.padHint"></p>
+          <p class="set-note dim sub" data-t="set.padFirewall"></p>
         </section>
 
         <section class="set-sec" data-pane="shortcuts">
@@ -1096,6 +1118,7 @@
 <script src="js/canvas.js"></script>
 <script src="js/samsung.js"></script>
 <script src="js/views.js"></script>
+<script src="js/tablet.js"></script>
 <script src="js/init.js"></script>
 </body>
 </html>
