@@ -556,6 +556,28 @@ module.exports = [
       ok(r.after.kids && r.after.grids === 1, 'mended: ' + JSON.stringify(r.after));
     });
 
+    await test('2.3 a formula is stored as its LaTeX, drawn by KaTeX, and a table always has a line under it', async () => {
+      const r = await page(() => {
+        const n = state.notes.find((x) => x.id === 'rc');
+        n.body = '<p>Area <span class="mb-math" data-tex="\\pi r^2"></span> and <span class="mb-math" data-tex="\\ce{H2SO4}"></span></p>' +
+          '<div class="mb-math mb-math-block" data-tex="\\frac{a}{b}"></div><p>x<sup>2</sup> H<sub>2</sub>O</p>' +
+          '<table class="mb-table"><tbody><tr><td>1</td></tr></tbody></table>';
+        render(); enterEdit(n);
+        const drawn = editing.querySelectorAll('.mb-math > .mx-face .katex').length;
+        const caret = getSelection().anchorNode;
+        const caretUnder = !!caret && (caret.nodeName === 'P' || caret.parentNode.nodeName === 'P') && editing.lastElementChild.tagName === 'P';
+        // a pasted formula keeps its LaTeX and loses KaTeX's markup
+        const pasted = sanitize('<span class="mb-math" data-tex="a^n"><span class="katex">junk</span></span><sup>3</sup>');
+        exitEdit();
+        return { drawn, caretUnder, stored: n.body, pasted };
+      });
+      ok(r.drawn === 3, 'three formulas drawn: ' + r.drawn);
+      ok(!/katex|mx-face/.test(r.stored), 'the drawing is not stored: ' + r.stored);
+      ok(/data-tex="\\pi r\^2"/.test(r.stored) && /<sub>2<\/sub>/.test(r.stored), 'LaTeX and sub/sup kept: ' + r.stored);
+      ok(r.caretUnder && /<\/table><p>/.test(r.stored), 'a line under the table: ' + r.stored.slice(-60));
+      ok(/data-tex="a\^n"/.test(r.pasted) && /<sup>3<\/sup>/.test(r.pasted), 'a paste keeps the formula: ' + r.pasted);
+    });
+
     await test('2.1 a locked workflow is passed over by Ctrl+A and stays locked on disk', async () => {
       const r = await page(async () => {
         lockFrame('rf');

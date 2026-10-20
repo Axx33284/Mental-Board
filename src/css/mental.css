@@ -1205,3 +1205,81 @@ body[data-perf="lite"]:is([data-cork="cork"], [data-cork="wood"]) .lk-dot { filt
   --gc3: color-mix(in srgb, currentColor 90%, transparent);
 }
 .note.is-done .note-ghost { opacity: .55; }
+
+/* ─────────────── 67. maths, chemistry and study notes (2.3) ───────────────
+   A checkbox that sits on the middle of its first line whatever the text
+   size: `1lh` is the line's own height, so a heading or a 30px run inside an
+   item no longer pushes the box up against the top of the line. The tick is
+   one mask centred in the box rather than a rotated border placed by eye,
+   which is what put it to the left of centre. */
+.note-body ul.mb-todo > li::before {
+  top: calc(.5lh - 7.5px); left: 0; inset-inline-start: 0;
+  box-sizing: border-box;
+}
+.note-body ul.mb-todo > li.done::after {
+  top: calc(.5lh - 7.5px); left: 0; inset-inline-start: 0;
+  width: 15px; height: 15px; border: 0; transform: none;
+  background: var(--accent-ink);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.4 8.3l3 3 6.2-6.4' fill='none' stroke='black' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 13px 13px no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.4 8.3l3 3 6.2-6.4' fill='none' stroke='black' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 13px 13px no-repeat;
+}
+/* an icon in the text sits on the middle of the letters, not on the baseline */
+.note-body svg.mb-ic { vertical-align: middle; position: relative; top: -.08em; }
+.note-body .mb-callout { display: flow-root; }
+.note-body .mb-callout > svg.mb-ic:first-child { top: -.1em; margin-inline-end: .1em; }
+
+/* Lists numbered other ways, and outlines that step down by themselves:
+   1 → a → i for numbers, • → ◦ → ▪ for bullets. A class on the list wins. */
+.note-body ol ol { list-style-type: lower-alpha; }
+.note-body ol ol ol { list-style-type: lower-roman; }
+.note-body ul:not(.mb-todo) ul:not(.mb-todo) { list-style-type: circle; }
+.note-body ul:not(.mb-todo) ul:not(.mb-todo) ul:not(.mb-todo) { list-style-type: square; }
+.note-body ol.mb-ol-la { list-style-type: lower-alpha; }
+.note-body ol.mb-ol-ua { list-style-type: upper-alpha; }
+.note-body ol.mb-ol-lr { list-style-type: lower-roman; }
+.note-body ol.mb-ol-ur { list-style-type: upper-roman; padding-inline-start: 1.9em; }
+.note-body li::marker { color: var(--dim); }
+
+/* x² and H₂O without pushing the lines apart */
+.note-body sup, .note-body sub { font-size: .72em; line-height: 0; position: relative; vertical-align: baseline; }
+.note-body sup { top: -.5em; }
+.note-body sub { top: .26em; }
+
+/* a formula: KaTeX draws it, the note's own ink colours it */
+.note-body .mb-math { display: inline-block; max-width: 100%; vertical-align: middle; border-radius: 4px; padding: 0 1px; color: inherit; }
+.note-body .mb-math .katex { font-size: 1.08em; }
+.note-body .mb-math-block {
+  display: block; margin: .55em 0; padding: 4px 2px; text-align: center;
+  overflow-x: auto; overflow-y: hidden;
+}
+.note-body .mb-math-block .katex-display { margin: 0; }
+.note.editing .note-body .mb-math { cursor: pointer; }
+.note.editing .note-body .mb-math:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.note-body .katex-error { color: var(--danger) !important; font-size: .9em; }
+
+/* the formula window */
+.mx-sheet { width: min(560px, 94vw); }
+.mx-sheet .seg { margin-bottom: 12px; }
+.fld textarea#mathTex {
+  width: 100%; resize: vertical; min-height: 64px; box-sizing: border-box;
+  padding: 8px 10px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line-2);
+  color: var(--text); font: 13px/1.5 "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+.fld textarea#mathTex:focus { outline: none; border-color: var(--accent); }
+.mx-preview {
+  min-height: 54px; display: flex; align-items: center; justify-content: center;
+  padding: 10px; margin: -4px 0 12px; border: 1px dashed var(--line-2); border-radius: var(--r);
+  overflow-x: auto; color: var(--text); font-size: 15px;
+}
+.mx-preview.empty { color: var(--dimmer); font-size: 12px; }
+.mx-preview .katex-display { margin: 0; }
+.mx-snips { max-height: 210px; overflow-y: auto; margin-bottom: 12px; }
+.mx-group { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--dimmer); margin: 6px 0 5px; }
+.mx-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.mx-snip {
+  min-width: 36px; height: 32px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line-2); border-radius: var(--r); background: transparent; color: var(--text);
+  font-size: 12px; cursor: pointer; overflow: hidden;
+}
+.mx-snip:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.mx-snip .katex { font-size: 1em; }

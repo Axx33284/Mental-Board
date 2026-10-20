@@ -144,7 +144,7 @@ src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
   js/           22 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
-  assets/       generated: icons.js, lang/, fonts/, icon.png
+  assets/       generated: icons.js, lang/, fonts/, icon.png; vendored: katex/
   main.js       Electron main
   store.js      the My Boards folder — every read and write of user data (§3)
   sdocx.js      reads a Samsung Notes file; required by store.js       (§4w)
@@ -172,7 +172,8 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
 | `src/assets/fonts.css` + `src/assets/fonts/` | — | **Generated.** Noto Sans Arabic (one variable woff2, 162 KB, OFL). Run via `npm run fonts`. |
-| `src/assets/icons.js` | — | **Generated.** 432 Material Symbols path strings + the picker's 21 groups. Do not hand-edit. |
+| `src/assets/katex/` | — | **Vendored**, not generated: KaTeX 0.16.11 (`katex.min.js`, `katex.min.css` trimmed to woff2 only, `fonts/*.woff2`) and its `mhchem.min.js`, MIT (`LICENSE.txt`). Loaded by plain tags in index.html above the app's scripts; the checks skip `assets/`. To update: `npm pack katex@x` and copy the same four things. See §4y. |
+| `src/assets/icons.js` | — | **Generated.** 435 Material Symbols path strings + the picker's 21 groups. Do not hand-edit. |
 | `tools/make-icon.js` | 264 | Turns `tools/icon-source.png` into `assets/icon.png` + `.ico` — decodes it, recolours it black-on-white, box-filters it down to every size. Run via `npm run icon`. Excluded from the package. |
 | `tools/icon-source.png` | — | **The app icon, as artwork** — a brain in outline, black on white, 768×768. The only source of truth for the icon: replace this file and re-run `npm run icon`. Not taken from the icon set, because the set has no brain in it: `psychology` and `psychology_alt` are both *heads*. 768 on purpose — every size `make-icon.js` emits (16, 24, 32, 48, 64, 128, 256) divides it exactly, so no rung is box-filtered through a ragged window. Excluded from the package — what ships is the generated `src/assets/icon.png` and `.ico`. |
 | `tools/fetch-icons.js` | 203 | Downloads the icon set into `assets/icons.js`. Run via `npm run icons`. Needs network; excluded from the package. |
@@ -632,7 +633,7 @@ no bundler and no build step — the only thing joining them is the order
 | `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
 | `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
-| `editor.js` | ~1330 | The note editor — markdown shortcuts, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`), user templates, the paste sanitiser. |
+| `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`), user templates, the paste sanitiser. |
 | `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
 | `toolbars.js` | ~650 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu (ranked by `blockRank`) — the chrome that sits over the editor. |
 | `media.js` | ~740 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
@@ -640,7 +641,7 @@ no bundler and no build step — the only thing joining them is the order
 | `menus.js` | ~540 | The right-click menu (colour, status and **date** rows, §4s; linked notes, copy, lock — §4v), `openRopeMenu`, and the compass that signposts off-screen workflows. See §7. |
 | `edit-ops.js` | ~915 | Create, delete (`askThenDelete` is the one door), **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export** (`loadExportPictures` → `paintBoardCanvas`, which draws the ink since 2.1). See §4f and §4g. |
 | `boards.js` | ~1500 | Several boards, one rail: switching, the flyout, locking, drag-to-board, undo (including the `ink` step), the clipboard with its ropes (`clipLinks` `retieLinks`), **the paste ghost** (`beginPasteGhost` … `commitPasteGhost`), and the JSON export/import. |
-| `settings.js` | ~1500 | The settings panel and every dialog behind it (the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()` and the stats cache. See §5b. |
+| `settings.js` | ~1640 | The settings panel and every dialog behind it (the formula window: `openMathDialog` `applyMath` `MATH_SNIPS`, §4y; the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()` and the stats cache. See §5b. |
 | `page.js` | ~345 | **The page menu** at the top right and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
@@ -2037,6 +2038,59 @@ and rotation behave there; picture latency on the user's Wi-Fi; and the
 Windows Firewall prompt.
 
 
+## 4y. Maths, chemistry and study notes (2.3)
+
+**A formula is its LaTeX.** `span.mb-math` (in the line) or
+`div.mb-math.mb-math-block` (own line, centred) with `data-tex` and
+`contenteditable="false"`. KaTeX (`assets/katex`, vendored — the page still
+loads nothing remote) draws it into an `.mx-face` child that `bodyHtml()`
+lifts out like an embed's card, so the stored body holds `a^n`, never KaTeX's
+markup. `paintMath(root)` draws every formula that has no face (or a stale
+one — a WeakMap remembers what each was drawn from); `lazyImages()` calls it
+for every body that is drawn, the input handler for a formula that arrives
+mid-edit, the paste handler after `sanitize()` (which keeps `data-tex` on
+an `.mb-math` and nothing of KaTeX's). Chemistry is the same element with
+`\ce{…}` — mhchem.
+
+Ways in: type `$x^2$` and a space (edges may not be spaces, so "$5 and $6"
+stays money); `/math`, `/equation`, `/chem`; the Σ button on the
+selection toolbar (the selected words become the LaTeX); Alt+=. Clicking a
+formula while writing opens it in **the formula window**
+(`openMathDialog` … `applyMath` in settings.js, `#mathDlg`): in the line /
+own line, a live preview, and buttons for the shapes nobody can spell
+(`MATH_SNIPS`). It keeps the caret exactly as the link dialog does.
+
+`insertMath` puts an inline formula in **by hand**, not with `insertHTML`:
+on a note's still-bare first line Chrome put it after a new paragraph that
+held the words before it. For the same reason `normalizeBody` now wraps a
+whole loose line (text and inline elements together, `LOOSE_BLOCK_RE`), not
+each text node on its own.
+
+**Superscript and subscript** are `<sup>`/`<sub>` from execCommand, now in
+`ALLOWED`; buttons on the toolbar, Ctrl+Shift+= and Ctrl+=.
+
+**Numbered lists another way**: `ol.mb-ol-la|ua|lr|ur` (a, A, i, I) —
+`insertStyledList`, `/letters`, `/roman`, or type `a. ` / `I. `. A list
+nested with no class steps 1 → a → i and • → ◦ → ▪ by CSS alone.
+
+**Writing under a table.** `insertTable` always added a line after the
+table, but nothing kept it: Backspace on it, or a note reopened with the table
+last, left no way to write below it (the caret sat after the table at the top
+level). `ensureTail(body)` appends an empty paragraph whenever a table, code
+block, columns, an own-line formula or an embed is the last thing in a note —
+on every input and on `enterEdit`, which now puts the caret in it.
+
+**The checkbox** is centred on its first line with `top: calc(.5lh - 7.5px)`
+and its tick is one SVG mask centred in the box (mental.css §67) — the old
+`.28em` top drifted with the text size and the rotated-border tick sat left
+of centre. Inline icons sit on the middle of the letters.
+
+JSON Canvas export writes `$…$` / `$$…$$`, which Obsidian draws itself.
+
+**Shell trap for whoever edits next:** in this repo's Git Bash, a quoted
+heredoc still collapsed `\\` to `\`, which silently broke every LaTeX string
+and regex written through one. Write such files with an editor, not a heredoc.
+
 ## 4o. Lining a note up with its neighbours
 
 `guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
@@ -2551,7 +2605,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c). Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y). Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section

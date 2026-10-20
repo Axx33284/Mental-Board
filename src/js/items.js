@@ -105,6 +105,7 @@ function lazyImages(root) {
     if (!img.hasAttribute('decoding')) img.setAttribute('decoding', 'async');
   });
   watchVideos(root);          // every body that is drawn passes through here
+  paintMath(root);            // and so does every formula in it (editor.js)
 }
 
 /* Redraw a note's text from `n.body` without rebuilding the whole element —

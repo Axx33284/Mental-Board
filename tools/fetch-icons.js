@@ -45,7 +45,9 @@ const UI = [
   'unarchive', 'alarm_off',
   /* 2.1: duplicate, and the pen */
   'library_add', 'ink_pen', 'ink_highlighter', 'ink_eraser', 'flip_to_front', 'flip_to_back',
-  'delete_sweep', 'volume_up', 'arrow_selector_tool'
+  'delete_sweep', 'volume_up', 'arrow_selector_tool',
+  /* 2.3: maths and chemistry in a note */
+  'superscript', 'subscript', 'functions', 'science', 'format_list_numbered_rtl'
 ];
 
 /* Icons the user can stamp on a note or a workflow, or drop into note text with

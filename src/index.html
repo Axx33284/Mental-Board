@@ -18,6 +18,9 @@
       content="default-src 'self'; img-src 'self' data: blob: file: mbf:; media-src 'self' data: blob: file: mbf:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; frame-src http://127.0.0.1:*">
 <title>Mental Board</title>
 <link rel="stylesheet" href="assets/fonts.css">
+<!-- maths and chemistry in a note (2.3): KaTeX and its mhchem extension, MIT,
+     shipped whole in assets/katex — the page still loads nothing remote. -->
+<link rel="stylesheet" href="assets/katex/katex.min.css">
 <!-- styles.css was one append-only file; these are its slices, and **the order
      below is the cascade**. A rule in later.css beats the same rule in
      tokens.css because it is further down this list, not because of anything in
@@ -184,6 +187,9 @@
   <button data-cmd="italic" data-t-title="fmt.italic"></button>
   <button data-cmd="underline" data-t-title="fmt.underline"></button>
   <button data-cmd="strikeThrough" data-t-title="fmt.strike"></button>
+  <button data-cmd="superscript" data-t-title="fmt.sup"></button>
+  <button data-cmd="subscript" data-t-title="fmt.sub"></button>
+  <button data-act="math" data-t-title="fmt.math"></button>
   <button data-act="code" data-t-title="fmt.code"></button>
   <span class="sb-sep"></span>
   <button data-block="h1" data-t-title="fmt.h1"></button>
@@ -937,6 +943,25 @@
   </div>
 </div>
 
+<!-- ───────────────────────── formula dialog (2.3) ─────────────────────────
+     LaTeX for maths, \ce{…} for chemistry, drawn live by KaTeX. The buttons
+     under the box are filled by buildMathSnips() in js/settings.js. -->
+<div id="mathDlg" class="overlay hidden">
+  <div class="sheet small mx-sheet" role="dialog" data-t-aria="math.title">
+    <header class="sheet-head"><h2 data-t="math.title"></h2><button class="sheet-x" id="mathCancel" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body">
+      <div class="seg" id="mathKind">
+        <button data-mk="inline" data-t="math.inline"></button>
+        <button data-mk="block" data-t="math.block"></button>
+      </div>
+      <label class="fld"><span data-t="math.tex"></span><textarea id="mathTex" rows="3" dir="ltr" spellcheck="false" data-t-ph="math.texPh"></textarea></label>
+      <div id="mathPreview" class="mx-preview" dir="ltr"></div>
+      <div id="mathSnips" class="mx-snips" dir="ltr"></div>
+      <div class="set-btns end"><button class="btn" id="mathRemove"><span class="b-ic"></span><span data-t="math.remove"></span></button><button class="btn primary" id="mathOk"><span class="b-ic"></span><span data-t="math.apply"></span></button></div>
+    </div>
+  </div>
+</div>
+
 <!-- ───────────────────────── link dialog ───────────────────────── -->
 <div id="linkDlg" class="overlay hidden">
   <div class="sheet small" role="dialog" data-t-aria="link.title">
@@ -1082,6 +1107,8 @@
 </div>
 
 <script src="assets/icons.js"></script>
+<script src="assets/katex/katex.min.js"></script>
+<script src="assets/katex/mhchem.min.js"></script>
 <!-- Every language ships as one file that registers itself on window.MB_LANG.
      Add a script tag here and the picker in Settings grows an entry by itself. -->
 <script src="assets/lang/en.js"></script>

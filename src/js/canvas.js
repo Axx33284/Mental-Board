@@ -59,6 +59,12 @@ function mdInline(node, ref) {
       const local = ref(href);
       out += local ? `[${inner() || local}](${mdPath(local)})` : `[${inner() || href}](${href})`;
     }
+    else if (c.classList.contains('mb-math')) {
+      // a formula goes out as Obsidian's own $…$ / $$…$$, which it draws with MathJax
+      const tex = c.getAttribute('data-tex') || '';
+      out += c.classList.contains('mb-math-block') ? `\n$$${tex}$$\n` : `$${tex}$`;
+    }
+    else if (tag === 'SUP' || tag === 'SUB') out += `<${tag.toLowerCase()}>${inner()}</${tag.toLowerCase()}>`;
     else if (c.classList.contains('mb-ic') || c.classList.contains('emb-face')) { /* painted chrome */ }
     else out += inner();
   });
@@ -94,6 +100,7 @@ function noteToMarkdown(html, ref) {
       if (tag === 'UL' || tag === 'OL') { blocks.push(list(node, 0, []).join('\n')); continue; }
       if (/^H[1-3]$/.test(tag)) { blocks.push('#'.repeat(+tag[1]) + ' ' + mdInline(node, ref).trim()); continue; }
       if (tag === 'HR') { blocks.push('---'); continue; }
+      if (tag === 'DIV' && node.classList.contains('mb-math')) { blocks.push('$$\n' + (node.getAttribute('data-tex') || '') + '\n$$'); continue; }
       if (tag === 'PRE') { blocks.push('```\n' + node.textContent.replace(/​/g, '').replace(/\n$/, '') + '\n```'); continue; }
       if (tag === 'BLOCKQUOTE' || node.classList.contains('mb-callout')) {
         blocks.push(mdInline(node, ref).trim().split('\n').map((l) => '> ' + l).join('\n'));

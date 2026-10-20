@@ -164,7 +164,7 @@ const SFX_ITEMS = [
   '#zoombar button', '.ik-tool', '.ik-size', '.ik-sw', '.ik-btn', '.ik-custom',
   '.tb-gear', '#pageBtn', '.sheet-x', '.eh-start', '.kb-col', '.ag-item'
 ].join(', ');
-const SFX_PANELS = ['ctxMenu', 'boardMenu', 'pageMenu', 'settings', 'slashMenu', 'palette', 'linkDlg',
+const SFX_PANELS = ['ctxMenu', 'boardMenu', 'pageMenu', 'settings', 'slashMenu', 'palette', 'linkDlg', 'mathDlg',
   'confirmDlg', 'iconPicker', 'agendaDlg', 'kanbanDlg', 'moveDlg', 'tplDlg', 'remindDlg', 'histDlg',
   'boardPick', 'passDlg', 'embedDlg', 'inkBar', 'studio'];
 

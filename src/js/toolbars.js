@@ -43,7 +43,7 @@ function showSelBar() {
 
 function syncSelBarState() {
   const bar = $('selBar');
-  ['bold', 'italic', 'underline', 'strikeThrough'].forEach((c) => {
+  ['bold', 'italic', 'underline', 'strikeThrough', 'superscript', 'subscript'].forEach((c) => {
     const b = bar.querySelector(`[data-cmd="${c}"]`);
     if (b) { try { b.classList.toggle('on', document.queryCommandState(c)); } catch (_) {} }
   });
@@ -275,6 +275,12 @@ function wireSelBar() {
     e.stopPropagation(); selBarPinned = true; $('hilitePop').classList.toggle('open');
   });
   bar.querySelector('[data-act="link"]').addEventListener('click', () => openLinkDialog());
+  // the selected words become the formula's LaTeX; nothing selected opens it empty
+  bar.querySelector('[data-act="math"]').addEventListener('click', () => {
+    const s = getSelection();
+    const text = s.rangeCount ? s.toString().trim() : '';
+    openMathDialog(null, { tex: text, block: false });
+  });
   bar.querySelector('[data-act="clear"]').addEventListener('click', () => runFormat(() => {
     document.execCommand('removeFormat');
     document.execCommand('formatBlock', false, 'p');
@@ -317,9 +323,15 @@ const BLOCKS = [
   { k: 'todo',    ic: 'checklist',             run: insertTodo },
   { k: 'bullet',  ic: 'format_list_bulleted',  run: () => document.execCommand('insertUnorderedList') },
   { k: 'number',  ic: 'format_list_numbered',  run: () => document.execCommand('insertOrderedList') },
+  { k: 'letters', ic: 'format_list_numbered',  run: () => insertStyledList('la') },
+  { k: 'roman',   ic: 'format_list_numbered_rtl', run: () => insertStyledList('ur') },
   { k: 'code',    ic: 'code',                  run: insertCodeBlock },
   { k: 'quote',   ic: 'format_quote',          run: () => document.execCommand('formatBlock', false, 'blockquote') },
   { k: 'callout', ic: 'lightbulb',             run: insertCallout },
+  // 2.3: a formula in the line, one on its own line, and chemistry (mhchem)
+  { k: 'math',    ic: 'functions',             run: () => openMathDialog(null, { block: false }) },
+  { k: 'equation', ic: 'functions',            run: () => openMathDialog(null, { block: true }) },
+  { k: 'chem',    ic: 'science',               run: () => openMathDialog(null, { block: false, tex: '\\ce{H2O}' }) },
   { k: 'divider', ic: 'horizontal_rule',       run: () => insertHTML('<hr><p><br></p>') },
   { k: 'table',   ic: 'table',                 run: () => insertTable(3, 3) },
   { k: 'columns', ic: 'view_column',           run: (n) => insertColumns(n || 2) },

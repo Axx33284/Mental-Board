@@ -14,6 +14,8 @@ let editBefore = '';      // its body when the edit began, for pushHistory()
 function wireNoteBody(body, n, el) {
   body.addEventListener('input', () => {
     if (columnsBroken(body)) repairColumns(body);    // a typed merge across a column edge
+    ensureTail(body);                                  // somewhere to write under a table
+    if (body.querySelector('.mb-math:not(:has(> .mx-face))')) paintMath(body);
     n.body = bodyHtml(body);
     editDirty = true;
     saveSoon();
@@ -27,6 +29,9 @@ function wireNoteBody(body, n, el) {
     const im = e.target.closest('img.mb-img');
     if (im && el.classList.contains('editing')) { e.preventDefault(); selectImage(im); return; }
     if (!im) clearImageSel();
+    // a formula is one object too: clicking it while writing opens it to edit
+    const mx = e.target.closest('.mb-math');
+    if (mx && el.classList.contains('editing')) { e.preventDefault(); openMathDialog(mx); return; }
     // checkbox hit area
     const li = e.target.closest('ul.mb-todo > li');
     if (li && e.offsetX < 24 && e.target === li) {
@@ -100,7 +105,7 @@ function bodyHtml(body) {
      board opens — and a board file that carries a remote URL the app promised
      only to load on a click. Lift them out for the read and put them straight
      back, the same trick `img-sel` uses below. */
-  const lifted = [...body.querySelectorAll('.emb-face, .mb-embed iframe, .mb-cant')]
+  const lifted = [...body.querySelectorAll('.emb-face, .mb-embed iframe, .mb-cant, .mb-math > .mx-face')]
     .map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
   lifted.forEach((m) => m.el.remove());
   const marked = body.querySelector('img.img-sel');
@@ -131,8 +136,9 @@ function enterEdit(n) {
   bringToFront(n.id);
   setSelection([n.id], false);
   body.focus();
-  // caret to the end
-  const r = document.createRange(); r.selectNodeContents(body); r.collapse(false);
+  // caret to the end — into the line under a table, never after it (ensureTail)
+  const tail = ensureTail(body);
+  const r = document.createRange(); r.selectNodeContents(tail || body); r.collapse(false);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
 
@@ -179,6 +185,15 @@ function onEditorKey(e, body, n) {
 
   // letterKey(), not e.key: on an Arabic layout the K key reports 'ل'. See §1.
   if ((e.ctrlKey || e.metaKey) && letterKey(e) === 'k') { e.preventDefault(); openLinkDialog(); return; }
+  /* Word's keys: Ctrl+Shift+= superscript, Ctrl+= subscript, Alt+= a formula.
+     e.code, not e.key — '=' is a different character on half the layouts. */
+  if (e.code === 'Equal' && (e.ctrlKey || e.metaKey) && !e.altKey) {
+    e.preventDefault();
+    document.execCommand(e.shiftKey ? 'superscript' : 'subscript');
+    persistEdit();
+    return;
+  }
+  if (e.code === 'Equal' && e.altKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openMathDialog(null); return; }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); exitEdit(); return; }
   if (columnEdgeKey(e)) return;
 
@@ -331,6 +346,8 @@ function setParagraphDir(dir) {
    caretBlock(), so unwrap any paragraph holding block children. Only the
    wrapper element is removed; the caret's own text node survives untouched. */
 const BLOCK_CHILD_RE = /^(UL|OL|BLOCKQUOTE|PRE|H1|H2|H3|HR|DIV|P|TABLE)$/;
+// what may stand directly in a note body without a paragraph around it
+const LOOSE_BLOCK_RE = /^(UL|OL|BLOCKQUOTE|PRE|H1|H2|H3|HR|DIV|P|TABLE|IMG|VIDEO|AUDIO|FIGURE)$/;
 function normalizeBody(body) {
   if (!body) return;
   /* Headings as well as paragraphs. `formatBlock` on a caret inside a list
@@ -347,12 +364,28 @@ function normalizeBody(body) {
      leaves its text as a bare node directly under the body — invisible in the
      markup, but caretBlock() returns null for it, so nothing that works on the
      current block works on that line. Give it a paragraph. */
+  /* A whole loose line, not each text node on it: "Area ", a formula and
+     " ok" are one paragraph, and wrapping the text alone left the formula
+     and the words after it outside it (2.3). The caret is put back, since
+     moving the node it sits in drops it. */
+  const s = getSelection();
+  const at = s.rangeCount ? { node: s.anchorNode, off: s.anchorOffset } : null;
+  let run = [], moved = false;
+  const flush = () => {
+    if (run.some((x) => (x.nodeType === 3 ? x.textContent.trim() : x.tagName !== 'BR'))) {
+      const p = document.createElement('p');
+      run[0].before(p);
+      run.forEach((x) => p.appendChild(x));
+      moved = true;
+    }
+    run = [];
+  };
   [...body.childNodes].forEach((node) => {
-    if (node.nodeType !== 3 || !node.textContent.trim()) return;
-    const p = document.createElement('p');
-    node.replaceWith(p);
-    p.appendChild(node);
+    const inline = node.nodeType === 3 || (node.nodeType === 1 && !LOOSE_BLOCK_RE.test(node.tagName));
+    if (inline) run.push(node); else flush();
   });
+  flush();
+  if (moved && at && at.node && body.contains(at.node)) placeCaret(at.node, at.off);
   // a heading inside a heading renders at the product of both sizes
   body.querySelectorAll('h1 :is(h1,h2,h3), h2 :is(h1,h2,h3), h3 :is(h1,h2,h3)')
     .forEach((h) => h.replaceWith(...h.childNodes));
@@ -396,6 +429,19 @@ function mdShortcuts(e, body, n) {
   const done = () => { normalizeBody(body); n.body = bodyHtml(body); saveSoon(); };
 
   if (e.key === ' ') {
+    /* $a^2+b^2$ then a space becomes a formula, the way it does in Notion and
+       Obsidian. The edges may not be spaces, so "$5 and $6" stays money. */
+    const before = tn.textContent.slice(0, sel.anchorOffset);
+    const mx = /\$(?!\s)([^$\n]*[^\s$])\$$/.exec(before);
+    if (mx) {
+      e.preventDefault();
+      const r = document.createRange();
+      r.setStart(tn, sel.anchorOffset - mx[0].length); r.setEnd(tn, sel.anchorOffset);
+      sel.removeAllRanges(); sel.addRange(r);
+      insertMath(mx[1], false);
+      done();
+      return true;
+    }
     const blocks = { '#': 'h1', '##': 'h2', '###': 'h3', '>': 'blockquote' };
     /* escapeList() first, for the same reason insertCodeBlock() and
        insertCallout() call it.
@@ -418,6 +464,8 @@ function mdShortcuts(e, body, n) {
       document.execCommand('insertUnorderedList'); done(); return true;
     }
     if (marker === '1.') { e.preventDefault(); eat(); escapeList(); document.execCommand('insertOrderedList'); done(); return true; }
+    // a. A. i. I. — a list numbered in letters or Roman numerals
+    if (OL_MARKERS[marker]) { e.preventDefault(); eat(); insertStyledList(OL_MARKERS[marker]); done(); return true; }
     if (marker === '[]' || marker === '[ ]') { e.preventDefault(); eat(); insertTodo(); done(); return true; }
   }
   if (e.key === 'Enter') {
@@ -443,6 +491,20 @@ function insertTodo() {
   document.execCommand('insertUnorderedList');
   const ul = caretClosest('ul');
   if (ul) ul.classList.add('mb-todo');
+}
+/* An ordered list numbered some other way than 1, 2, 3. The style is a class
+   on the <ol> (`mb-ol-*` survives sanitize()), not `type=` or an inline style,
+   neither of which survives a copy between notes. A list nested in a list
+   with no class of its own steps through letters and Roman numerals by
+   itself (mental.css §67), the way a document outline does. */
+const OL_STYLES = ['la', 'ua', 'lr', 'ur'];           // a, A, i, I
+const OL_MARKERS = { 'a.': 'la', 'A.': 'ua', 'i.': 'lr', 'I.': 'ur' };
+function insertStyledList(style) {
+  let ol = caretClosest('ol');
+  if (!ol) { escapeList(); document.execCommand('insertOrderedList'); ol = caretClosest('ol'); }
+  if (!ol) return;
+  OL_STYLES.forEach((k) => ol.classList.remove('mb-ol-' + k));
+  if (OL_STYLES.includes(style)) ol.classList.add('mb-ol-' + style);
 }
 function caretClosest(sel) {
   const s = getSelection();
@@ -488,6 +550,87 @@ function inlineIcon(name) {
 }
 
 function insertCallout() { escapeList(); insertHTML(`<div class="mb-callout">${inlineIcon('lightbulb')}&nbsp;</div><p><br></p>`); }
+
+/* --- maths and chemistry (2.3) -------------------------------------------
+   A formula is `span.mb-math` (inline) or `div.mb-math.mb-math-block` (on its
+   own line, centred) carrying its LaTeX in `data-tex` and nothing else. What
+   you see is KaTeX's drawing of it, in an `.mx-face` child that is painted,
+   never stored — `bodyHtml()` lifts it out exactly the way it lifts an embed's
+   card. So a note stores `a^n`, not two kilobytes of KaTeX spans, and a newer
+   KaTeX redraws every old formula.
+
+   Chemistry is the same element: `\ce{H2SO4}` is mhchem, which ships beside
+   KaTeX in assets/katex. `contenteditable="false"` for the reason inlineIcon()
+   gives — the formula behaves as one character, and a click opens it in the
+   formula window (openMathDialog, settings.js) instead of putting a caret into
+   KaTeX's markup. */
+const mathDrawn = new WeakMap();      // element → the tex its face was drawn from
+function mathHtml(tex, block) {
+  const tag = block ? 'div' : 'span';
+  return `<${tag} class="mb-math${block ? ' mb-math-block' : ''}" data-tex="${esc(tex)}" contenteditable="false"></${tag}>`;
+}
+function renderTex(tex, into, block) {
+  into.textContent = '';
+  if (!window.katex) { into.textContent = tex; return; }
+  try {
+    katex.render(tex, into, { throwOnError: false, displayMode: !!block, output: 'html', strict: 'ignore', trust: false });
+  } catch (_) { into.textContent = tex; }
+}
+function paintMath(root) {
+  if (!root) return;
+  root.querySelectorAll('.mb-math').forEach((el) => {
+    const tex = el.getAttribute('data-tex') || '';
+    const block = el.classList.contains('mb-math-block');
+    const face = el.querySelector(':scope > .mx-face');
+    if (face && mathDrawn.get(el) === tex + (block ? '\n' : '')) return;
+    // a paste arrives with the face's KaTeX spans stripped to bare text: start clean
+    el.textContent = '';
+    const f = document.createElement('span');
+    f.className = 'mx-face';
+    renderTex(tex.trim() ? tex : '\\square', f, block);
+    el.appendChild(f);
+    el.setAttribute('contenteditable', 'false');
+    mathDrawn.set(el, tex + (block ? '\n' : ''));
+  });
+}
+function insertMath(tex, block) {
+  if (block) { escapeList(); insertHTML(mathHtml(tex, true) + '<p><br></p>'); }
+  else {
+    /* By hand, not insertHTML: on a note's first, still-bare line Chrome put
+       the formula *after* a new paragraph holding the words before it. */
+    const s = getSelection();
+    if (!s.rangeCount || !editing || !editing.contains(s.getRangeAt(0).commonAncestorContainer)) return;
+    const r = s.getRangeAt(0);
+    r.deleteContents();
+    const tmp = document.createElement('div');
+    tmp.innerHTML = mathHtml(tex, false);
+    const el = tmp.firstChild, sp = document.createTextNode(' ');
+    r.insertNode(sp);
+    r.insertNode(el);
+    placeCaret(sp, 1);
+  }
+  if (editing) { paintMath(editing); normalizeBody(editing); }
+}
+
+/* --- a table, a grid or a formula is never the last thing in a note --------
+   insertTable() appends a paragraph after the table, but nothing kept it
+   there: Backspace on that empty line deletes it, and a note reopened with the
+   table last puts the caret after the table at the top level, where typing
+   makes bare text and a click lands in the last cell. Either way there was no
+   way to write under the table. Every edit puts the line back. */
+function ensureTail(body) {
+  if (!body) return null;
+  let last = body.lastChild;
+  while (last && last.nodeType === 3 && !last.textContent.replace(/​/g, '').trim()) last = last.previousSibling;
+  if (!last || last.nodeType !== 1) return null;
+  const needs = last.tagName === 'TABLE' || last.tagName === 'PRE' ||
+    (last.tagName === 'DIV' && /\b(mb-cols|mb-math-block|mb-embed|mb-file)\b/.test(last.className));
+  if (!needs) return null;
+  const p = document.createElement('p');
+  p.innerHTML = '<br>';
+  body.appendChild(p);
+  return p;
+}
 
 /* --- columns -----------------------------------------------------------
    Side-by-side text, the way Notion does it.
@@ -1226,6 +1369,7 @@ function onEditorPaste(e, body, n) {
   if (dt.types.includes('text/html')) {
     e.preventDefault();
     insertHTML(sanitize(dt.getData('text/html')));
+    paintMath(body);
     n.body = bodyHtml(body); saveSoon();
   }
 }
@@ -1294,7 +1438,7 @@ function safeClass(el) {
   else el.removeAttribute('class');
 }
 
-const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'CODE', 'PRE', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'HR', 'A', 'IMG', 'SPAN', 'DIV', 'MARK', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'VIDEO', 'AUDIO']);
+const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'CODE', 'PRE', 'H1', 'H2', 'H3', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'HR', 'A', 'IMG', 'SPAN', 'DIV', 'MARK', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'VIDEO', 'AUDIO']);
 function sanitize(html) {
   const d = document.createElement('div');
   d.innerHTML = html;
@@ -1322,6 +1466,8 @@ function sanitize(html) {
                     (a.name === 'data-title' || a.name === 'data-author')) ||
                    (el.tagName === 'DIV' && a.name === 'data-thumb' && /\bmb-embed\b/.test(el.className) && isFileUrl(a.value)) ||
                    (el.tagName === 'IMG' && a.name === 'src') ||
+                   // a formula keeps its LaTeX; its drawing is repainted by paintMath()
+                   ((el.tagName === 'SPAN' || el.tagName === 'DIV') && a.name === 'data-tex' && /\bmb-math\b/.test(el.className)) ||
                    /* A video or a sound copied from one note to another keeps
                       playing. `controls` and `preload` are ours and are put
                       back below; the only thing that survives from the paste

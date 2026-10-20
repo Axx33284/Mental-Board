@@ -195,6 +195,7 @@ function onKeyDown(e) {
     if (!$('iconPicker').classList.contains('hidden')) { closeIconPicker(); return; }
     if (!$('confirmDlg').classList.contains('hidden')) { endConfirm(false); return; }
     if (!$('linkDlg').classList.contains('hidden')) { closeLinkDialog(); return; }
+    if (!$('mathDlg').classList.contains('hidden')) { closeMathDialog(); return; }
     if (!$('tplDlg').classList.contains('hidden')) { closeTemplateDialog(); return; }
     if (!$('settings').classList.contains('hidden')) { closeSettings(); return; }
     if (!$('ctxMenu').classList.contains('hidden')) { closeCtxMenu(); return; }
@@ -985,6 +986,8 @@ function init() {
   buildAccentSwatches();
   buildKeyList();
 
+  wireMathDialog();         // the formula window (settings.js)
+
   // link dialog
   $('linkOk').addEventListener('click', applyLink);
   $('linkCancel').addEventListener('click', closeLinkDialog);
@@ -1298,6 +1301,9 @@ const STATIC_ICONS = [
   ['#selBar [data-cmd="underline"]', 'format_underlined'],
   ['#selBar [data-cmd="strikeThrough"]', 'format_strikethrough'],
   ['#selBar [data-act="code"]', 'code'],
+  ['#selBar [data-cmd="superscript"]', 'superscript'],
+  ['#selBar [data-cmd="subscript"]', 'subscript'],
+  ['#selBar [data-act="math"]', 'functions'],
   ['#selBar [data-block="h1"]', 'format_h1'],
   ['#selBar [data-block="h2"]', 'format_h2'],
   ['#selBar [data-block="h3"]', 'format_h3'],
@@ -1502,6 +1508,9 @@ const STATIC_ICONS = [
   ['#iconClose', 'close'],
   ['#studioClose', 'close'],
   ['#linkCancel', 'close'],
+  ['#mathCancel', 'close'],
+  ['#mathRemove .b-ic', 'delete'],
+  ['#mathOk .b-ic', 'check'],
   ['#iconRemove .b-ic', 'close'],
   ['#iconPicker .ip-find-ic', 'search'],
   ['#linkRemove .b-ic', 'link_off'],

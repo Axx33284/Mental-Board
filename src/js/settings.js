@@ -1322,6 +1322,144 @@ function removeLink() {
   persistEdit();
 }
 
+/* ---- the formula window (2.3) ----
+   One window for a new formula and for an existing one. It keeps the caret
+   the way the link dialog does (restoreLinkCaret), draws the LaTeX live as you
+   type, and offers the shapes nobody remembers the spelling of as buttons that
+   insert at the cursor in the box. `\ce{…}` is chemistry (mhchem). */
+const MATH_SNIPS = {
+  'math.groupMath': [
+    'x^{2}', 'x_{i}', '\\frac{a}{b}', '\\sqrt{x}', '\\sqrt[n]{x}', 'a^{n}', '\\pm', '\\times', '\\div',
+    '\\cdot', '\\neq', '\\leq', '\\geq', '\\approx', '\\infty', '\\pi', '\\alpha', '\\beta', '\\theta',
+    '\\lambda', '\\mu', '\\Delta', '\\sum_{i=1}^{n}', '\\prod_{i=1}^{n}', '\\int_{a}^{b}', '\\lim_{x\\to 0}',
+    '\\log_{b} x', '\\sin\\theta', '\\vec{v}', '\\overline{x}', '|x|', '\\binom{n}{k}',
+    '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}', '\\to', '\\Rightarrow', '\\in', '\\mathbb{R}', '^{\\circ}'
+  ],
+  'math.groupChem': [
+    '\\ce{H2O}', '\\ce{CO2}', '\\ce{H2SO4}', '\\ce{SO4^2-}', '\\ce{Fe^3+}', '\\ce{->}', '\\ce{<=>}',
+    '\\ce{A + B -> C}', '\\ce{2H2 + O2 -> 2H2O}', '\\ce{NaCl(aq)}', '\\ce{^{14}_{6}C}', '\\ce{CH3-CH2-OH}',
+    '\\ce{CO2 ^}', '\\ce{BaSO4 v}', '\\ce{->[\\Delta]}'
+  ]
+};
+let mathCtx = null;          // { range, el, note }
+let mathBlock = false;
+
+function openMathDialog(el, opts) {
+  if (!editing) return;
+  const o = opts || {};
+  const s = getSelection();
+  const range = s.rangeCount && editing.contains(s.getRangeAt(0).commonAncestorContainer) ? s.getRangeAt(0).cloneRange() : null;
+  mathCtx = { range, el: el && editing.contains(el) ? el : null, note: editNote };
+  const tex = mathCtx.el ? mathCtx.el.getAttribute('data-tex') || '' : (o.tex || '');
+  mathBlock = mathCtx.el ? mathCtx.el.classList.contains('mb-math-block') : !!o.block;
+  $('mathTex').value = tex;
+  $('mathRemove').classList.toggle('hidden', !mathCtx.el);
+  syncMathKind();
+  buildMathSnips();
+  drawMathPreview();
+  $('mathDlg').classList.remove('hidden');
+  setTimeout(() => { const ta = $('mathTex'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 30);
+}
+function closeMathDialog() { $('mathDlg').classList.add('hidden'); mathCtx = null; }
+function syncMathKind() {
+  $('mathKind').querySelectorAll('[data-mk]').forEach((b) => b.classList.toggle('on', (b.dataset.mk === 'block') === mathBlock));
+}
+function drawMathPreview() {
+  const tex = $('mathTex').value;
+  const box = $('mathPreview');
+  box.classList.toggle('empty', !tex.trim());
+  if (!tex.trim()) { box.textContent = t('math.empty'); return; }
+  renderTex(tex, box, mathBlock);
+}
+let mathSnipsBuilt = false;
+function buildMathSnips() {
+  if (mathSnipsBuilt) return;
+  mathSnipsBuilt = true;
+  const box = $('mathSnips');
+  box.textContent = '';
+  for (const [group, list] of Object.entries(MATH_SNIPS)) {
+    const h = document.createElement('div');
+    h.className = 'mx-group';
+    h.textContent = t(group);
+    box.appendChild(h);
+    const row = document.createElement('div');
+    row.className = 'mx-row';
+    list.forEach((tex) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mx-snip';
+      b.title = tex;
+      renderTex(tex, b, false);
+      b.addEventListener('mousedown', (e) => e.preventDefault());     // keep the box's caret
+      b.addEventListener('click', () => insertMathSnip(tex));
+      row.appendChild(b);
+    });
+    box.appendChild(row);
+  }
+}
+function insertMathSnip(tex) {
+  const ta = $('mathTex');
+  const a = ta.selectionStart, z = ta.selectionEnd;
+  const v = ta.value;
+  const pad = a > 0 && /[\w}]$/.test(v.slice(0, a)) && /^\\/.test(tex) ? ' ' : '';
+  ta.value = v.slice(0, a) + pad + tex + v.slice(z);
+  const at = a + pad.length + tex.length;
+  ta.focus();
+  ta.setSelectionRange(at, at);
+  drawMathPreview();
+}
+function applyMath() {
+  const ctx = mathCtx;
+  const tex = $('mathTex').value.trim();
+  const block = mathBlock;
+  closeMathDialog();
+  if (!ctx || !editing || ctx.note !== editNote) return;
+  if (ctx.el && editing.contains(ctx.el)) {
+    if (!tex) { ctx.el.remove(); persistEdit(); return; }
+    let el = ctx.el;
+    if (el.classList.contains('mb-math-block') !== block) {
+      // inline ↔ own line is a different tag, so it is a new element in the same place
+      const fresh = document.createElement(block ? 'div' : 'span');
+      fresh.className = 'mb-math' + (block ? ' mb-math-block' : '');
+      el.replaceWith(fresh);
+      el = fresh;
+    }
+    el.setAttribute('data-tex', tex);
+    paintMath(editing);
+    normalizeBody(editing);
+    ensureTail(editing);
+    editing.focus();
+    persistEdit();
+    return;
+  }
+  if (!tex || !restoreLinkCaret(ctx)) return;
+  insertMath(tex, block);
+  ensureTail(editing);
+  persistEdit();
+}
+function removeMath() {
+  const ctx = mathCtx;
+  closeMathDialog();
+  if (ctx && ctx.el && editing && editing.contains(ctx.el)) { ctx.el.remove(); editing.focus(); persistEdit(); }
+}
+function wireMathDialog() {
+  $('mathOk').addEventListener('click', applyMath);
+  $('mathCancel').addEventListener('click', closeMathDialog);
+  $('mathRemove').addEventListener('click', removeMath);
+  $('mathTex').addEventListener('input', drawMathPreview);
+  $('mathTex').addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); applyMath(); }
+    if (e.key === 'Escape') { e.preventDefault(); closeMathDialog(); editing && editing.focus(); }
+  });
+  $('mathKind').querySelectorAll('[data-mk]').forEach((b) => b.addEventListener('click', () => {
+    mathBlock = b.dataset.mk === 'block';
+    syncMathKind();
+    drawMathPreview();
+  }));
+  $('mathDlg').addEventListener('mousedown', (e) => { if (e.target === $('mathDlg')) closeMathDialog(); });
+}
+
 /* ---- a link to a note ----
    The dialog also offers the notes on your boards: type part of a title in the
    address field and pick one. The link is `a.mb-note` with the note's id and
