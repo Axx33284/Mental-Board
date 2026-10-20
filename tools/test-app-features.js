@@ -578,6 +578,33 @@ module.exports = [
       ok(/data-tex="a\^n"/.test(r.pasted) && /<sup>3<\/sup>/.test(r.pasted), 'a paste keeps the formula: ' + r.pasted);
     });
 
+    await test('2.3 Markdown and KaTeX pasted from a chat become headings, lists and formulas', async () => {
+      const r = await page(() => {
+        const n = state.notes.find((x) => x.id === 'rc');
+        n.body = '<p><br></p>';
+        render(); enterEdit(n);
+        const paste = (types) => {
+          const dt = new DataTransfer();
+          for (const [k, v] of Object.entries(types)) dt.setData(k, v);
+          editing.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+        };
+        paste({ 'text/plain': '## Kurallar\n\n*   **Toplam:**\n    *   $n cdot a$ ve $a \\neq 0$\n*   It costs $5 and $6.\n\n$$\n\\frac{a}{b}\n$$' });
+        const md = n.body;
+        n.body = '<p><br></p>'; render(); enterEdit(n);
+        paste({ 'text/plain': 'πr2', 'text/html': '<p>Area <span class="katex"><span class="katex-mathml"><math><semantics><mi>π</mi><annotation encoding="application/x-tex">\\pi r^2</annotation></semantics></math></span><span class="katex-html">πr2</span></span></p>' });
+        const html = n.body;
+        const plain = looksLikeMarkdown('just a sentence, nothing more');
+        exitEdit();
+        return { md, html, plain };
+      });
+      ok(/<h2>Kurallar<\/h2>/.test(r.md) && /<ul><li><b>Toplam:<\/b><ul><li>/.test(r.md), 'heading and nested list: ' + r.md);
+      ok(/data-tex="n \\cdot a"/.test(r.md) && /data-tex="a \\neq 0"/.test(r.md), 'formulas, lost backslash put back: ' + r.md);
+      ok(/costs \$5 and \$6/.test(r.md), 'money stays money: ' + r.md);
+      ok(/mb-math-block" data-tex="\\frac\{a\}\{b\}"/.test(r.md), 'a $$ block: ' + r.md);
+      ok(/Area(&nbsp;| )<span class="mb-math" data-tex="\\pi r\^2"/.test(r.html) && !/πr2/.test(r.html), 'KaTeX HTML back to its LaTeX: ' + r.html);
+      ok(r.plain === false, 'plain prose is left alone');
+    });
+
     await test('2.1 a locked workflow is passed over by Ctrl+A and stays locked on disk', async () => {
       const r = await page(async () => {
         lockFrame('rf');

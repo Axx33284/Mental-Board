@@ -147,6 +147,16 @@ function noteToMarkdown(html, ref) {
 const unesc = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 
 function mdInlineToHtml(text, file) {
+  /* Formulas first, before anything can read a `*` or `_` inside one: \(…\),
+     \[…\], $$…$$ and $…$ — the last with the edges that keep "$5 and $6"
+     money. Each becomes a placeholder and is put back as a formula (2.3). */
+  const maths = [];
+  const keep = (tex, block) => { maths.push({ tex: fixTex(tex), block }); return `\u0001${maths.length - 1}\u0001`; };
+  text = String(text == null ? '' : text)
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, t) => keep(t, false))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, t) => keep(t, false))
+    .replace(/\$\$([^$]+?)\$\$/g, (_, t) => keep(t, false))
+    .replace(/(^|[^\\$\w])\$(?!\s)([^$\n]*?[^\s$\\])\$(?![\w$])/g, (_, pre, t) => pre + keep(t, false));
   let s = esc(text);
   const codes = [];
   s = s.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
@@ -169,6 +179,7 @@ function mdInlineToHtml(text, file) {
   s = s.replace(/~~([^~]+)~~/g, '<s>$1</s>');
   s = s.replace(/==([^=]+)==/g, '<mark>$1</mark>');
   s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[+i]}</code>`);
+  s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => mathHtml(maths[+i].tex.trim(), maths[+i].block));
   return s;
 }
 function inlineFile(p, file) {
@@ -194,6 +205,24 @@ function markdownToNote(md, file) {
       continue;
     }
     if (!line.trim()) { flush(); continue; }
+    /* A formula on its own line or lines: $$ … $$ or \[ … \]. Text after the
+       closing mark means it was inline after all, so the line is left to the
+       paragraph below. An unclosed one is read as text. */
+    const dm = /^\s*(\$\$|\\\[)(.*)$/.exec(line);
+    if (dm) {
+      const close = dm[1] === '$$' ? '$$' : '\\]';
+      const parts = [dm[2]];
+      let j = i, end = dm[2].indexOf(close);
+      while (end < 0 && j + 1 < lines.length) { j++; parts.push(lines[j]); end = lines[j].indexOf(close); }
+      const tail = end < 0 ? null : parts[parts.length - 1].slice(end + close.length);
+      if (tail !== null && !tail.trim()) {
+        parts[parts.length - 1] = parts[parts.length - 1].slice(0, end);
+        flush();
+        out.push(mathHtml(fixTex(parts.join('\n')).trim(), true));
+        i = j;
+        continue;
+      }
+    }
     let m, p = '';
     // a clip or a sound on its own line is a block, the way the app draws one
     if ((m = /^\s*!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]\s*$/.exec(line))) p = m[1].trim();

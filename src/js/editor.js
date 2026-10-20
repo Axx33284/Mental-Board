@@ -612,6 +612,74 @@ function insertMath(tex, block) {
   if (editing) { paintMath(editing); normalizeBody(editing); }
 }
 
+/* --- pasting from ChatGPT, Gemini and the like (2.3) -----------------------
+   Three shapes arrive, and each used to land as noise:
+
+   · Markdown as plain text (their copy buttons): "## I. …", "*   **Tanım:**",
+     "$a^n$" — pasted letter for letter. looksLikeMarkdown() spots it and
+     markdownToNote() (canvas.js, the Obsidian importer) turns it into
+     headings, nested lists, bold and formulas.
+   · HTML of the page with KaTeX or MathJax in it (a selection copied off the
+     chat): every formula is three copies of itself — MathML, the drawing and
+     the LaTeX — and sanitize() kept the text of all three. mathFromPaste()
+     swaps each for an .mb-math built from the LaTeX the page left in it.
+   · LaTeX that lost its backslashes on the way: "n cdot a". fixTex() puts
+     them back on the command names that cannot be anything else. */
+const TEX_WORDS = 'cdots|cdot|ldots|dots|times|div|neq|leq|geq|pm|mp|infty|approx|equiv|propto|' +
+  'frac|dfrac|tfrac|sqrt|sum|prod|int|oint|lim|partial|nabla|alpha|beta|gamma|Gamma|delta|Delta|epsilon|varepsilon|' +
+  'theta|Theta|lambda|Lambda|mu|sigma|Sigma|omega|Omega|varphi|phi|Phi|psi|Psi|rho|tau|eta|zeta|xi|' +
+  'rightarrow|Rightarrow|leftarrow|Leftarrow|leftrightarrow|Leftrightarrow|implies|iff|mapsto|' +
+  'text|textbf|mathbb|mathrm|mathbf|overline|underline|vec|hat|bar|' +
+  'sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|log|ln|exp|forall|exists|subseteq|subset|cup|cap|emptyset|' +
+  'circ|degree|angle|triangle|perp|parallel|quad|qquad';
+const TEX_BARE = new RegExp(`(^|[^\\\\a-zA-Z])(${TEX_WORDS})(?![a-zA-Z])`, 'g');
+function fixTex(tex) {
+  /* Only outside \text{…}: the words in "\text{left side}" are words. And
+     "ce" only when a brace follows, since a bare "ce" is just c times e. */
+  return String(tex || '').split(/(\\text[a-z]*\{[^}]*\})/).map((part, i) => (i % 2 ? part
+    : part.replace(TEX_BARE, (m, pre, w) => pre + '\\' + w).replace(/(^|[^\\a-zA-Z])ce\{/g, '$1\\ce{'))).join('');
+}
+function mathFromPaste(root) {
+  const swap = (el, tex, block) => {
+    if (!tex || !tex.trim()) return;
+    const t = document.createElement(block ? 'div' : 'span');
+    t.className = 'mb-math' + (block ? ' mb-math-block' : '');
+    t.setAttribute('data-tex', tex.trim());
+    el.replaceWith(t);
+  };
+  // Gemini: the LaTeX on an attribute
+  root.querySelectorAll('[data-math]').forEach((el) => {
+    if (!root.contains(el)) return;
+    swap(el, el.getAttribute('data-math'), /block|display/.test(el.className) || el.tagName === 'DIV');
+  });
+  // KaTeX (ChatGPT, Claude, Notion) and MathJax: the LaTeX in an <annotation>
+  root.querySelectorAll('.katex-display, .katex, mjx-container, math').forEach((el) => {
+    if (!root.contains(el) || el.closest('.mb-math')) return;
+    const ann = el.querySelector('annotation[encoding="application/x-tex"]');
+    if (!ann) return;
+    const block = el.classList.contains('katex-display') || el.getAttribute('display') === 'block' ||
+      el.getAttribute('display') === 'true' || !!el.closest('.katex-display');
+    swap(el.closest('.katex-display') && block ? el.closest('.katex-display') : el, ann.textContent, block);
+  });
+  root.querySelectorAll('script[type^="math/tex"]').forEach((el) => swap(el, el.textContent, /display/.test(el.type)));
+}
+/* Is this plain text Markdown? A heading, a list, bold or a formula on
+   enough of it to be sure — a single "- " line is not worth reshaping. */
+function looksLikeMarkdown(text) {
+  const t = String(text || '');
+  if (!/\n/.test(t.trim()) && !/\$[^$\s][^$\n]*\$|\\\(|\*\*[^*\n]+\*\*/.test(t)) return false;
+  let score = 0;
+  if (/^\s{0,3}#{1,6}\s+\S/m.test(t)) score += 2;
+  if ((t.match(/^\s*([-*+]|\d+[.)])\s+\S/gm) || []).length >= 2) score += 2;
+  if (/\*\*[^*\n]+\*\*/.test(t)) score += 1;
+  if (/(^|[^\w$\\])\$(?!\s)[^$\n]*[^\s$\\]\$(?![\w$])|\\\(|\\\[|^\s*\$\$/m.test(t)) score += 2;
+  if (/^\s*\|.*\|\s*$/m.test(t) && /^\s*\|?\s*:?-{3,}/m.test(t)) score += 2;
+  if (/^\s*```/m.test(t)) score += 1;
+  return score >= 2;
+}
+// does sanitized HTML already carry its own structure? then it beats the plain text
+const richHtml = (html) => /<(h[1-3]|li|table|b|strong|pre)\b|class="mb-math/i.test(html);
+
 /* --- a table, a grid or a formula is never the last thing in a note --------
    insertTable() appends a paragraph after the table, but nothing kept it
    there: Backspace on that empty line deletes it, and a note reopened with the
@@ -1364,14 +1432,29 @@ function onEditorPaste(e, body, n) {
     openPasteMenu(url, body, n);
     return;
   }
-  if (text && !dt.types.includes('text/html')) return;   // plain text: let it through
-  // otherwise strip the incoming markup down to what we support
-  if (dt.types.includes('text/html')) {
+  const clean = dt.types.includes('text/html') ? sanitize(dt.getData('text/html')) : '';
+  /* Markdown from a chat's copy button, or the plain half of a copy whose
+     HTML has no structure of its own: read it as Markdown, formulas and all.
+     Not inside a code block — there, text is text. */
+  if (text && !caretPre() && looksLikeMarkdown(text) && !richHtml(clean)) {
     e.preventDefault();
-    insertHTML(sanitize(dt.getData('text/html')));
-    paintMath(body);
-    n.body = bodyHtml(body); saveSoon();
+    insertHTML(sanitize(markdownToNote(text, () => '')));
+    finishPaste(body, n);
+    return;
   }
+  if (text && !clean) return;   // plain text: let it through
+  // otherwise strip the incoming markup down to what we support
+  if (clean) {
+    e.preventDefault();
+    insertHTML(clean);
+    finishPaste(body, n);
+  }
+}
+function finishPaste(body, n) {
+  paintMath(body);
+  normalizeBody(body);
+  ensureTail(body);
+  n.body = bodyHtml(body); saveSoon();
 }
 
 /* Tables are allowed through a paste, so copying one out of a web page or a
@@ -1442,7 +1525,11 @@ const ALLOWED = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE'
 function sanitize(html) {
   const d = document.createElement('div');
   d.innerHTML = html;
+  mathFromPaste(d);           // a chat's KaTeX/MathJax back to its LaTeX, before the text of it is kept
+  // what a page hides is not what was copied — KaTeX's MathML twin, a <style>, a <script>
+  d.querySelectorAll('style, script, template, .katex-mathml, mjx-assistive-mml').forEach((el) => el.remove());
   d.querySelectorAll('*').forEach((el) => {
+    if (!d.contains(el)) return;
     if (!ALLOWED.has(el.tagName)) { el.replaceWith(...el.childNodes); return; }
     [...el.attributes].forEach((a) => {
       const keep = (el.tagName === 'A' && a.name === 'href') ||

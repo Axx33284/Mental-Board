@@ -2085,7 +2085,33 @@ and its tick is one SVG mask centred in the box (mental.css §67) — the old
 `.28em` top drifted with the text size and the rotated-border tick sat left
 of centre. Inline icons sit on the middle of the letters.
 
-JSON Canvas export writes `$…$` / `$$…$$`, which Obsidian draws itself.
+JSON Canvas export writes `$…$` / `$$…$$`, which Obsidian draws itself, and
+the importer (`markdownToNote` / `mdInlineToHtml`) reads them back — plus
+`\(…\)` and `\[…\]` — into formulas.
+
+### Pasting from ChatGPT, Gemini and the like
+
+`onEditorPaste` (editor.js) now tells three shapes apart, all helpers in the
+"pasting from ChatGPT" block of editor.js:
+
+- **Markdown as plain text** (a chat's copy button): `looksLikeMarkdown()`
+  scores headings, lists, bold, formulas, tables and fences; at 2 or more,
+  and when the HTML half (if any) has no structure of its own (`richHtml`),
+  the text goes through `markdownToNote(text, () => '')` and `sanitize()`.
+  Not inside a code block. One plain sentence is never reshaped.
+- **HTML with KaTeX or MathJax in it** (a selection copied off the page):
+  `mathFromPaste()`, called first thing in `sanitize()`, swaps every
+  `.katex`/`.katex-display`/`mjx-container`/`math` for an `.mb-math`
+  built from its `<annotation encoding="application/x-tex">`, and every
+  `[data-math]` (Gemini) the same way. Before, `sanitize()` kept the text of
+  KaTeX's MathML twin *and* its drawing, so "πr²" arrived as "πr2πr2".
+  `.katex-mathml`, `<style>` and `<script>` are now dropped outright.
+- **LaTeX that lost its backslashes** ("n cdot a"): `fixTex()` restores the
+  backslash on a fixed list of command names (`TEX_WORDS`) that cannot be
+  anything else, never inside `\text{…}`, and `ce` only before a brace.
+
+`finishPaste()` then paints the formulas, normalises, and keeps a line under
+a trailing table.
 
 **Shell trap for whoever edits next:** in this repo's Git Bash, a quoted
 heredoc still collapsed `\\` to `\`, which silently broke every LaTeX string
