@@ -91,6 +91,7 @@ function fillNote(el, n) {
   paintCodeBlocks(body);
   paintEmbeds(body);              // the card, not the player; see the embeds block
   wireNoteBody(body, n, el);
+  paintForm(el, n);               // a heart, a cloud… and where the writing sits (shapes.js)
 }
 
 /* Every picture in a note decodes off the main thread and is not fetched at
@@ -138,6 +139,7 @@ function unstub(el, n) {
 function stubNote(el, n) {
   el.dataset.stub = '1';
   el.innerHTML = '<div class="note-ghost"></div><div class="note-status hidden"></div>';
+  paintForm(el, n);
   el.firstChild.style.background = noteGhost(n);
   paintNoteStatus(el, n);
 }
@@ -168,7 +170,6 @@ const ghostCache = new Map();
 const GHOST_TAG = /<(\/?)([a-z][a-z0-9]*)\b([^>]*)>/gi;
 const GHOST_BLOCK = /^(p|div|li|h[1-6]|blockquote|pre|tr|ul|ol|br|hr|img|table)$/;
 const GHOST_CH = { mono: .6, wide: .58, narrow: .45, hand: .48 };   // average glyph width in ems
-const GHOST_PAD = { thin: 6, cosy: 14, roomy: 28 };
 const GHOST_RTL = /^[^A-Za-zÀ-ɏ֐-ࣿיִ-ﻼ]*[֐-ࣿיִ-ﻼ]/;
 
 // the note's blocks, in order: { k: kind, n: characters, words: [lengths], lead, rtl, done }
@@ -233,7 +234,7 @@ function noteGhost(n) {
   const fs = (s.fontScale || 100) / 100;
   const small = document.body.classList.contains('small-text');
   const face = document.body.dataset.notefont || '';
-  const pad = GHOST_PAD[document.body.dataset.density] || 14;
+  const pad = ((state.settings || {}).notePad || PAD_PRESETS.cosy).l;
   const key = `${n.w}|${n.h}|${fs}|${small}|${face}|${pad}|${!!n.icon}|${document.body.dataset.cork || ''}`;
   const hit = ghostCache.get(n.id);
   if (hit && hit.body === n.body && hit.key === key) return hit.css;

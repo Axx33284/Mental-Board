@@ -13,6 +13,44 @@
    a control plus every note that immediately follows it, exactly as the
    search groups them. Nothing under the pointer: the footer says so, quietly. */
 const DESC_UNIT = '.set-row, .set-check, .theme-grid, .ct-box, .path-box, .set-btns, .paper-row, #statusList, #tplList, .keys';
+/* ---- the space around a note's writing (2.4) ----
+   Four sliders over one example note. The note is a real `.note` reading the
+   same --pad-* properties as every note on the board, so what it shows is not
+   an illustration of the setting: it is the setting. Dragging writes straight
+   to <body> through applyNotePad() — no re-render, the board behind the panel
+   reflows with it — and the save waits for the hand to come off. */
+function paintPadStudio() {
+  const p = state.settings.notePad || PAD_PRESETS.cosy;
+  PAD_SIDES.forEach((k) => {
+    const K = k.toUpperCase();
+    const inp = $('pad' + K), val = $('pad' + K + 'Val');
+    if (inp && +inp.value !== p[k]) inp.value = p[k];
+    if (val) val.textContent = num(p[k]) + ' px';
+  });
+  const eg = $('padEg');
+  if (eg) paintColor(eg, state.settings.noteColor || 'default', 'default');
+}
+function wirePadStudio() {
+  const box = $('padStudio');
+  if (!box) return;
+  box.querySelectorAll('input[type="range"]').forEach((inp) => {
+    inp.addEventListener('input', () => {
+      const s = state.settings;
+      const v = clamp(Math.round(+inp.value || 0), 0, PAD_MAX);
+      const p = Object.assign({}, s.notePad);
+      if ($('padLink').checked) PAD_SIDES.forEach((k) => { p[k] = v; });
+      else p[inp.dataset.side] = v;
+      s.notePad = p;
+      s.noteDensity = padPreset(p);
+      applyNotePad();
+      document.body.dataset.density = s.noteDensity;
+      $('densitySeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.density === s.noteDensity));
+      paintPadStudio();
+    });
+    inp.addEventListener('change', () => { ghostCache.clear(); saveSoon(); });
+  });
+}
+
 function settingsHintFor(el) {
   const unit = el && el.closest ? el.closest(DESC_UNIT) : null;
   if (!unit) return '';
@@ -557,6 +595,7 @@ function syncSettingsUI() {
   $('railSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.rail === s.railMode));
   $('shapeSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.shape === s.noteShape));
   $('densitySeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.density === s.noteDensity));
+  paintPadStudio();
   $('fontSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.font === s.noteFont));
   $('shadowSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.shadow === s.noteShadow));
   $('motionSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.motion === s.motion));

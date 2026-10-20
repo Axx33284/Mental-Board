@@ -200,6 +200,7 @@ function onKeyDown(e) {
     if (!$('settings').classList.contains('hidden')) { closeSettings(); return; }
     if (!$('ctxMenu').classList.contains('hidden')) { closeCtxMenu(); return; }
     if (!$('boardMenu').classList.contains('hidden')) { closeBoardMenu(); return; }
+    if (!$('flowsMenu').classList.contains('hidden')) { closeFlowsMenu(); return; }
     if (!$('pageMenu').classList.contains('hidden')) { closePageMenu(); return; }
     if (!$('moveDlg').classList.contains('hidden')) { closeMoveTo(); return; }
     if (!$('agendaDlg').classList.contains('hidden')) { closeAgenda(); return; }
@@ -1034,6 +1035,7 @@ function init() {
   wireImgBar();
   wirePageMenu();
   wireSettingsDesc();
+  wirePadStudio();
   wireTableBar();
   wireColsBar();
   wireSounds();
@@ -1220,6 +1222,9 @@ function wireExtras() {
     state.settings.noteShape = b.dataset.shape; applySettings(); syncSettingsUI(); saveSoon();
   }));
   $('densitySeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const p = PAD_PRESETS[b.dataset.density];
+    if (!p) return;
+    state.settings.notePad = Object.assign({}, p);
     state.settings.noteDensity = b.dataset.density; applySettings(); syncSettingsUI(); saveSoon();
   }));
   $('fontSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
@@ -1331,6 +1336,7 @@ const STATIC_ICONS = [
   ['#colsBar [data-cb="add"]', 'add'],
   ['#colsBar [data-cb="del"]', 'remove'],
   ['#colsBar [data-cb="unwrap"]', 'view_list'],
+  ['#colsBar [data-cb="even"]', 'view_column'],
 
   /* palette, capture, reminders, history, passphrase, board picker */
   ['#palette .pal-head-ic', 'search'],

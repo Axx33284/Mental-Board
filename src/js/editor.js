@@ -713,9 +713,41 @@ function ensureTail(body) {
 
    That is also why any count works. 2 through 5 are what the menu offers;
    `/columns 9` gives nine, and the toolbar's + has no ceiling but the width of
-   the note. */
+   the note.
+
+   2.4 rebuilt it as a flex row and gave the columns **widths**: drag the line
+   between two columns and they trade space, double-click it and they are even
+   again. A width is a class, `mb-w-<percent>` (10 to 90, COL_STEP apart), on
+   each column — a class because the sanitiser keeps `mb-` classes and nothing
+   else, so a width survives copy and paste where a style would not. Either
+   every column in a block has one or none does (repairColumns() sees to it);
+   none means even. The CSS is one block at the end of css/mental.css (§70). */
 const COLS_MAX = 12;
+const COL_STEP = 1, COL_MIN = 10;   // %; css/mental.css §70 has a rule for every width in between
 const colCell = () => '<div class="mb-col"><p><br></p></div>';
+
+// a column's width in %, or 0 when the block is even
+function colWidth(col) {
+  const m = /\bmb-w-(\d+)\b/.exec(col.className || '');
+  return m ? +m[1] : 0;
+}
+function setColWidth(col, w) {
+  [...col.classList].forEach((c) => { if (/^mb-w-\d+$/.test(c)) col.classList.remove(c); });
+  if (w) col.classList.add('mb-w-' + w);
+}
+/* Give every column of a block a width from a list of raw numbers: scaled to
+   100, snapped to COL_STEP, never under COL_MIN, and the rounding error put on
+   the widest so the row still adds up. */
+function applyColWidths(grid, raw) {
+  const cols = [...grid.children];
+  const sum = raw.reduce((a, b) => a + b, 0) || 1;
+  let w = raw.map((v) => Math.max(COL_MIN, Math.round((v / sum) * 100 / COL_STEP) * COL_STEP));
+  const off = 100 - w.reduce((a, b) => a + b, 0);
+  if (off) { const i = w.indexOf(Math.max(...w)); w[i] = Math.max(COL_MIN, w[i] + off); }
+  const even = w.every((v) => v === w[0]);
+  cols.forEach((c, i) => setColWidth(c, even ? 0 : w[i]));
+}
+function evenColumns(grid) { [...grid.children].forEach((c) => setColWidth(c, 0)); }
 
 function insertColumns(n) {
   n = clamp(Math.round(+n || 2), 2, COLS_MAX);
@@ -756,7 +788,16 @@ function addColumn() {
   const cell = document.createElement('div');
   cell.className = 'mb-col';
   cell.innerHTML = '<p><br></p>';
+  const widths = [...grid.children].map(colWidth);
+  const at = here && here.parentNode === grid ? [...grid.children].indexOf(here) : grid.children.length - 1;
   if (here && here.parentNode === grid) here.after(cell); else grid.appendChild(cell);
+  /* An uneven block stays uneven: the new column takes half of the one it was
+     added beside, rather than everything snapping back to even. */
+  if (widths.every(Boolean)) {
+    const half = widths[at] / 2;
+    widths.splice(at, 1, half, half);
+    applyColWidths(grid, widths);
+  }
   placeCaret(cell.firstChild, 0);
 }
 
@@ -769,7 +810,15 @@ function delColumn() {
   const here = caretColumn();
   const cell = (here && here.parentNode === grid) ? here : grid.lastElementChild;
   const next = cell.nextElementSibling || cell.previousElementSibling;
-  cell.remove();
+  // its width goes to the neighbour that takes the caret
+  const widths = [...grid.children].map(colWidth);
+  if (widths.every(Boolean) && next) {
+    const i = [...grid.children].indexOf(cell), j = [...grid.children].indexOf(next);
+    widths[j] += widths[i];
+    widths.splice(i, 1);
+    cell.remove();
+    applyColWidths(grid, widths);
+  } else cell.remove();
   if (next) placeCaret(next.firstChild || next, 0);
 }
 
@@ -800,6 +849,16 @@ function columnsBroken(body) {
   }
   for (const c of body.querySelectorAll('.mb-col')) if (!c.parentElement.classList.contains('mb-cols')) return true;
   return false;
+}
+/* Widths are all-or-nothing per block, and a column carries one only inside a
+   block — a width left on a column that was lifted out means nothing. */
+function repairColWidths(body) {
+  body.querySelectorAll('.mb-cols').forEach((grid) => {
+    const cols = [...grid.querySelectorAll(':scope > .mb-col')];
+    const w = cols.map(colWidth);
+    if (w.some(Boolean) && !w.every(Boolean)) evenColumns(grid);
+    else if (w.every(Boolean) && w.reduce((a, b) => a + b, 0) !== 100) applyColWidths(grid, w);
+  });
 }
 function repairColumns(body) {
   if (!body.querySelector('.mb-cols, .mb-col')) return;
@@ -846,6 +905,7 @@ function repairColumns(body) {
       grid.replaceWith(out);
     }
   });
+  repairColWidths(body);
 }
 
 /* Backspace at the very start of a column, or Delete at the very end of one,
@@ -1259,6 +1319,7 @@ function showColsBar() {
   const grid = editing ? caretColumns() : null;
   if (!grid) { hideColsBar(); return; }
   $('colsCount').textContent = num(grid.children.length);
+  $('colsBar').querySelector('[data-cb="even"]').disabled = ![...grid.children].some(colWidth);
   bar.classList.remove('hidden');
   const r = grid.getBoundingClientRect();
   const bw = bar.offsetWidth, bh = bar.offsetHeight;
@@ -1268,7 +1329,78 @@ function showColsBar() {
   bar.style.left = clamp(left, 6, innerWidth - bw - 6) + 'px';
   bar.style.top = top + 'px';
 }
+/* The line between two columns is a handle (2.4). Within COL_GRAB px of it,
+   in a note being edited, the pointer becomes a resize cursor; pressing there
+   drags the boundary and the two columns either side trade width, in COL_STEP
+   steps, never below COL_MIN. A double-click on it evens the block out.
+
+   The cursor is a class on <body>, not on the block — anything put on the
+   block is in the note's markup and would be saved with it. */
+const COL_GRAB = 9;   // about half the gap the line sits in, so the whole gap is the handle
+function colEdgeAt(e) {
+  const t = e.target && e.target.closest ? e.target.closest('.note.editing .note-body .mb-cols') : null;
+  if (!t) return null;
+  const cols = [...t.querySelectorAll(':scope > .mb-col')];
+  const rtl = getComputedStyle(t).direction === 'rtl';
+  for (let i = 1; i < cols.length; i++) {
+    const a = cols[i - 1].getBoundingClientRect(), b = cols[i].getBoundingClientRect();
+    if (Math.abs(a.top - b.top) > 2) return null;          // stacked: the note is too narrow for a row
+    const x = rtl ? (b.right + a.left) / 2 : (a.right + b.left) / 2;   // the line is in the middle of the gap
+    if (Math.abs(e.clientX - x) <= COL_GRAB && e.clientY >= b.top && e.clientY <= b.bottom) return { grid: t, i, rtl };
+  }
+  return null;
+}
+function wireColDrag() {
+  document.addEventListener('pointermove', (e) => {
+    if (e.buttons) return;
+    document.body.classList.toggle('col-edge', !!(editing && colEdgeAt(e)));
+  }, true);
+  document.addEventListener('dblclick', (e) => {
+    const hit = editing && colEdgeAt(e);
+    if (!hit) return;
+    e.preventDefault(); e.stopPropagation();
+    evenColumns(hit.grid);
+    persistEdit(); showColsBar();
+  }, true);
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !editing) return;
+    const hit = colEdgeAt(e);
+    if (!hit) return;
+    e.preventDefault(); e.stopPropagation();
+    const cols = [...hit.grid.children];
+    // in screen px: the gaps are not columns, so the shares are of what the columns hold
+    const start = cols.map((c) => c.getBoundingClientRect().width);
+    const total = start.reduce((a, b) => a + b, 0) || 1, least = total * COL_MIN / 100;
+    const x0 = e.clientX, pair = start[hit.i - 1] + start[hit.i];
+    document.body.classList.add('col-dragging');
+    /* Only the two columns either side of the line change. The rest are
+       snapped once, at the start, and the pair shares whatever they leave. */
+    const snap = (v) => Math.round(v / COL_STEP) * COL_STEP;
+    const pct = start.map((v) => Math.max(COL_MIN, snap(v / total * 100)));
+    const rest = pct.reduce((a, v, k) => a + (k === hit.i - 1 || k === hit.i ? 0 : v), 0);
+    const pairPct = Math.max(COL_MIN * 2, 100 - rest);
+    const move = (ev) => {
+      const d = (ev.clientX - x0) * (hit.rtl ? -1 : 1);
+      const left = clamp(start[hit.i - 1] + d, least, pair - least);
+      const lp = clamp(snap(left / pair * pairPct), COL_MIN, pairPct - COL_MIN);
+      const w = pct.slice();
+      w[hit.i - 1] = lp; w[hit.i] = pairPct - lp;
+      const even = w.every((v) => v === w[0]);
+      cols.forEach((c, k) => setColWidth(c, even ? 0 : w[k]));
+    };
+    const up = () => {
+      removeEventListener('pointermove', move, true);
+      removeEventListener('pointerup', up, true);
+      document.body.classList.remove('col-dragging');
+      persistEdit(); showColsBar();
+    };
+    addEventListener('pointermove', move, true);
+    addEventListener('pointerup', up, true);
+  }, true);
+}
+
 function wireColsBar() {
+  wireColDrag();
   $('colsBar').addEventListener('mousedown', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -1278,6 +1410,7 @@ function wireColsBar() {
       case 'add': addColumn(); break;
       case 'del': delColumn(); break;
       case 'unwrap': unwrapColumns(); break;
+      case 'even': { const g = caretColumns(); if (g) evenColumns(g); break; }
     }
     normalizeBody(editing);
     persistEdit();

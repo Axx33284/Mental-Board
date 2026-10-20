@@ -243,7 +243,11 @@ function defaults() {
       spell: true,
       railMode: 'hover',    // 'pinned' | 'hover' | 'off' — see RAIL_MODES
       noteShape: 'soft',    // 'round' | 'soft' | 'square' — see NOTE_SHAPES
-      noteDensity: 'cosy',  // 'cosy' | 'thin' — padding and line-height on a note
+      noteDensity: 'cosy',  // which preset notePad came from, or 'custom' — see NOTE_DENSITIES
+      /* The space between a note's writing and its own edge, per side, in
+         world px (2.4). The three presets fill it in; the four sliders in
+         Settings ▸ Notes set it exactly. See PAD_PRESETS and applyNotePad(). */
+      notePad: { t: 12, r: 14, b: 12, l: 14 },
       /* What a brand-new note starts as. Three fields rather than one, because
          "my notes are always this colour and about this big" is one preference
          that happens to need three numbers. Nothing here touches a note that
@@ -299,7 +303,29 @@ const NOTE_SHAPES = ['round', 'soft', 'square'];
 /* Spacing between a note's text and its own edge. Three steps, because two
    were not distinguishable enough to be worth choosing between — 14px vs 10px
    of padding is a difference you can measure and not one you can see. */
-const NOTE_DENSITIES = ['thin', 'cosy', 'roomy'];
+const NOTE_DENSITIES = ['thin', 'cosy', 'roomy', 'custom'];
+/* What each of those means since 2.4, when the space became four numbers.
+   The values are the ones the CSS used to derive from one --note-pad (6, 14
+   and 28, with the top and bottom 2px less), so a board looks exactly the same
+   the first time it opens in a build that has sliders. */
+const PAD_PRESETS = {
+  thin:  { t: 4,  r: 6,  b: 4,  l: 6 },
+  cosy:  { t: 12, r: 14, b: 12, l: 14 },
+  roomy: { t: 26, r: 28, b: 26, l: 28 }
+};
+const PAD_MAX = 64;
+const PAD_SIDES = ['t', 'r', 'b', 'l'];
+function healPad(p, density) {
+  const base = PAD_PRESETS[density] || PAD_PRESETS.cosy;
+  const o = (p && typeof p === 'object') ? p : base;
+  const out = {};
+  PAD_SIDES.forEach((k) => { out[k] = clamp(Math.round(Number.isFinite(+o[k]) ? +o[k] : base[k]), 0, PAD_MAX); });
+  return out;
+}
+// the preset a padding is, or 'custom'
+function padPreset(p) {
+  return Object.keys(PAD_PRESETS).find((k) => PAD_SIDES.every((s) => PAD_PRESETS[k][s] === p[s])) || 'custom';
+}
 /* What a note's *text* is set in — never the interface, which keeps one face
    whatever this says. Four, and each is a different kind of reading rather than
    a different taste: the system UI face, a serif for long prose, a monospace
@@ -710,6 +736,13 @@ function adoptBoard(raw) {
        the shape without waiting for the picture to decode. See pictures.js. */
     pic: n.pic ? true : undefined,
     ar: n.pic && +n.ar > 0 ? +n.ar : undefined,
+    /* Its shape and where its writing sits in it (2.4, shapes.js). All four
+       are absent on an ordinary note, so a board written before them reads
+       back unchanged and one written after reads in an older build as plain. */
+    form: n.pic ? undefined : okForm(n.form),
+    textAt: n.pic ? undefined : okTextAt(n.textAt),
+    tx: n.pic ? undefined : okNudge(n.tx),
+    ty: n.pic ? undefined : okNudge(n.ty),
     /* Only on something sitting in the trash: which board it came from, and
        when it went in. */
     trashedFrom: typeof n.trashedFrom === 'string' ? n.trashedFrom : undefined,
@@ -724,6 +757,8 @@ function adoptBoard(raw) {
     titlePos: TITLE_POS.includes(f.titlePos) ? f.titlePos : 'tl',
     // pinned behind the notes, out of reach of a lasso (2.1, lockFrame())
     locked: f.locked ? true : undefined,
+    // its signpost switched off in the workflows list (2.4, page.js)
+    noCompass: f.noCompass ? true : undefined,
     trashedFrom: typeof f.trashedFrom === 'string' ? f.trashedFrom : undefined,
     trashedAt: +f.trashedAt || undefined
   }));
@@ -818,6 +853,10 @@ function adopt(raw, keepSettings) {
   if (st.accent === 'mint' && versionBefore(state.appVersion, '2.1.0')) st.accent = 'mono';
   if (!NOTE_SHAPES.includes(st.noteShape)) st.noteShape = 'soft';
   if (!NOTE_DENSITIES.includes(st.noteDensity)) st.noteDensity = 'cosy';
+  /* A store from before 2.4 has a density and no numbers: the numbers are the
+     preset it named, so nothing on the board moves. */
+  st.notePad = healPad(rawSet.notePad || kept.notePad || null, st.noteDensity);
+  st.noteDensity = padPreset(st.notePad);
   if (!NOTE_FONTS.includes(st.noteFont)) st.noteFont = 'system';
   if (!NOTE_SHADOWS.includes(st.noteShadow)) st.noteShadow = 'flat';
   if (!MOTION_MODES.includes(st.motion)) st.motion = 'auto';

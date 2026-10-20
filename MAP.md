@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-two scripts or nine sheets holds the thing you are after, so you never
+twenty-three scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-two ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + twenty-three ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -142,7 +142,7 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           22 plain scripts, one global scope, no bundler   (§4)
+  js/           23 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png; vendored: katex/
   main.js       Electron main
@@ -211,7 +211,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-two scripts that follow. Between them they hold one mutable `state`,
+twenty-three scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -614,10 +614,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-two files
+## 4. `src/js/` — the app, in twenty-three files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`) and 2.2 two (`samsung.js`, `tablet.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`) and 2.4 one (`shapes.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -628,21 +628,22 @@ no bundler and no build step — the only thing joining them is the order
 | `helpers.js` | ~490 | `$()` `clamp` `uid` `esc` `stripHtml` `maxOf`/`minOf`, `THEMES` (18), `ACCENTS` (15, with `mono`), an item's colour (`okItemColor` `paintColor` `colorStyle` `colorName`, §4v), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
 | `state.js` | ~1150 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, `okDateKey()` (§4s), and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
 | `sound.js` | ~400 | **Menu sounds** and **typing sounds** (2.1, both in Settings ▸ Extra): `keySfx` `KEY_SWITCHES` `wireKeySounds`, and `sfx(kind)` — move, select, back, open, toggle — synthesised with Web Audio through a generated room reverb, and `wireSounds()`, which hears menus by delegation and a MutationObserver. Off unless `settings.sounds`. See §4v. |
-| `theme.js` | ~340 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, **`applyThemeFaded(ms)`** (a View Transition crossfade, §4v), `applyLang`, `applySettings`, and the graphics tiers: `gpuName` `detectPerf` `resolvedPerf` (§4c). See §3d. |
+| `theme.js` | ~340 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, **`applyThemeFaded(ms)`** (a View Transition crossfade, §4v), `applyLang`, `applySettings`, `applyNotePad` (§4z), and the graphics tiers: `gpuName` `detectPerf` `resolvedPerf` (§4c). See §3d. |
 | `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `fillStubs` `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
 | `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
 | `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
-| `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`), user templates, the paste sanitiser. |
+| `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
 | `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
 | `toolbars.js` | ~650 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu (ranked by `blockRank`) — the chrome that sits over the editor. |
 | `media.js` | ~740 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
+| `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
-| `menus.js` | ~540 | The right-click menu (colour, status and **date** rows, §4s; linked notes, copy, lock — §4v), `openRopeMenu`, and the compass that signposts off-screen workflows. See §7. |
+| `menus.js` | ~540 | The right-click menu (colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
 | `edit-ops.js` | ~915 | Create, delete (`askThenDelete` is the one door), **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export** (`loadExportPictures` → `paintBoardCanvas`, which draws the ink since 2.1). See §4f and §4g. |
 | `boards.js` | ~1500 | Several boards, one rail: switching, the flyout, locking, drag-to-board, undo (including the `ink` step), the clipboard with its ropes (`clipLinks` `retieLinks`), **the paste ghost** (`beginPasteGhost` … `commitPasteGhost`), and the JSON export/import. |
-| `settings.js` | ~1640 | The settings panel and every dialog behind it (the formula window: `openMathDialog` `applyMath` `MATH_SNIPS`, §4y; the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()` and the stats cache. See §5b. |
-| `page.js` | ~345 | **The page menu** at the top right and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
+| `settings.js` | ~1640 | The settings panel and every dialog behind it (the formula window: `openMathDialog` `applyMath` `MATH_SNIPS`, §4y; the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()`, the stats cache, and the padding sliders with their example note (`wirePadStudio` `paintPadStudio`, §4z). See §5b. |
+| `page.js` | ~345 | **The page menu** at the top right, **the workflows list** beside it (`paintFlowsBtn` `openFlowsMenu`, §4z), and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
@@ -2117,6 +2118,113 @@ a trailing table.
 heredoc still collapsed `\\` to `\`, which silently broke every LaTeX string
 and regex written through one. Write such files with an editor, not a heredoc.
 
+## 4z. Mental Board 2.4
+
+Five changes from one list. Each paragraph says where it lives and the one
+thing about it that is not obvious from the code.
+
+### Signposts that never sit on each other — `placeChips()` in `menus.js`
+
+The compass used to spread chips per border (`spreadChips`) and then slide any
+that hit the zoom bar (`clearOfChrome`). Two chips on *different* borders met
+in a corner, and the slide off the zoom bar could land one on another — the
+screenshot that started 2.4 was two workflow names drawn on top of each other
+at the top left. Both passes are gone. `placeChips()` is one greedy pass: the
+nearest workflow places first; every later chip tries its own spot, then walks
+**along its own border** in growing steps either way, then — only if its whole
+border is full — steps inward. Every placed chip and every corner control
+(`chromeRects()`: zoom bar, create dial, **minimap**, and the top-right row)
+is an obstacle, so the result is chips stacked vertically or side by side,
+never overlapping. 12 chips at most (was 8).
+
+### The workflows list — `paintFlowsBtn()` / `openFlowsMenu()` in `page.js`
+
+A button left of the page button (both now live in `#topRight`, one flex row,
+so a long board name can never push one under the other). It shows the count;
+its panel lists every workflow in reading order — the name flies there, the
+switch beside it is `frame.noCompass` (healed in `adoptBoard()`, skipped by
+`drawCompass()`), and the switch at the top is `settings.compass`, the same
+setting as Settings ▸ Canvas, kept in step both ways. All on / All off. The
+count is repainted from `drawCompass()`, which already runs after every
+change to the frames. Escape and an outside press close it, like the page menu.
+
+### Zooming out further
+
+`ZOOM_MIN` is 0.02 (was 0.08). Nothing else had to change: far-zoom stubs
+(§4c) already make a fully zoomed-out board cheap, and `paintGrid()` coarsens
+the paper by fours until it is readable.
+
+### A note's shape — `js/shapes.js` (new, after `pictures.js`)
+
+Right-click a note → **Shape…** opens a panel in the context menu's own
+element (`#ctxMenu.cm-wide`): twelve shapes, a 3×3 "where the text sits"
+picker (the title-position codes, `TITLE_POS`, so `.cm-pos` CSS is shared),
+two nudge sliders and *Put the text back*. Stored per note as `form`,
+`textAt`, `tx`, `ty` — all absent on an ordinary note, all healed by
+`okForm`/`okTextAt`/`okNudge` in `adoptBoard()`.
+
+- **Drawn, not clipped.** `paintForm()` puts an `<svg class="note-form">`
+  first in the note, its path drawn in a 100×100 box and stretched with
+  `preserveAspectRatio="none"` and `vector-effect: non-scaling-stroke`. The
+  note's own box goes transparent and `pointer-events: none` (children back
+  on), so a click in the empty corner of a heart is a click on the canvas.
+  `clip-path` was the obvious way and is wrong: it cuts off the outline, the
+  selection ring and the shadow with the corners.
+- **The writing does not follow the curve.** Each shape has a safe rectangle
+  (`FORM_SAFE`, % of the box) wholly inside it; the note becomes a grid
+  (`.note[data-at]`, mental.css §69) whose middle cell is that rectangle plus
+  the nudge, written as `--fi-t/r/b/l`. The grid is only switched on for a note
+  that asked for a shape, a place or a nudge — the ordinary note keeps its
+  flex column.
+- **Called from `fillNote()` and `stubNote()`**, because both replace the
+  element's insides; the far-zoom ghost is hidden on a shaped note (it would
+  spill out of the outline).
+- **Warnings, never refusals.** `formIssues()` looks for a table, columns, a
+  video/embed, a picture, code or a formula block, and long text; picking a
+  shape for such a note shows the list with *Use this shape anyway*. Nothing
+  changes until then, so Cancel needs no undo.
+- **The board picture draws it too** (`formPath2D` / `formBox`, used by
+  `paintBoardCanvas()`), text kept to the same safe rectangle.
+
+### The space round the writing — `settings.notePad`
+
+Four numbers, `{ t, r, b, l }` in world px (0–64), replacing the three-step
+`--note-pad`. `applyNotePad()` (theme.js) writes `--pad-t/r/b/l` on `<body>`;
+mental.css §68 reads them for the body, the status row and the icon. The
+three presets are kept as buttons that fill the numbers (`PAD_PRESETS`, the
+exact old values, so a store from before 2.4 looks the same:
+`healPad(raw.notePad, noteDensity)` in `adopt()`), and `noteDensity` now says
+which preset the numbers are, or `custom` (`padPreset()`).
+
+Settings ▸ Notes has four sliders and **an example note that is a real
+`.note`** reading the same properties (`#padEg`, `wirePadStudio()` in
+settings.js) — the tinted band is the padding box painted under the content
+box. Dragging writes straight to `<body>` (no re-render; the board behind the
+panel reflows live) and saves on `change`.
+
+### Columns, recoded — editor.js and mental.css §70
+
+The CSS was four blocks in two sheets (later.css §30, §35, §42 and container
+queries in mental.css), each correcting the last; it is now one block, §70,
+and the old places hold a pointer. A **flex row** with a 24px gap and the
+divider drawn in the middle of the gap, full height.
+
+**Widths.** A column may carry `mb-w-<percent>` (10–90; a rule per percent in
+§70). A class, because the sanitiser keeps `mb-` classes and nothing else — a
+width survives copy and paste where a style would not. All-or-nothing per
+block: `repairColWidths()` (from `repairColumns()`) evens out a block where
+only some columns have one and rescales one that does not add up to 100.
+Drag the line between two columns (`wireColDrag()`: the cursor is a class on
+`<body>`, never on the block, because anything on the block is saved in the
+note) and **only those two** trade width; double-click it, or the new button
+on the columns bar, to even the block. Add a column beside an uneven one and it
+takes half of that one's width; remove one and its neighbour takes it.
+
+Narrow notes still stack the block into one column (container queries, now up
+to six columns), as `display: block`, so the widths are ignored while stacked.
+
+Tests: the **2.4** suite in `tools/test-app-features.js`.
+
 ## 4o. Lining a note up with its neighbours
 
 `guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
@@ -2631,7 +2739,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y). Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list. Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
@@ -3693,13 +3801,13 @@ Six from 2.1 first, because they are the freshest:
 - **The compass draws under the corner controls.** `#compass` is z-index 42 and
   `#zoombar` is 45, so a workflow off-screen to the bottom-right put its
   signpost *behind* the zoom bar — visible, but clicking it pressed a zoom
-  button. `clearOfChrome()` slides a chip vertically clear of `#zoombar` and
-  `#fabWrap`, measured at draw time rather than hard-coded (both change size
-  with the text-size setting, and the zoom bar's width changes with the
-  language's digits). **Vertical only** — a chip's horizontal position is what
-  says which direction the workflow is in, so moving it sideways would point
-  the signpost somewhere the workflow is not. Anything new pinned to a canvas
-  corner has to be added to `chromeRects()`.
+  button. Since 2.4 `placeChips()` treats every rectangle `chromeRects()`
+  returns (zoom bar, create dial, minimap, the top-right row) as an obstacle,
+  exactly like a chip already placed, measured at draw time rather than
+  hard-coded (they change size with the text-size setting and the language's
+  digits). A chip only ever slides **along its own border** first — its
+  position on that border is what says which way the workflow is. Anything
+  new pinned to a canvas corner has to be added to `chromeRects()`.
 - **A status id outlives the status.** `adoptBoard` deliberately does not
   validate `n.status` against `state.statuses` — the two are read from the same
   file and the note list is parsed first, so pruning there would wipe every
@@ -3720,17 +3828,22 @@ Six from 2.1 first, because they are the freshest:
   its old value. Half the palette looked broken and nothing errored.
   `applyTheme()` now writes `--accent` from the map. Do not reintroduce the
   rules.
-- **A later section can undo a `--note-pad` rule.** Note padding is derived from
+- **A later section can undo a padding rule.** Note padding was derived from
   one variable in §29, but §31 declared `.note-status { padding: … }` after it
   and won on source order, and the RTL `.note-head` rule out-specified it.
+  Since 2.4 the padding is four variables (`--pad-t/r/b/l`) read in
+  mental.css §68 — the last word — and a shaped note halves them in §69.
   styles.css is append-only by convention, which means a new section can quietly
   beat an old one — check what already sets a property before adding a rule for
   it.
-- **The column count is never stored.** `.mb-cols` is a grid whose column count
+- **The column count is never stored.** `.mb-cols` is a row whose column count
   *is* its child count. The sanitiser strips `style` and everything outside its
-  attribute allow-list, so a count in markup would survive being written and
-  vanish on the first copy-paste. Add a width class and you have created that
-  bug.
+  attribute allow-list, so a count — or a width — kept as a style or a data
+  attribute would survive being written and vanish on the first copy-paste.
+  That is why a column's width (2.4) is an `mb-w-<n>` **class**, which the
+  sanitiser keeps, and why widths are all-or-nothing per block
+  (`repairColWidths()`): one column with a width and one without is a block
+  half-pasted, and it goes back to even.
 - **`execCommand` produces `<p><ul>…</ul></p>`.** A paragraph wrapping block
   elements swallows every block typed after it and breaks `caretBlock()`.
   `normalizeBody()` unwraps them; call it after any structural edit.

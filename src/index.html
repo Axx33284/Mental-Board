@@ -116,8 +116,15 @@
        *this* board: its font, its text size, its background, copy, duplicate,
        move to a group, trash, import, export. Filled by openPageMenu() in
        js/page.js; the button by paintPageBtn(). -->
-  <button id="pageBtn" class="pg-btn" data-t-title="page.menu" data-t-aria="page.menu"></button>
+  <!-- The two buttons at the top right share one row (2.4): the workflows
+       list, then the page button. Filled by paintFlowsBtn() / openFlowsMenu()
+       in js/page.js. -->
+  <div id="topRight">
+    <button id="flowsBtn" class="pg-btn fl-btn" data-t-title="flows.title" data-t-aria="flows.title"></button>
+    <button id="pageBtn" class="pg-btn" data-t-title="page.menu" data-t-aria="page.menu"></button>
+  </div>
   <div id="pageMenu" class="hidden" role="menu"></div>
+  <div id="flowsMenu" class="hidden" role="menu"></div>
 
   <!-- Empty-board hint. It is also the onboarding: rather than telling a new
        user what the app can do, it hands them a filled-in board to poke at.
@@ -244,6 +251,7 @@
   <button data-cb="add" data-t-title="cols.add"></button>
   <span class="cb-count" id="colsCount">2</span>
   <button data-cb="del" data-t-title="cols.del"></button>
+  <button data-cb="even" data-t-title="cols.even"></button>
   <span class="sb-sep"></span>
   <button data-cb="unwrap" class="danger" data-t-title="cols.unwrap"></button>
 </div>
@@ -510,6 +518,25 @@
               <button data-density="roomy" data-t="set.densityRoomy"></button>
             </div>
           </div>
+          <!-- The space around the writing, side by side (2.4): four sliders and
+               a note drawn with the same numbers, so you watch the gap change as
+               you drag. The tinted band in the example *is* the space. Wired by
+               wirePadStudio() in js/settings.js. -->
+          <div class="set-row stack pad-row" id="padStudio">
+            <div class="pad-sliders">
+              <div class="pad-sl"><label for="padT"><span data-t="set.padTop"></span><span class="set-val" id="padTVal"></span></label><input type="range" id="padT" data-side="t" min="0" max="64" step="1"></div>
+              <div class="pad-sl"><label for="padB"><span data-t="set.padBottom"></span><span class="set-val" id="padBVal"></span></label><input type="range" id="padB" data-side="b" min="0" max="64" step="1"></div>
+              <div class="pad-sl"><label for="padL"><span data-t="set.padLeft"></span><span class="set-val" id="padLVal"></span></label><input type="range" id="padL" data-side="l" min="0" max="64" step="1"></div>
+              <div class="pad-sl"><label for="padR"><span data-t="set.padRight"></span><span class="set-val" id="padRVal"></span></label><input type="range" id="padR" data-side="r" min="0" max="64" step="1"></div>
+              <label class="set-check pad-link"><input type="checkbox" id="padLink"><span data-t="set.padLink"></span></label>
+            </div>
+            <div class="pad-preview" aria-hidden="true">
+              <div class="note pad-eg" id="padEg" data-color="default">
+                <div class="note-body" dir="auto"><p class="pad-eg-h" data-t="set.padEgTitle"></p><p data-t="set.padEgText"></p></div>
+              </div>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.padHint"></p>
           <!-- What the writing is set in. The interface keeps its own face
                whatever this says: this is about the notes, not the app. -->
           <div class="set-row">
@@ -1137,6 +1164,7 @@
 <script src="js/toolbars.js"></script>
 <script src="js/media.js"></script>
 <script src="js/pictures.js"></script>
+<script src="js/shapes.js"></script>
 <script src="js/menus.js"></script>
 <script src="js/edit-ops.js"></script>
 <script src="js/boards.js"></script>

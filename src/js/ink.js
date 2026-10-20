@@ -308,7 +308,7 @@ function paintInkCursor() {
 function moveInkCursor(e) {
   if (!inkMode) return;
   const c = $('inkCursor');
-  if (e.target && e.target.closest && e.target.closest('#inkBar, .overlay, .titlebar, #zoombar, #fabWrap, #pageBtn, #pageMenu')) { c.classList.add('hidden'); return; }
+  if (e.target && e.target.closest && e.target.closest('#inkBar, .overlay, .titlebar, #zoombar, #fabWrap, #pageBtn, #pageMenu, #flowsBtn, #flowsMenu')) { c.classList.add('hidden'); return; }
   c.classList.remove('hidden');
   c.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
 }

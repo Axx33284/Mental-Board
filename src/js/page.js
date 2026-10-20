@@ -52,6 +52,90 @@ function paintPageBtn() {
                   `<span class="pg-name">${esc(b.trash ? t('board.trash') : boardLabel(b))}</span>` +
                   `<span class="pg-more">${icon('more_horiz')}</span>`;
   btn.classList.toggle('hidden', state.settings.focusMode);
+  paintFlowsBtn();
+}
+
+/* ---- the workflows list (2.4) ----
+   Every workflow on this board, in one place, beside the page button. A name
+   flies the view to it; the switch beside it says whether that workflow gets a
+   signpost at the edge of the screen while it is out of view, and the switch
+   at the top turns the signposts off altogether (the same setting as Settings
+   ▸ Canvas). A board with a dozen workflows put a dozen chips round the edge;
+   this is how you keep the three you are working between and quiet the rest. */
+function paintFlowsBtn() {
+  const btn = $('flowsBtn');
+  if (!btn) return;
+  const n = state.frames.length;
+  const key = n + '|' + (state.settings.compass ? 1 : 0);
+  if (btn._key !== key) {
+    btn._key = key;
+    btn.innerHTML = `<span class="pg-ic">${icon('account_tree')}</span><span class="fl-n">${num(n)}</span>`;
+    btn.classList.toggle('fl-off', !state.settings.compass);
+  }
+  btn.classList.toggle('hidden', !!state.settings.focusMode || !!(activeBoard() || {}).unreadable);
+}
+
+function openFlowsMenu() {
+  const menu = $('flowsMenu');
+  if (!menu) return;
+  closePageMenu(); closeCtxMenu();
+  const s = state.settings;
+  const frames = state.frames.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x));   // reading order
+  let html = `<div class="pm-head">${icon('account_tree')}<span class="pm-title">${te('flows.title')}</span>` +
+             `<span class="fl-count">${num(frames.length)}</span></div>`;
+  html += `<label class="pm-row pm-check"><span>${icon('explore')}</span><span>${te('flows.signposts')}</span>` +
+          `<span class="pm-switch"><input type="checkbox" data-act="all" ${s.compass ? 'checked' : ''}><i></i></span></label>`;
+  if (!frames.length) {
+    html += `<p class="fl-empty">${te('flows.none')}</p>`;
+  } else {
+    html += `<div class="pm-label"><span>${te('flows.list')}</span></div><div class="fl-list${s.compass ? '' : ' fl-muted'}">`;
+    frames.forEach((f) => {
+      html += `<div class="fl-row" data-id="${esc(f.id)}" data-color="${esc(isHex(f.color) ? 'custom' : f.color)}" style="${colorStyle(f.color)}">` +
+        `<button class="fl-go" data-act="go" title="${te('compass.jump', { name: f.title })}">` +
+          `<span class="fl-dot">${f.icon ? icon(f.icon) : ''}</span><span class="fl-name">${esc(f.title || t('frame.default'))}</span></button>` +
+        `<span class="pm-switch" title="${te('flows.one')}"><input type="checkbox" data-act="one" ${f.noCompass ? '' : 'checked'} aria-label="${te('flows.one')}"><i></i></span>` +
+        `</div>`;
+    });
+    html += `</div>`;
+    html += `<div class="fl-acts"><button class="pm-mini" data-act="allOn">${te('flows.allOn')}</button>` +
+            `<button class="pm-mini" data-act="allOff">${te('flows.allOff')}</button></div>`;
+  }
+  menu.innerHTML = html;
+  menu.classList.remove('hidden');
+  document.body.classList.add('flows-open');
+  menu.querySelectorAll('.fl-dot').forEach((d, i) => { d.style.color = iconColorVar(frames[i].iconColor); });
+
+  const all = menu.querySelector('[data-act="all"]');
+  all.addEventListener('change', () => {
+    s.compass = all.checked;
+    const box = $('setCompass'); if (box) box.checked = s.compass;
+    drawCompass(); saveSoon(); openFlowsMenu();
+  });
+  menu.querySelectorAll('.fl-row').forEach((row) => {
+    const f = state.frames.find((x) => x.id === row.dataset.id);
+    if (!f) return;
+    row.querySelector('[data-act="go"]').addEventListener('click', () => {
+      closeFlowsMenu(); fitTo([f], 90, 1); setSelection([f.id], false);
+    });
+    const one = row.querySelector('[data-act="one"]');
+    one.addEventListener('change', () => {
+      if (one.checked) delete f.noCompass; else f.noCompass = true;
+      drawCompass(); saveSoon();
+    });
+  });
+  const bulk = (on) => {
+    state.frames.forEach((f) => { if (on) delete f.noCompass; else f.noCompass = true; });
+    if (on && !s.compass) { s.compass = true; const box = $('setCompass'); if (box) box.checked = true; }
+    drawCompass(); saveSoon(); openFlowsMenu();
+  };
+  const on = menu.querySelector('[data-act="allOn"]'), off = menu.querySelector('[data-act="allOff"]');
+  if (on) on.addEventListener('click', () => bulk(true));
+  if (off) off.addEventListener('click', () => bulk(false));
+}
+function closeFlowsMenu() {
+  const m = $('flowsMenu');
+  if (m) m.classList.add('hidden');
+  document.body.classList.remove('flows-open');
 }
 
 /* ---- the menu ---- */
@@ -62,7 +146,7 @@ function openPageMenu() {
   const menu = $('pageMenu');
   const b = activeBoard();
   if (!menu || !b) return;
-  closeCtxMenu(); closeBoardMenu();
+  closeCtxMenu(); closeBoardMenu(); closeFlowsMenu();
   const s = state.settings;
   const row = (act, ic, label, cls, key) =>
     `<button class="pm-row${cls ? ' ' + cls : ''}" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
@@ -161,6 +245,7 @@ function openPageMenu() {
   }));
 }
 function closePageMenu() {
+  closeFlowsMenu();
   const m = $('pageMenu');
   if (m) m.classList.add('hidden');
   document.body.classList.remove('page-open');
@@ -335,6 +420,17 @@ function wirePageMenu() {
     e.stopPropagation();
     togglePageMenu();
   });
+  const fb = $('flowsBtn');
+  if (fb) fb.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if ($('flowsMenu').classList.contains('hidden')) openFlowsMenu(); else closeFlowsMenu();
+  });
+  document.addEventListener('pointerdown', (e) => {
+    const m = $('flowsMenu');
+    if (!m || m.classList.contains('hidden')) return;
+    if (e.target.closest('#flowsMenu, #flowsBtn')) return;
+    closeFlowsMenu();
+  }, true);
   document.addEventListener('pointerdown', (e) => {
     const m = $('pageMenu');
     if (!m || m.classList.contains('hidden')) return;

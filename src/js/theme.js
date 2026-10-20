@@ -327,6 +327,7 @@ function applySettings() {
   document.documentElement.style.setProperty('--grid-fade', (s.gridFade / 100).toFixed(2));
   document.body.dataset.shape = s.noteShape;
   document.body.dataset.density = s.noteDensity;
+  applyNotePad();
   document.body.dataset.notefont = s.noteFont;   // applyBoardLook() below lets the board override it
   document.body.dataset.noteshadow = s.noteShadow;
   /* 'auto' deliberately writes *nothing*. The stylesheet already answers it
@@ -350,4 +351,15 @@ function applySettings() {
   applyView();
   drawCompass();
   applyBoardLook();
+}
+
+/* The space around a note's writing (2.4): four numbers from Settings, written
+   as four custom properties on <body> so every note — and the example note in
+   Settings — reads the same ones. `--note-pad` is kept as the left side, for
+   the few rules (the icon, the far-zoom ghost) that only ever wanted one. */
+function applyNotePad(p) {
+  p = p || state.settings.notePad || PAD_PRESETS.cosy;
+  const st = document.body.style;
+  PAD_SIDES.forEach((k) => st.setProperty('--pad-' + k, p[k] + 'px'));
+  st.setProperty('--note-pad', p.l + 'px');
 }

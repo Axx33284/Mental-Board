@@ -211,7 +211,7 @@ const GRID = 26;                       // background grid pitch, also the snap s
 const NOTE_MIN_W = 160, NOTE_MIN_H = 96;
 const PIC_MIN = 40;                    // a picture on its own can be small
 const FRAME_MIN_W = 240, FRAME_MIN_H = 180;
-const ZOOM_MIN = 0.08, ZOOM_MAX = 4.5;
+const ZOOM_MIN = 0.02, ZOOM_MAX = 4.5;   // 2% since 2.4 — a big board fits on screen whole
 const COLORS = ['default', 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'violet', 'pink'];
 
 /* A note's or a workflow's colour is one of COLORS — or, since 2.1, any hex

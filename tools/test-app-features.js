@@ -969,5 +969,135 @@ module.exports = [
       });
       ok(r.ro && r.after === r.before, JSON.stringify(r));
     });
+  },
+
+  /* ---- 2.4: note shapes, the workflows list, the space round the writing,
+     column widths, signposts that never overlap, a further zoom-out ---- */
+  async ({ page, test, ok, BOARDS, fs, path }) => {
+    await page(async () => {
+      confirmDlg = async () => true;
+      const b = makeBoard('Twenty-four');
+      const mk = (id, x, y, body) => ({ id, x, y, w: 260, h: 220, z: 1, color: 'default', body: body || `<h3>${id}</h3><p>${id} text</p>` });
+      b.notes.push(mk('sa', 0, 0), mk('sb', 400, 0, '<p>t</p><table class="mb-table"><tr><td>1</td></tr></table>'));
+      b.frames.push(
+        { id: 'w1', x: -6000, y: -4000, w: 600, h: 400, title: 'One', color: 'blue', titlePos: 'tl' },
+        { id: 'w2', x: -6000, y: -3300, w: 600, h: 400, title: 'Two', color: 'green', titlePos: 'tl' },
+        { id: 'w3', x: -5400, y: -4600, w: 600, h: 400, title: 'Three', color: 'red', titlePos: 'tl' },
+        { id: 'w4', x: -6400, y: -3700, w: 600, h: 400, title: 'Four', color: 'amber', titlePos: 'tl' });
+      state.boards.push(b);
+      await switchBoard(b.id);
+      flyTo({ x: 300, y: 100 }, 1, 1);
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const onDisk = () => {
+      const dir = fs.readdirSync(BOARDS).find((d) => d.startsWith('Twenty-four'));
+      return JSON.parse(fs.readFileSync(path.join(BOARDS, dir, 'board.json'), 'utf8'));
+    };
+
+    await test('2.4 a note takes a shape: drawn, kept on disk, undone, and nonsense is dropped', async () => {
+      const r = await page(async () => {
+        setNoteForm(['sa'], 'heart');
+        const el = els.get('sa');
+        const drawn = el.dataset.form === 'heart' && !!el.querySelector(':scope > .note-form path') && el.dataset.at === 'ic';
+        await saveNow();
+        const back = adoptBoard(JSON.parse(serialiseBoard(activeBoard())));
+        const junk = adoptBoard({ id: 'x', name: 'x', notes: [{ id: 'j', body: '', form: 'blob<script>', textAt: 'zz', tx: 'a' }] }).notes[0];
+        const issues = formIssues(state.notes.find((n) => n.id === 'sb'));
+        undo();
+        const undone = state.notes.find((n) => n.id === 'sa').form;
+        redo();
+        await saveNow();
+        return { drawn, kept: back.notes.find((n) => n.id === 'sa').form, junk: [junk.form, junk.textAt, junk.tx], issues, undone };
+      });
+      ok(r.drawn, 'the svg and the layout are on the element');
+      ok(r.kept === 'heart', 'adoptBoard keeps the shape');
+      ok(r.junk.every((v) => v == null), 'a shape or place nobody offers is dropped: ' + JSON.stringify(r.junk));
+      ok(r.issues.includes('form.warnTable'), 'a table is warned about: ' + JSON.stringify(r.issues));
+      ok(r.undone == null, 'one undo takes the shape off');
+      ok(onDisk().notes.find((n) => n.id === 'sa').form === 'heart', 'on disk');
+    });
+
+    await test('2.4 the writing goes where it is put, and the panel warns about a table first', async () => {
+      const r = await page(async () => {
+        const n = state.notes.find((x) => x.id === 'sa');
+        n.textAt = 'bc'; n.tx = 10; paintForm(els.get('sa'), n);
+        const el = els.get('sa');
+        const at = el.dataset.at, left = el.style.getPropertyValue('--fi-l');
+        openShapeMenu(200, 200, ['sb']);
+        document.querySelector('.sh-tile[data-form="star"]').click();
+        const warned = !document.querySelector('.sh-warn').classList.contains('hidden');
+        const unchanged = state.notes.find((x) => x.id === 'sb').form === undefined;
+        closeCtxMenu();
+        await saveNow();
+        return { at, left, warned, unchanged };
+      });
+      ok(r.at === 'bc' && r.left === '28%', 'place and nudge reach the grid: ' + JSON.stringify(r));
+      ok(r.warned && r.unchanged, 'the warning comes first and changes nothing');
+      const n = onDisk().notes.find((x) => x.id === 'sa');
+      ok(n.textAt === 'bc' && n.tx === 10, 'on disk: ' + JSON.stringify(n));
+    });
+
+    await test('2.4 the space round the writing: four numbers, presets, and an old store keeps its look', async () => {
+      const r = await page(() => {
+        const roomy = healPad(undefined, 'roomy');
+        const clamped = healPad({ t: 999, r: -4, b: 'x', l: 7 }, 'cosy');
+        state.settings.notePad = { t: 30, r: 14, b: 12, l: 40 };
+        applyNotePad();
+        const body = getComputedStyle(els.get('sb').querySelector('.note-body'));
+        const got = [body.paddingTop, body.paddingLeft];
+        state.settings.notePad = Object.assign({}, PAD_PRESETS.cosy); applyNotePad();
+        return { roomy, clamped, got, preset: padPreset(PAD_PRESETS.thin), custom: padPreset({ t: 1, r: 1, b: 1, l: 1 }) };
+      });
+      ok(JSON.stringify(r.roomy) === JSON.stringify({ t: 26, r: 28, b: 26, l: 28 }), 'a pre-2.4 Roomy store reads as Roomy: ' + JSON.stringify(r.roomy));
+      ok(r.clamped.t === 64 && r.clamped.r === 0 && r.clamped.b === 12 && r.clamped.l === 7, 'out-of-range sides are healed: ' + JSON.stringify(r.clamped));
+      ok(r.got[0] === '30px' && r.got[1] === '40px', 'a note reads the sliders: ' + JSON.stringify(r.got));
+      ok(r.preset === 'thin' && r.custom === 'custom', 'presets are recognised');
+    });
+
+    await test('2.4 columns: widths are all-or-nothing, add up, and survive a paste', async () => {
+      const r = await page(() => {
+        const d = document.createElement('div');
+        d.innerHTML = '<div class="mb-cols"><div class="mb-col mb-w-70"><p>a</p></div><div class="mb-col"><p>b</p></div></div>' +
+                      '<div class="mb-cols"><div class="mb-col mb-w-30"><p>a</p></div><div class="mb-col mb-w-30"><p>b</p></div><div class="mb-col mb-w-30"><p>c</p></div></div>';
+        repairColumns(d);
+        const [g1, g2] = d.querySelectorAll('.mb-cols');
+        const half = [...g1.children].map(colWidth);
+        const sum = [...g2.children].map(colWidth).reduce((a, b) => a + b, 0);
+        applyColWidths(g1, [3, 1]);
+        const kept = sanitize(g1.outerHTML);
+        return { half, sum, set: [...g1.children].map(colWidth), kept: /mb-w-75/.test(kept) && /mb-w-25/.test(kept) };
+      });
+      ok(r.half.every((w) => w === 0), 'a block with one width goes back to even: ' + JSON.stringify(r.half));
+      ok(r.sum === 100, 'widths add up to the row: ' + r.sum);
+      ok(r.set[0] === 75 && r.set[1] === 25, 'applyColWidths shares in proportion: ' + JSON.stringify(r.set));
+      ok(r.kept, 'a width survives the paste sanitiser');
+    });
+
+    await test('2.4 signposts never sit on each other, and the workflows list switches them', async () => {
+      const r = await page(async () => {
+        state.settings.compass = true;
+        drawCompass();
+        const boxes = () => [...document.querySelectorAll('.cp-chip')].map((c) => c.getBoundingClientRect());
+        const overlaps = (bs) => { let n = 0; bs.forEach((a, i) => bs.slice(i + 1).forEach((b) => { if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) n++; })); return n; };
+        const before = boxes();
+        openFlowsMenu();
+        const rows = document.querySelectorAll('#flowsMenu .fl-row').length;
+        const one = document.querySelector('#flowsMenu .fl-row[data-id="w2"] [data-act="one"]');
+        one.checked = false; one.dispatchEvent(new Event('change'));
+        const after = document.querySelectorAll('.cp-chip').length;
+        closeFlowsMenu();
+        await saveNow();
+        return { n: before.length, overlaps: overlaps(before), rows, after, count: $('flowsBtn').textContent };
+      });
+      ok(r.n === 4 && r.overlaps === 0, 'four signposts, none overlapping: ' + JSON.stringify(r));
+      ok(r.rows === 4 && r.count.includes('4'), 'the list and the button name every workflow');
+      ok(r.after === 3, 'switching one off takes its signpost away');
+      ok(onDisk().frames.find((f) => f.id === 'w2').noCompass === true, 'and that is kept on disk');
+    });
+
+    await test('2.4 the view zooms out to 2%', async () => {
+      const z = await page(() => { for (let i = 0; i < 80; i++) zoomAt(400, 300, 0.8); const z = state.view.z; flyTo({ x: 300, y: 100 }, 1, 1); return z; });
+      ok(Math.abs(z - 0.02) < 1e-9, 'minimum zoom: ' + z);
+    });
   }
 ];

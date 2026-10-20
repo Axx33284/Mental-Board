@@ -196,46 +196,7 @@ body[data-density="roomy"] { --note-pad: 28px; }
 .note-status { padding: 0 var(--note-pad) calc(var(--note-pad) - 5px); }
 
 /* ─────────────── 30. columns ───────────────
-
-   The number of columns is the number of children. `grid-auto-flow: column`
-   with `grid-auto-columns: minmax(0, 1fr)` means the block needs no width
-   class, no count attribute and no inline style — which is what lets any count
-   work, and what lets it survive the sanitiser (it strips `style` and every
-   attribute outside its allow-list, so a count kept in markup would vanish on
-   the first copy-paste).
-
-   `minmax(0, 1fr)` rather than `1fr`: a plain 1fr track has an automatic
-   minimum of its content, so one long unbroken word in one column pushes every
-   other column off the note instead of wrapping. */
-.note-body .mb-cols {
-  display: grid;
-  /* `auto-fit` also buys the narrow case for free: as many 88px-minimum tracks
-     as the note is wide, so a 5-column block in a note dragged down to
-     thumbnail width wraps into rows instead of becoming five unusable slivers.
-     No container query, no breakpoint, no second code path. */
-  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
-  gap: 14px;
-  margin: .55em 0;
-  align-items: start;
-}
-.note-body .mb-col { min-width: 0; }
-/* first and last child inside a column should not add the margin that would
-   push the columns out of alignment with each other */
-.note-body .mb-col > :first-child { margin-top: 0; }
-.note-body .mb-col > :last-child { margin-bottom: 0; }
-
-/* A column with nothing in it is invisible, which makes a 3-column block look
-   like a 1-column block until you happen to click in the right place. While the
-   note is being edited, show the empty ones. */
-.note.editing .note-body .mb-col:empty::after,
-.note.editing .note-body .mb-col > p:only-child:empty::after {
-  content: ""; display: block; min-height: 1.2em;
-}
-.note.editing .note-body .mb-cols {
-  outline: 1px dashed color-mix(in srgb, var(--text) 14%, transparent);
-  outline-offset: 6px; border-radius: 3px;
-}
-
+   The layout moved to one block, css/mental.css §70 (2.4). The toolbar stays. */
 #colsBar {
   position: fixed; z-index: 81; display: flex; align-items: center; gap: 1px; padding: 4px;
   border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line);
@@ -489,40 +450,7 @@ html[dir="rtl"] .st-name { text-align: right; }
   display: inline-grid; place-items: center; vertical-align: middle;
 }
 
-/* ─────────────── 35. columns, the way Notion draws them ───────────────
-
-   A dashed outline around the whole grid and a dashed ghost in every empty
-   cell was a lot of ink to say "these are columns". Notion draws one hairline
-   between them and nothing else, and it is enough — the line is where the
-   boundary is, which is the only thing you cannot work out by looking.
-
-   The divider is a border on every column but the first, so it appears once
-   per gap and never at the ends. The gap is split either side of it, so the
-   line sits optically centred between two blocks of text rather than hard
-   against the left one. Logical properties throughout: in an RTL note the
-   whole thing mirrors with no second rule. */
-.note-body .mb-cols { gap: 0; }
-.note-body .mb-col { padding-inline: 16px; }
-.note-body .mb-col:first-child { padding-inline-start: 0; }
-.note-body .mb-col:last-child { padding-inline-end: 0; }
-.note-body .mb-col + .mb-col {
-  border-inline-start: 1px solid color-mix(in srgb, var(--text) 13%, transparent);
-}
-
-/* No outline round the grid and no ghost blocks in the empty cells — the
-   divider already says where everything is. An empty column still needs a
-   line's worth of height or it collapses to nothing and cannot be clicked
-   into, but that height is now invisible rather than dashed. */
-.note.editing .note-body .mb-cols { outline: none; outline-offset: 0; }
-.note.editing .note-body .mb-col:empty::after,
-.note.editing .note-body .mb-col > p:only-child:empty::after {
-  content: ""; display: block; min-height: 1.2em;
-}
-/* While the note is open the dividers come up a little, so the structure is
-   readable when you are working on it and recedes when you are reading. */
-.note.editing .note-body .mb-col + .mb-col {
-  border-inline-start-color: color-mix(in srgb, var(--text) 22%, transparent);
-}
+/* ─────────────── 35. columns — see css/mental.css §70 (2.4) ─────────────── */
 
 /* ─────────────── 36. ropes ───────────────
 
@@ -862,45 +790,7 @@ body.on-trash .note:hover, body.on-trash .note.selected { opacity: 1; }
 @keyframes embPulse { 0%, 100% { opacity: .15; } 50% { opacity: .6; } }
 @media (prefers-reduced-motion: reduce) { .mb-embed.emb-loading .emb-cap b::after { animation: none; } }
 
-/* ─────────────── 42. a column divider that runs the whole way ───────────────
-
-   The line was a border on the column box, and a column box is only as tall as
-   the text in it. So two columns of different lengths drew a divider the height
-   of the shorter one, stopping in mid-air — which said nothing about where the
-   block ended, and left no way to see that the paragraph below was *outside*
-   the columns rather than in one of them.
-
-   `align-items: stretch` makes every column as tall as the tallest, so the
-   border runs the full height of the block: one unbroken line from the top of
-   the first line of text to the bottom of the last. The end of that line is the
-   end of the columns, and anything under it is ordinary note text again.
-
-   §30 set `align-items: start` when the divider was a dashed outline round the
-   whole grid and column height did not matter. It does now. */
-.note-body .mb-cols { align-items: stretch; }
-
-/* The rule is drawn on a child rather than as a border on the column, so it can
-   be full-bleed vertically without the padding that keeps the text off it — a
-   border shares the box with the text, and any padding that gives the text room
-   shortens the line by the same amount. This one is the box's own edge. */
-.note-body .mb-col + .mb-col { border-inline-start: 0; position: relative; }
-.note-body .mb-col + .mb-col::before {
-  content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; width: 1px;
-  background: color-mix(in srgb, var(--text) 15%, transparent);
-}
-.note.editing .note-body .mb-col + .mb-col { border-inline-start: 0; }
-.note.editing .note-body .mb-col + .mb-col::before {
-  background: color-mix(in srgb, var(--text) 26%, transparent);
-}
-
-/* And a closing rule under the block, so the boundary is a shape rather than
-   two loose ends. Faint: it marks where the columns stop, it is not a border
-   round them. Only while the note is open — reading a note, the text below
-   speaks for itself. */
-.note.editing .note-body .mb-cols {
-  border-bottom: 1px solid color-mix(in srgb, var(--text) 13%, transparent);
-  padding-bottom: 6px;
-}
+/* ─────────────── 42. column dividers — see css/mental.css §70 (2.4) ─────────────── */
 
 /* ─────────────── 43. where a workflow's title sits ───────────────
 

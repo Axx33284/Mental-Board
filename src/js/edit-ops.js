@@ -818,18 +818,24 @@ function paintBoardCanvas(board, scale, pictures) {
       return;
     }
     ctx.save();
+    /* A note with a shape (2.4) is its shape here too: the same path the
+       screen draws, stretched to the note, and the writing kept to the
+       shape's safe rectangle (shapes.js FORM_SAFE). */
+    const form = okForm(n.form);
+    const shape = form ? formPath2D(n, form) : null;
+    const box = form ? formBox(n, form) : { x: n.x, y: n.y, w: n.w, h: n.h };
     ctx.fillStyle = pal.noteBg(n.color);
-    roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.fill();
+    if (shape) ctx.fill(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.fill(); }
     ctx.strokeStyle = pal.noteLine(n.color); ctx.lineWidth = 1.5;
-    roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.stroke();
+    if (shape) ctx.stroke(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.stroke(); }
 
     // the icon badge, drawn from the same path data the app uses on screen
-    let top = n.y + 16;
+    let top = box.y + (form ? 8 : 16);
     if (n.icon && ICONS[n.icon]) {
       ctx.save();
       ctx.fillStyle = n.iconColor && n.iconColor !== 'auto' ? pal.noteInk(n.iconColor) : pal.noteInk(n.color);
       // the glyphs are on a 960 grid whose origin sits 960 above the baseline
-      ctx.translate(n.x + 16, top);
+      ctx.translate(box.x + (form ? 8 : 16), top);
       ctx.scale(20 / 960, 20 / 960);
       ctx.translate(0, 960);
       try { ctx.fill(new Path2D(ICONS[n.icon])); } catch (_) {}
@@ -839,10 +845,11 @@ function paintBoardCanvas(board, scale, pictures) {
 
     // clip so a long note cannot spill out of its own box
     ctx.save();
-    roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.clip();
-    const left = n.x + 16, wrapW = n.w - 32;
+    if (shape) { ctx.clip(shape); ctx.beginPath(); ctx.rect(box.x, box.y, box.w, box.h); ctx.clip(); }
+    else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.clip(); }
+    const left = box.x + (form ? 8 : 16), wrapW = box.w - (form ? 16 : 32);
     exportBlocks(n.body, 40).forEach((blk) => {
-      if (top > n.y + n.h - 10) return;
+      if (top > box.y + box.h - 10) return;
       if (blk.rule) {
         ctx.strokeStyle = pal.line; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(left, top + 6); ctx.lineTo(left + wrapW, top + 6); ctx.stroke();
@@ -859,7 +866,7 @@ function paintBoardCanvas(board, scale, pictures) {
         const next = lineText ? lineText + ' ' + word : word;
         if (ctx.measureText(next).width > wrapW - blk.indent * 14 && lineText) { flush(); lineText = word; }
         else lineText = next;
-        if (top > n.y + n.h - 10) { lineText = ''; break; }
+        if (top > box.y + box.h - 10) { lineText = ''; break; }
       }
       flush();
       top += px * 0.28;
@@ -868,8 +875,8 @@ function paintBoardCanvas(board, scale, pictures) {
 
     // the status pill, bottom-left, where it sits on the real note
     const st = statusById(n.status);
-    let px0 = n.x + 14;
-    const py = n.y + n.h - 26;
+    let px0 = box.x + (form ? 6 : 14);
+    const py = box.y + box.h - (form ? 20 : 26);
     if (st) {
       const label = statusName(st);
       ctx.font = `600 11px ${FONT}`;

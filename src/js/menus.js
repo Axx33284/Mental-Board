@@ -6,10 +6,11 @@
    thing holding them together, so a file may use anything declared above it
    at load time and anything at all once init() runs. See MAP.md §4. */
 /* ─────────────── 12. context menu ─────────────── */
-function closeCtxMenu() { $('ctxMenu').classList.add('hidden'); }
+function closeCtxMenu() { const m = $('ctxMenu'); m.classList.add('hidden'); m.classList.remove('cm-wide'); }
 
 function openCtxMenu(clientX, clientY, id) {
   const menu = $('ctxMenu');
+  menu.classList.remove('cm-wide');            // the shape panel's width (shapes.js)
   const targets = id ? (selection.has(id) && selection.size > 1 ? [...selection] : [id]) : [];
   if (id && !selection.has(id)) setSelection([id], false);
   let html = '';
@@ -82,6 +83,9 @@ function openCtxMenu(clientX, clientY, id) {
     const item = (act, ic, label, key, cls) =>
       `<button class="cm-item${cls ? ' ' + cls : ''}" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
     if (targets.length === 1) html += item('icon', 'mood', te('menu.icon'));
+    /* A note's shape (2.4) — a panel of its own rather than more rows here,
+       because it carries a grid of shapes, a place picker and two sliders. */
+    if (noteTargets.some((tid) => !(state.notes.find((x) => x.id === tid) || {}).pic)) html += item('shape', 'category', te('menu.shape'));
     if (first) html += item('focus', 'filter_alt', te('menu.focusColour'));
     /* "Show me everything that is blocked" was the one question a board full of
        people could not answer. Only on a note — a workflow frame has no status
@@ -266,6 +270,7 @@ function openCtxMenu(clientX, clientY, id) {
     closeCtxMenu();
     switch (act) {
       case 'icon': openIconPicker(targets[0]); break;
+      case 'shape': openShapeMenu(clientX, clientY, targets.filter((tid) => !isFrame(tid))); break;
       case 'editPic': editPicture(targets[0]); break;
       case 'replacePic': replacePicture(targets[0]); break;
       case 'newNoteHere': addNote(worldPt); break;
@@ -381,6 +386,7 @@ const chipEls = new Map();   // frame id -> chip element
 function drawCompass() {
   const wrap = $('compass');
   if (!wrap) return;
+  paintFlowsBtn();                      // its count follows the board's workflows (page.js)
   /* Focus mode hides the signposts, and this runs on every pan and zoom — so it
      is worth not building chips nobody will see. Same early return the compass
      switch takes, for the same reason. */
@@ -395,6 +401,7 @@ function drawCompass() {
   const chips = [];
 
   state.frames.forEach((f) => {
+    if (f.noCompass) return;            // switched off in the workflows list (page.js)
     const a = toScreen(f.x, f.y);
     const b = toScreen(f.x + f.w, f.y + f.h);
     const visible = a.x < W - 4 && b.x > 4 && a.y < H - 4 && b.y > 4;
@@ -413,13 +420,13 @@ function drawCompass() {
     /* Which border the walk actually landed on. `tx` winning means it ran out
        of width first, so this chip is pinned to the left or right edge and can
        only be nudged up and down; `ty` means top or bottom, and it slides
-       sideways. spreadChips() needs this — a chip nudged off its own edge stops
+       sideways. placeChips() needs this — a chip nudged off its own edge stops
        pointing at its workflow. */
     chips.push({ f, px, py, dist, arrow, edge: tx <= ty ? 'x' : 'y' });
   });
 
   chips.sort((a, b) => a.dist - b.dist);
-  const shown = chips.slice(0, 8);
+  const shown = chips.slice(0, 12);
   const reserved = shown.length ? chromeRects() : [];   // measured once, not per chip
 
   // retire chips for workflows that came back into view
@@ -474,79 +481,57 @@ function drawCompass() {
     c.top = clamp(c.py, c.hh, Math.max(c.hh, H - c.hh));
   });
 
-  spreadChips(shown, W, H);
+  placeChips(shown, W, H, reserved);
 
   shown.forEach((c) => {
     if (!c.el) return;
     c.el.style.left = c.left + 'px';
-    c.el.style.top = clearOfChrome(c.left, c.top, c.hw, c.hh, reserved, H) + 'px';
+    c.el.style.top = c.top + 'px';
   });
 }
 
-/* Push signposts apart so two workflows in roughly the same direction do not
-   land on top of each other.
+/* Lay the signposts out so that **no two ever overlap** (2.4).
 
-   Without this, three workflows off to the right produced three chips stacked
-   at the same point on the right edge: you saw the topmost one, the other two
-   were unreadable and unclickable, and there was nothing to say they existed.
+   Until 2.3 this was two passes: spread the chips along each border, then
+   slide any that sat on the zoom bar up out of its way. Each pass was right on
+   its own and together they were not — a chip on the left border and one on
+   the top border met in the corner (they were in different groups, so the
+   spread never compared them), and the slide off the zoom bar put a chip
+   straight back on the one above it. Two workflow names drawn on top of each
+   other is exactly what a signpost must never do.
 
-   Each chip may only slide **along the border it is pinned to** — a chip on the
-   right edge moves vertically, one on the bottom edge moves horizontally.
-   Moving it the other way would take it off its edge and it would stop pointing
-   at its workflow, which is the entire job of a signpost.
-
-   So: group by which of the four borders a chip sits on, then lay each group
-   out in one dimension. Chips are placed in the order they already wanted to be
-   in, spaced by at least their own size, and the whole run is re-centred on
-   where it wanted to sit — so two chips open symmetrically around their shared
-   direction instead of one staying put and the other being shoved. A run longer
-   than the border gets packed to fit rather than pushed off the end. */
-function spreadChips(chips, W, H) {
-  if (chips.length < 2) return;
+   So it is one pass now, and a greedy one. The nearest workflow places first
+   and gets the spot it wants. Every later chip tries its own spot, then walks
+   **along its own border** — down/up on the left and right edges, sideways on
+   the top and bottom — in growing steps either way, and takes the first place
+   that hits no chip already placed and none of the corner controls. Only if
+   its whole border is full does it try stepping inward, off the edge, so it is
+   stacked next to the others rather than on them. The result is that chips in
+   the same direction stack vertically or sit side by side, never on top. */
+function placeChips(chips, W, H, reserved) {
   const GAP = 6;
-
-  const groups = new Map();
+  const placed = reserved.map((r) => ({ l: r.x - GAP, t: r.y - GAP, r: r.x + r.w + GAP, b: r.y + r.h + GAP }));
+  const box = (x, y, c) => ({ l: x - c.hw, t: y - c.hh, r: x + c.hw, b: y + c.hh });
+  const hits = (b) => placed.some((o) => b.l < o.r && b.r > o.l && b.t < o.b && b.b > o.t);
+  const fits = (x, y, c) => x - c.hw >= 0 && x + c.hw <= W && y - c.hh >= 0 && y + c.hh <= H;
   chips.forEach((c) => {
     if (!c.el) return;
-    // 'x' chips sit on the left or right border, 'y' on the top or bottom
-    const side = c.edge === 'x' ? (c.left < W / 2 ? 'L' : 'R') : (c.top < H / 2 ? 'T' : 'B');
-    if (!groups.has(side)) groups.set(side, []);
-    groups.get(side).push(c);
-  });
-
-  groups.forEach((group, side) => {
-    if (group.length < 2) return;
-    const vertical = side === 'L' || side === 'R';
-    const pos = (c) => (vertical ? c.top : c.left);
-    const half = (c) => (vertical ? c.hh : c.hw);
-    const limit = vertical ? H : W;
-
-    group.sort((a, b) => pos(a) - pos(b));
-
-    // walk forwards, opening a gap wherever two would touch
-    let cursor = -Infinity;
-    group.forEach((c) => {
-      const want = Math.max(pos(c), cursor + half(c) + GAP);
-      if (vertical) c.top = want; else c.left = want;
-      cursor = want + half(c);
-    });
-
-    /* Recentre the run on where it originally wanted to be, then clamp. Without
-       this the first chip never moves and every later one is pushed down, so a
-       pair that both wanted the middle of an edge ends up sitting below it. */
-    const first = group[0], last = group[group.length - 1];
-    const runStart = pos(first) - half(first);
-    const runEnd = pos(last) + half(last);
-    const runLen = runEnd - runStart;
-    const wantedMid = group.reduce((sum, c) => sum + (vertical ? c.py : c.px), 0) / group.length;
-    let shift = clamp(wantedMid, runLen / 2, Math.max(runLen / 2, limit - runLen / 2)) - (runStart + runLen / 2);
-    // a run too long for the border is pinned to its start instead of centred
-    if (runLen >= limit) shift = -runStart;
-
-    group.forEach((c) => {
-      if (vertical) c.top = clamp(c.top + shift, c.hh, Math.max(c.hh, H - c.hh));
-      else c.left = clamp(c.left + shift, c.hw, Math.max(c.hw, W - c.hw));
-    });
+    const along = c.edge === 'x' ? [0, 1] : [1, 0];            // the border's own direction
+    const inward = c.edge === 'x' ? [c.left < W / 2 ? 1 : -1, 0] : [0, c.top < H / 2 ? 1 : -1];
+    const step = c.edge === 'x' ? c.hh + GAP / 2 : c.hw / 2;
+    let spot = null;
+    for (let ring = 0; ring < 6 && !spot; ring++) {
+      const ox = c.left + inward[0] * ring * (c.edge === 'x' ? c.hw * 2 : 0);
+      const oy = c.top + inward[1] * ring * (c.edge === 'x' ? 0 : c.hh * 2);
+      for (let k = 0; k < 80 && !spot; k++) {
+        const d = Math.ceil(k / 2) * step * (k % 2 ? 1 : -1);
+        const x = ox + along[0] * d, y = oy + along[1] * d;
+        if (!fits(x, y, c)) continue;
+        if (!hits(box(x, y, c))) spot = { x, y };
+      }
+    }
+    if (spot) { c.left = spot.x; c.top = spot.y; }
+    placed.push(box(c.left, c.top, c));
   });
 }
 
@@ -555,7 +540,8 @@ function spreadChips(chips, W, H) {
    The zoom bar sits at z-index 45 and #compass at 42, so a workflow off-screen
    to the bottom-right put its signpost *underneath* the zoom bar: you could see
    the name poking out, and clicking it pressed a zoom button instead. Same
-   corner, same problem, for the create dial bottom-left.
+   corner, same problem, for the create dial bottom-left, the minimap, and
+   since 2.4 the two buttons at the top right.
 
    Measured rather than hard-coded, because both controls change size with the
    text-size setting and the zoom bar's width changes with the language's
@@ -563,7 +549,7 @@ function spreadChips(chips, W, H) {
 function chromeRects() {
   const r = vpRect();
   const out = [];
-  ['zoombar', 'fabWrap'].forEach((id) => {
+  ['zoombar', 'fabWrap', 'minimap', 'topRight'].forEach((id) => {
     const el = $(id);
     if (!el || el.offsetParent === null) return;
     const b = el.getBoundingClientRect();
@@ -573,23 +559,6 @@ function chromeRects() {
   return out;
 }
 
-/* Slide a chip up until it is clear of the controls, or back down below them if
-   there is more room that way — a tall enough window has space above, a short
-   one may not. Vertical only: the chip's horizontal position is what says which
-   direction the workflow is in, and moving it sideways would point a signpost
-   at the wrong place, which is worse than overlapping. */
-function clearOfChrome(left, top, hw, hh, rects, H) {
-  const GAP = 8;
-  for (const b of rects) {
-    const hits = left + hw > b.x && left - hw < b.x + b.w &&
-                 top + hh > b.y && top - hh < b.y + b.h;
-    if (!hits) continue;
-    const above = b.y - GAP - hh;
-    const below = b.y + b.h + GAP + hh;
-    top = (above >= hh) ? above : (below <= H - hh ? below : above);
-  }
-  return top;
-}
 /* Eight compass points, in Material Symbols rather than the arrow characters
    this used to use — those came out of whichever font happened to have them,
    so their weight never matched the rest of the chip.

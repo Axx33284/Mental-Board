@@ -158,13 +158,13 @@ function sfx(kind) {
    panel, dialogs, the rail, the bars — and never a note or the canvas. */
 const SFX_ITEMS = [
   '.cm-item', '.cm-st', '.cm-colors button', '.cm-pos button', '.cm-dt',
-  '#pageMenu button', '#boardMenu button', '.set-tab', '.seg button', '.set-check',
+  '#pageMenu button', '#flowsMenu button', '.sh-tile', '#boardMenu button', '.set-tab', '.seg button', '.set-check',
   '.theme-card', '.swatches button', '.paper-row button', '.set-btns .btn', '.sheet .btn',
   '.sm-item', '.pal-item', '.ln-item', '.bp-item', '.br-tile', '.fab-item', '#fab',
   '#zoombar button', '.ik-tool', '.ik-size', '.ik-sw', '.ik-btn', '.ik-custom',
-  '.tb-gear', '#pageBtn', '.sheet-x', '.eh-start', '.kb-col', '.ag-item'
+  '.tb-gear', '#pageBtn', '#flowsBtn', '.sheet-x', '.eh-start', '.kb-col', '.ag-item'
 ].join(', ');
-const SFX_PANELS = ['ctxMenu', 'boardMenu', 'pageMenu', 'settings', 'slashMenu', 'palette', 'linkDlg', 'mathDlg',
+const SFX_PANELS = ['ctxMenu', 'boardMenu', 'pageMenu', 'flowsMenu', 'settings', 'slashMenu', 'palette', 'linkDlg', 'mathDlg',
   'confirmDlg', 'iconPicker', 'agendaDlg', 'kanbanDlg', 'moveDlg', 'tplDlg', 'remindDlg', 'histDlg',
   'boardPick', 'passDlg', 'embedDlg', 'inkBar', 'studio'];
 
