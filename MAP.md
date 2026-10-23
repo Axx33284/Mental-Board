@@ -132,6 +132,7 @@ The things that make it more than a note wall:
 | **A drag stays under the pointer through a zoom; spelling suggestions on right-click** | js/items.js + js/menus.js §4z1 |
 | **A drawing note: write and draw by hand, full screen, with a pen's pressure** | js/sketch.js §4z2 |
 | **Zoom and a pen in the drawing note and the picture editor; a drawing keeps only what was drawn** | js/sketch.js + js/media.js §4z3 |
+| **Draw over a picture, a photo or a PDF: pages under the ink of a drawing note** | js/sketch.js + assets/pdfjs §4z4 |
 
 ---
 
@@ -176,6 +177,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
 | `src/assets/fonts.css` + `src/assets/fonts/` | — | **Generated.** Noto Sans Arabic (one variable woff2, 162 KB, OFL). Run via `npm run fonts`. |
 | `src/assets/katex/` | — | **Vendored**, not generated: KaTeX 0.16.11 (`katex.min.js`, `katex.min.css` trimmed to woff2 only, `fonts/*.woff2`) and its `mhchem.min.js`, MIT (`LICENSE.txt`). Loaded by plain tags in index.html above the app's scripts; the checks skip `assets/`. To update: `npm pack katex@x` and copy the same four things. See §4y. |
+| `src/assets/pdfjs/` | — | **Vendored**, not generated: pdf.js 3.11.174 (`pdf.min.js`, `pdf.worker.min.js`, `standard_fonts/`, `cmaps/`), Apache-2.0 (`LICENSE.txt`), ~3.5 MB. **Not** in index.html's load order: `loadPdfJs()` (sketch.js) adds the script the first time a PDF is opened, so nobody pays for it at start-up. To update: `npm pack pdfjs-dist@3.x` and copy the same four things — v4 is ES modules only. See §4z4. |
 | `src/assets/icons.js` | — | **Generated.** 435 Material Symbols path strings + the picker's 21 groups. Do not hand-edit. |
 | `tools/make-icon.js` | 264 | Turns `tools/icon-source.png` into `assets/icon.png` + `.ico` — decodes it, recolours it black-on-white, box-filters it down to every size. Run via `npm run icon`. Excluded from the package. |
 | `tools/icon-source.png` | — | **The app icon, as artwork** — a brain in outline, black on white, 768×768. The only source of truth for the icon: replace this file and re-run `npm run icon`. Not taken from the icon set, because the set has no brain in it: `psychology` and `psychology_alt` are both *heads*. 768 on purpose — every size `make-icon.js` emits (16, 24, 32, 48, 64, 128, 256) divides it exactly, so no rung is box-filtered through a ragged window. Excluded from the package — what ships is the generated `src/assets/icon.png` and `.ico`. |
@@ -187,6 +189,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
+| `tools/fake-pdf.js` | ~30 | A two-page PDF built byte by byte (text in a standard font, a filled box per page) for the 2.7 test. No real PDF is checked in. |
 | `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~345 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last page test fails on any that is not expected. Then two quits, each in a fresh app driven over `--inspect` (§4k): the last edit lands and every process goes, and every process goes even when the page never answers. `npm run test:app`. |
 | `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
@@ -227,7 +230,7 @@ never touch individual elements.
 | Global | Gives you |
 |--------|-----------|
 | `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` — and JSON Canvas (§4t): `pickCanvasPath(suggested)` `writeCanvas(file,json,id,names,folder)` `importCanvas()` `readCanvas(path)` `resolveCanvas(dir,rels)` — and Samsung Notes (§4w): `pickSamsung()` `readSamsung(path,boardId)` |
-| `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
+| `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` `pickDrawing()` (§4z4) — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
 | `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `quit()` `onQuitKey(cb)` `quitAsked()` (Ctrl+Q, §4k) `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` — and spelling (§4z1): `onSpell(cb)` `learnWord(w)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
 | `window.mbPad` | `start(address)` `stop()` `send(msg)` `addresses()` `onState(cb)` `onMessage(cb)` — the phone as a tablet (§4x). The renderer never sees the token and cannot pick a port; `send` passes only the `view` message. |
@@ -2466,6 +2469,47 @@ writes a file into the board's folder.
 Tests: **2.6** in `tools/test-app-features.js` (the note's box and shape, a
 zoom that keeps the point under the pointer; the studio's pressure, palm,
 eraser end, undo and Apply).
+
+## 4z4. Pictures and PDFs to draw over (2.7) — `js/sketch.js`
+
+A drawing note can have pictures under its ink, so a picture, a photo or a
+PDF becomes something to write on:
+
+- **right-click a picture on the board ▸ Draw on it** — the picture note
+  *becomes* a drawing note with itself underneath (`pictureToSketch`); nothing
+  is copied, one undo step, and it opens full screen on that click;
+- **+ ▸ Draw on a picture or PDF…** — a new drawing note, and the file picker;
+- **the picture button on the editor's bar, or a drop on the editor** — more
+  pictures or pages, under whatever is already there (`sketchImport`); one
+  undo step for the lot, so a 20-page PDF goes in and comes out with one press.
+
+**Where the files are.** In the note's **body**, as the same `<img
+class="mb-img" src="mbf://…">` a picture note stores, one per picture in
+order; `sketch.pics` holds only where each one sits (`{ x, y, w, h }`, in the
+drawing's units). Every pass that keeps a board's files whole reads bodies —
+the clean-up's list of files in use (`referencedFileUrls`), carrying notes to
+another board (`notesFileUrls`), relinking an imported or duplicated board
+(`relinkAttachments`, `relinkBoardHost`), Show file location — so pictures
+under a drawing are kept, carried and relinked by all of them unchanged, and
+there is one copy of each address. `sketchPicFiles(n)` reads them back;
+`closeSketch` writes both.
+
+**A PDF** is drawn page by page by pdf.js (`pdfPages`): each page 1800 px
+wide on white, placed at half that so zooming in stays sharp, written into the
+board's folder as `<name> p<n>.png` through `files:attach-bytes`. At most 60
+pages a file (it says so); `isEvalSupported: false` because the page's CSP has
+no eval; fonts and character maps come from `assets/pdfjs`. Main never parses
+a PDF: `files:pick-drawing` only reads the bytes of what the user picked
+(80 MB at most each) and names the kind by extension.
+
+Pictures are part of the drawing's size (`sketchBounds(strokes, pics)`), drawn
+under the strokes in the editor, on the note and in the board picture
+(`loadExportPictures` reads them as `<id>#<index>`). The eraser takes ink, not
+pictures; undo takes a picture back. Anything else — a Word file, slides —
+goes in as a PDF exported from the app that made it.
+
+Test: **2.7** in `tools/test-app-features.js`, with a two-page PDF built by
+`tools/fake-pdf.js`.
 
 ## 4o. Lining a note up with its neighbours
 

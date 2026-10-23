@@ -158,21 +158,76 @@ const SKETCH_TITLE_MAX = 120;
 // whatever came off the disk, as a drawing this file can draw — or nothing
 function okSketch(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
-  return {
+  const out = {
     title: typeof raw.title === 'string' ? raw.title.slice(0, SKETCH_TITLE_MAX) : '',
     strokes: adoptInk(raw.strokes).slice(0, SKETCH_MAX)
   };
+  // where each picture under the ink sits (2.7); its file is in the note's body, in the same order
+  const pics = (Array.isArray(raw.pics) ? raw.pics : []).slice(0, SKETCH_PICS_MAX)
+    .map((p) => p && ({ x: +p.x, y: +p.y, w: +p.w, h: +p.h }))
+    .filter((p) => p && [p.x, p.y, p.w, p.h].every(Number.isFinite) && p.w > 0 && p.h > 0)
+    .map((p) => ({ x: r1(p.x), y: r1(p.y), w: r1(p.w), h: r1(p.h) }));
+  if (pics.length) out.pics = pics;
+  return out;
+}
+
+/* ---- pictures under the ink (2.7) ----
+   Turn a picture, a photo or a PDF into something to draw over: the drawing
+   note carries pictures, laid in its own coordinates under the strokes.
+
+   Where each one's file is, is in the note's **body**, as the same
+   `<img class="mb-img" src="mbf://…">` a picture note stores — one per
+   picture, in order — and only where it sits is in `sketch.pics`. That is on
+   purpose: everything that keeps a board's files whole reads bodies (the
+   clean-up's list of files in use, carrying files to another board, relinking
+   an imported or duplicated board, "show me where it is"), so a picture under a
+   drawing is kept, carried and relinked by all of them with no change to any.
+   One copy of the address, so the two can never disagree.
+
+   A PDF becomes a picture per page, drawn here by pdf.js (assets/pdfjs,
+   vendored, loaded only the first time a PDF is opened) and written into the
+   board's folder like any picture. */
+const SKETCH_PICS_MAX = 200;        // pictures under one drawing
+const SKETCH_PDF_MAX = 60;          // pages read from one PDF
+const SKETCH_PDF_PX = 1800;         // a page is drawn this wide; it is placed at half, so zooming in stays sharp
+const SKETCH_PIC_MAX = 1600;        // the longest side a picture is placed at, in drawing units
+
+// the files of a drawing's pictures, from the note's body, in order
+function sketchPicFiles(n) {
+  if (!n || !n.body || n.body.indexOf('<img') < 0) return [];
+  const tpl = document.createElement('template');
+  tpl.innerHTML = n.body;
+  return [...tpl.content.querySelectorAll('img')].map((i) => ({ url: i.getAttribute('src') || '', name: i.getAttribute('data-name') || '' }));
+}
+// the pictures as the editor holds them: where, and which file
+function sketchPicsOf(n) {
+  const files = sketchPicFiles(n);
+  return ((n.sketch && n.sketch.pics) || []).map((p, i) => files[i] && Object.assign({}, p, files[i])).filter((p) => p && p.url);
+}
+function makeSketchPicEl(p) {
+  const im = document.createElementNS(SVGNS, 'image');
+  im.setAttribute('class', 'sk-pic');
+  im.setAttribute('href', p.url);
+  im.setAttribute('x', p.x); im.setAttribute('y', p.y);
+  im.setAttribute('width', p.w); im.setAttribute('height', p.h);
+  im.setAttribute('preserveAspectRatio', 'none');
+  return im;
 }
 
 /* The box round what has been drawn, with a little air, or null when nothing
    has. This is the drawing's whole size: nothing outside it is shown or kept. */
-function sketchBounds(strokes) {
-  if (!strokes || !strokes.length) return null;
+function sketchBounds(strokes, pics) {
+  if ((!strokes || !strokes.length) && (!pics || !pics.length)) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const s of strokes) {
+  for (const s of strokes || []) {
     const b = inkBox(s);
     if (b.x0 < x0) x0 = b.x0; if (b.y0 < y0) y0 = b.y0;
     if (b.x1 > x1) x1 = b.x1; if (b.y1 > y1) y1 = b.y1;
+  }
+  // a picture under the ink is part of the drawing's size too (2.7)
+  for (const p of pics || []) {
+    if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y;
+    if (p.x + p.w > x1) x1 = p.x + p.w; if (p.y + p.h > y1) y1 = p.y + p.h;
   }
   const pad = Math.max(8, Math.max(x1 - x0, y1 - y0) * 0.04);
   return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
@@ -196,9 +251,10 @@ function paintSketch(el, n) {
   title.textContent = s.title || t('sketch.untitled');
   title.classList.toggle('empty', !s.title);
   const svg = el.querySelector('.sk-svg');
-  const b = sketchBounds(s.strokes) || { x: 0, y: 0, w: 400, h: 250 };
+  const b = sketchBounds(s.strokes, s.pics) || { x: 0, y: 0, w: 400, h: 250 };
   svg.setAttribute('viewBox', `${r1(b.x)} ${r1(b.y)} ${r1(b.w)} ${r1(b.h)}`);
   svg.textContent = '';
+  for (const p of sketchPicsOf(n)) svg.appendChild(makeSketchPicEl(p));
   for (const st of s.strokes) svg.appendChild(makeInkEl(st));
 }
 /* The note takes the drawing's shape, keeping its width: a drawing that grew
@@ -206,7 +262,7 @@ function paintSketch(el, n) {
    Only when the shape changed — a note the user sized stays as sized while
    the drawing keeps its proportions. */
 function fitSketchNote(n, before) {
-  const b = sketchBounds(n.sketch.strokes);
+  const b = sketchBounds(n.sketch.strokes, n.sketch.pics);
   if (!b) return;
   const ar = b.w / b.h;
   if (before && Math.abs(before.w / before.h - ar) / ar < 0.08) return;
@@ -237,8 +293,8 @@ function openSketch(id) {
   if (inkMode) toggleInk(false);
   closeCtxMenu();
   sk = {
-    n, strokes: n.sketch.strokes.slice(), undo: [], redo: [], live: null, erase: null,
-    penSeen: false, changed: false, view: { x: 0, y: 0, z: 1 }, before: sketchBounds(n.sketch.strokes)
+    n, strokes: n.sketch.strokes.slice(), pics: sketchPicsOf(n), undo: [], redo: [], live: null, erase: null,
+    penSeen: false, changed: false, view: { x: 0, y: 0, z: 1 }, before: sketchBounds(n.sketch.strokes, n.sketch.pics)
   };
   const dlg = $('sketchDlg');
   dlg.classList.remove('hidden');
@@ -289,7 +345,7 @@ function setSketchView(v) {
 // everything drawn in view, never closer than 100%; an empty page at 100% with room top left
 function fitSketchView() {
   const r = $('skStage').getBoundingClientRect();
-  const b = sketchBounds(sk.strokes);
+  const b = sketchBounds(sk.strokes, sk.pics);
   if (!b) { setSketchView({ x: 60, y: 60, z: 1 }); return; }
   const z = clamp(Math.min((r.width - 80) / b.w, (r.height - 80) / b.h), 0.05, 1);
   setSketchView({ x: r.width / 2 - (b.x + b.w / 2) * z, y: r.height / 2 - (b.y + b.h / 2) * z, z });
@@ -298,7 +354,7 @@ function fitSketchView() {
 function closeSketch() {
   if (!sk) return;
   endSketchStroke();
-  const { n, strokes, changed, before } = sk;
+  const { n, strokes, pics, changed, before } = sk;
   const title = $('skTitle').value.trim().slice(0, SKETCH_TITLE_MAX);
   sk = null;
   $('sketchDlg').classList.add('hidden');
@@ -309,6 +365,9 @@ function closeSketch() {
   pushUndo();
   // a new object, never an edit in place: a copy of this note may share the old one
   n.sketch = { title, strokes };
+  if (pics.length) n.sketch.pics = pics.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }));
+  // the pictures' files, in the same order, where every file-keeping pass will find them
+  n.body = pics.map((p) => picBody(p.url, p.name)).join('');
   fitSketchNote(n, before);
   const el = els.get(n.id);
   if (el) paintSketch(el, n);
@@ -318,6 +377,7 @@ function closeSketch() {
 function drawSketchStrokes() {
   const g = $('skWorld');
   g.textContent = '';
+  for (const p of sk.pics) g.appendChild(makeSketchPicEl(p));
   for (const s of sk.strokes) g.appendChild(makeInkEl(s));
   const bar = $('skBar');
   bar.querySelector('[data-sk="undo"]').disabled = !sk.undo.length;
@@ -325,8 +385,9 @@ function drawSketchStrokes() {
   bar.querySelector('[data-sk="clear"]').disabled = !sk.strokes.length;
   if (typeof padDirty === 'function') padDirty();
 }
+// a step is the strokes and the pictures, so undo takes back an added picture too
 function sketchStep() {
-  sk.undo.push(sk.strokes.slice());
+  sk.undo.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice() });
   if (sk.undo.length > 200) sk.undo.shift();
   sk.redo = [];
   sk.changed = true;
@@ -334,8 +395,9 @@ function sketchStep() {
 function sketchUndo(back) {
   const from = back ? sk.undo : sk.redo, to = back ? sk.redo : sk.undo;
   if (!from.length) return;
-  to.push(sk.strokes.slice());
-  sk.strokes = from.pop();
+  to.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice() });
+  const s = from.pop();
+  sk.strokes = s.strokes; sk.pics = s.pics;
   sk.changed = true;
   drawSketchStrokes();
 }
@@ -373,6 +435,7 @@ function buildSketchBar() {
     btn('zin', 'zoom_in', te('zoom.in')) + btn('fit', 'fit_screen', te('zoom.fit')) +
     `<span class="ik-sep"></span>` +
     btn('undo', 'undo', te('menu.undo')) + btn('redo', 'redo', te('menu.redo')) +
+    btn('pics', 'image', te('sketch.addFiles')) +
     btn('clear', 'delete_sweep', te('ink.clear')) + btn('full', 'open_in_full', te('sketch.fullScreen')) +
     `<button class="ik-btn ik-done" data-sk="done" title="${te('ink.done')}" aria-label="${te('ink.done')}">${icon('check')}</button>`;
   const set = (patch) => {
@@ -392,6 +455,7 @@ function buildSketchBar() {
     else if (act === 'redo') sketchUndo(false);
     else if (act === 'clear') clearSketch();
     else if (act === 'full') toggleSketchFull();
+    else if (act === 'pics') sketchAddFiles();
     else if (act === 'zin') skSurface.zoomCentre(1.25);
     else if (act === 'zout') skSurface.zoomCentre(1 / 1.25);
     else if (act === 'pct') skSurface.zoomCentre(1 / sk.view.z);
@@ -545,8 +609,171 @@ function onSketchKey(e) {
   if (e.code === 'BracketRight') { e.preventDefault(); set({ size: Math.min(2, p.size + 1) }); return; }
 }
 
+/* ---- bringing pictures and PDFs in (2.7) ---- */
+let pdfjsReady = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!pdfjsReady) pdfjsReady = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'assets/pdfjs/pdf.min.js';
+    s.onload = () => {
+      const L = window.pdfjsLib;
+      if (!L) { pdfjsReady = null; rej(new Error('pdf.js did not load')); return; }
+      L.GlobalWorkerOptions.workerSrc = 'assets/pdfjs/pdf.worker.min.js';
+      res(L);
+    };
+    s.onerror = () => { pdfjsReady = null; rej(new Error('pdf.js did not load')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+// a PDF's pages as pictures: { pages: [{ dataUrl, w, h }], total }
+async function pdfPages(bytes, onPage) {
+  const L = await loadPdfJs();
+  // no eval (the page's CSP has none), and its own fonts and character maps from the app
+  const doc = await L.getDocument({
+    data: bytes, isEvalSupported: false,
+    cMapUrl: 'assets/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: 'assets/pdfjs/standard_fonts/'
+  }).promise;
+  const n = Math.min(doc.numPages, SKETCH_PDF_MAX);
+  const pages = [];
+  try {
+    for (let i = 1; i <= n; i++) {
+      if (onPage) onPage(i, n);
+      const page = await doc.getPage(i);
+      const vp = page.getViewport({ scale: SKETCH_PDF_PX / page.getViewport({ scale: 1 }).width });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);    // paper, not a hole
+      await page.render({ canvasContext: g, viewport: vp }).promise;
+      pages.push({ dataUrl: c.toDataURL('image/png'), w: c.width, h: c.height });
+      page.cleanup();
+    }
+  } finally { doc.destroy(); }
+  return { pages, total: doc.numPages };
+}
+const IMG_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', avif: 'image/avif', svg: 'image/svg+xml' };
+function bytesToDataUrl(bytes, type) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(new Blob([bytes], { type }));
+  });
+}
+// a picture into the board's folder; the data URL itself where there is no folder (a plain browser)
+async function keepSketchPicture(dataUrl, name) {
+  if (FILES && FILES.attachBytes && state.activeBoard) {
+    try { const r = await FILES.attachBytes(dataUrl, state.activeBoard, name); if (r && r.url) return r.url; } catch (_) {}
+  }
+  return dataUrl;
+}
+/* Files → pictures under the drawing, one below another, starting under
+   whatever is already there (or at the top left of an empty page). One undo
+   step for the lot. `items` is what files:pick-drawing hands back, or the
+   same built from files dropped on the editor. */
+async function sketchImport(items) {
+  if (!sk || !items || !items.length) return 0;
+  const n0 = sk.n;
+  const placed = [];
+  for (const it of items) {
+    if (!sk || sk.n !== n0) break;                         // closed while reading
+    if (it.error) { toast(t(it.error === 'too-big' ? 'sketch.fileTooBig' : 'sketch.fileFailed', { name: it.name })); continue; }
+    const base = String(it.name || 'picture').replace(/\.[a-z0-9]+$/i, '');
+    try {
+      if (it.kind === 'pdf') {
+        const r = await pdfPages(it.bytes, (i, n) => toast(t('sketch.readingPdf', { i, n }), 1500));
+        if (r.total > r.pages.length) toast(t('sketch.pdfCut', { n: r.pages.length, total: r.total }), 5000);
+        for (let i = 0; i < r.pages.length; i++) {
+          const pg = r.pages[i];
+          const name = `${base} p${i + 1}.png`;
+          placed.push({ url: await keepSketchPicture(pg.dataUrl, name), name, w: pg.w / 2, h: pg.h / 2 });
+        }
+      } else {
+        const dataUrl = it.dataUrl || await bytesToDataUrl(it.bytes, IMG_MIME[it.ext] || 'image/png');
+        const size = await measureImage(dataUrl);
+        if (!size || !size.w || !size.h) { toast(t('sketch.fileFailed', { name: it.name })); continue; }
+        const k = Math.min(1, SKETCH_PIC_MAX / Math.max(size.w, size.h));
+        const name = it.name || base + '.png';
+        placed.push({ url: await keepSketchPicture(dataUrl, name), name, w: size.w * k, h: size.h * k });
+      }
+    } catch (err) {
+      console.error('drawing note: could not read', it.name, err);
+      toast(t('sketch.fileFailed', { name: it.name }));
+    }
+  }
+  if (!sk || sk.n !== n0 || !placed.length) return 0;
+  const room = SKETCH_PICS_MAX - sk.pics.length;
+  if (room <= 0) { toast(t('sketch.picsFull')); return 0; }
+  sketchStep();
+  // under everything already there, lined up with the pictures (sketchBounds' box has air round it)
+  let x = sk.pics.length ? Math.min(...sk.pics.map((p) => p.x)) : 0, y = -Infinity;
+  for (const p of sk.pics) y = Math.max(y, p.y + p.h);
+  for (const s of sk.strokes) y = Math.max(y, inkBox(s).y1);
+  if (!sk.pics.length && sk.strokes.length) x = Math.min(...sk.strokes.map((s) => inkBox(s).x0));
+  y = Number.isFinite(y) ? y + 40 : 0;
+  for (const p of placed.slice(0, room)) {
+    sk.pics.push({ x: r1(x), y: r1(y), w: r1(p.w), h: r1(p.h), url: p.url, name: p.name });
+    y += p.h + 40;
+  }
+  drawSketchStrokes();
+  fitSketchView();
+  // and again once the layout has settled — a file dialog or a toast can still be moving things
+  requestAnimationFrame(() => { if (sk && sk.n === n0) fitSketchView(); });
+  return placed.length;
+}
+async function sketchAddFiles() {
+  if (!sk) return;
+  if (!FILES || !FILES.pickDrawing) { toast(t('msg.needDesktop')); return; }
+  let items = [];
+  try { items = await FILES.pickDrawing(); } catch (_) {}
+  await sketchImport(items || []);
+}
+// + ▸ Draw on a picture or PDF: a new drawing note, open, and the files asked for straight away
+async function addSketchFromFiles(worldPt) {
+  const n = addSketch(worldPt);
+  if (n) await sketchAddFiles();
+  return n;
+}
+/* A picture on the board becomes a drawing note with that picture under the
+   ink (right-click ▸ Draw on it). Its body already is that picture's <img>,
+   which is exactly where a drawing keeps its pictures' files, so nothing is
+   copied: the note just changes what it is. One undo step. Synchronous, so
+   the editor can still go full screen on the click that asked. */
+function pictureToSketch(id) {
+  const n = state.notes.find((x) => x.id === id);
+  if (!n || !n.pic || !canEditHere()) return;
+  pushUndo();
+  const ar = n.ar || n.w / n.h || 1;
+  const w = Math.min(SKETCH_PIC_MAX, n.w * 2);
+  delete n.pic; delete n.ar;
+  n.sketch = { title: picName(n).replace(/\.[a-z0-9]+$/i, ''), strokes: [], pics: [{ x: 0, y: 0, w: r1(w), h: r1(w / ar) }] };
+  n.h = Math.round(n.h + SKETCH_TITLE_H);       // room for the title over the same picture
+  const el = els.get(n.id);
+  if (el) { el.classList.remove('pic', 'pic-broken'); placeEl(el, n); fillNote(el, n); }
+  saveSoon();
+  openSketch(n.id);
+}
+
 function wireSketch() {
   const svg = $('skSvg');
+  // pictures and PDFs dropped on the editor go under the drawing, like the button's
+  const stage = $('skStage');
+  stage.addEventListener('dragover', (e) => { if (sk) { e.preventDefault(); e.stopPropagation(); } });
+  stage.addEventListener('drop', async (e) => {
+    if (!sk) return;
+    e.preventDefault(); e.stopPropagation();
+    const items = [];
+    for (const f of [...(e.dataTransfer && e.dataTransfer.files || [])].slice(0, 40)) {
+      const ext = (/\.([a-z0-9]+)$/i.exec(f.name || '') || ['', ''])[1].toLowerCase();
+      const kind = ext === 'pdf' || f.type === 'application/pdf' ? 'pdf' : (/^image\//.test(f.type) || IMG_MIME[ext]) ? 'image' : '';
+      if (!kind) continue;
+      try { items.push({ name: f.name, kind, ext, bytes: new Uint8Array(await f.arrayBuffer()) }); }
+      catch (_) { items.push({ name: f.name, kind, error: 'read' }); }
+    }
+    await sketchImport(items);
+  });
   svg.addEventListener('pointerdown', onSketchDown);
   svg.addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button is the eraser here
   skSurface = zoomPanSurface($('skStage'), {
@@ -562,20 +789,25 @@ function wireSketch() {
 }
 
 /* ---- the board picture (edit-ops.js paintBoardCanvas) ---- */
-function paintSketchOnCanvas(ctx, n, pal, inkColor, font) {
+function paintSketchOnCanvas(ctx, n, pal, inkColor, font, pictures) {
   const s = n.sketch;
   ctx.save();
   ctx.fillStyle = pal.noteInk(n.color);
   ctx.font = `600 15px ${font}`;
   ctx.textBaseline = 'middle';
   ctx.fillText(s.title || t('sketch.untitled'), n.x + 14, n.y + 34 / 2 + 2, n.w - 28);
-  const b = sketchBounds(s.strokes);
+  const b = sketchBounds(s.strokes, s.pics);
   if (b) {
     const room = { x: n.x + 6, y: n.y + 34, w: n.w - 12, h: n.h - 34 - 6 };
     const k = Math.min(room.w / b.w, room.h / b.h);
     ctx.beginPath(); ctx.rect(room.x, room.y, room.w, room.h); ctx.clip();
     ctx.translate(room.x + (room.w - b.w * k) / 2 - b.x * k, room.y + (room.h - b.h * k) / 2 - b.y * k);
     ctx.scale(k, k);
+    // the pictures under the ink, read by loadExportPictures() (edit-ops.js) as `<note id>#<index>`
+    (s.pics || []).forEach((p, i) => {
+      const img = pictures && pictures.get(n.id + '#' + i);
+      if (img) { try { ctx.drawImage(img, p.x, p.y, p.w, p.h); } catch (_) {} }
+    });
     paintInkOnCanvas(ctx, s.strokes, inkColor);
   }
   ctx.restore();

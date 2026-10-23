@@ -719,15 +719,21 @@ function exportBlocks(html, max) {
    not read stays the framed placeholder it always was. */
 async function loadExportPictures(board) {
   const out = new Map();
-  for (const n of board.notes || []) {
-    if (!n.pic) continue;
-    const src = picSrc(n);
+  const read = async (key, src) => {
     let data = /^data:/i.test(src) ? src : '';
     if (!data && FILES && FILES.readImage) { try { data = FILES.readImage(src) || ''; } catch (_) { data = ''; } }
-    if (!data) continue;
+    if (!data) return;
     const img = new Image();
     img.src = data;
-    try { await img.decode(); out.set(n.id, img); } catch (_) {}
+    try { await img.decode(); out.set(key, img); } catch (_) {}
+  };
+  for (const n of board.notes || []) {
+    if (n.pic) await read(n.id, picSrc(n));
+    // a drawing note's pictures under the ink (sketch.js), as `<id>#<index>`
+    if (n.sketch && n.sketch.pics) {
+      const files = sketchPicFiles(n);
+      for (let i = 0; i < n.sketch.pics.length; i++) if (files[i]) await read(n.id + '#' + i, files[i].url);
+    }
   }
   return out;
 }
@@ -832,7 +838,7 @@ function paintBoardCanvas(board, scale, pictures) {
     if (shape) ctx.stroke(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.stroke(); }
     // a drawing note: its title and its drawing, in the note's own ink (sketch.js)
     if (n.sketch) {
-      paintSketchOnCanvas(ctx, n, pal, (c) => (c === 'text' ? pal.noteInk(n.color) : inkColor(c)), FONT);
+      paintSketchOnCanvas(ctx, n, pal, (c) => (c === 'text' ? pal.noteInk(n.color) : inkColor(c)), FONT, pictures);
       ctx.restore();
       return;
     }

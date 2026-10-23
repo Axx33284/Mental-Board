@@ -103,7 +103,9 @@ contextBridge.exposeInMainWorld('mbFiles', {
   openFilesDir: (boardId) => ipcRenderer.send('shell:open-board-dir', boardId || ''),
   /* An image back as a data URL, for the studio: a picture from another
      origin taints a canvas, and a tainted canvas refuses toDataURL(). */
-  readImage: (url) => ipcRenderer.sendSync('files:read-image', url)
+  readImage: (url) => ipcRenderer.sendSync('files:read-image', url),
+  // pictures and PDFs to draw over (2.7): [{ name, kind: 'image'|'pdf', ext, bytes | error }]
+  pickDrawing: () => ipcRenderer.invoke('files:pick-drawing')
 });
 
 contextBridge.exposeInMainWorld('mbWin', {

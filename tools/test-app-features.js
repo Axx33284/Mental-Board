@@ -1321,5 +1321,58 @@ module.exports = [
       ok(st.undone === 0, 'and its undo');
       ok(r.board, 'nothing landed on the board behind either');
     });
+
+    // 2.7, MAP.md §4z4: a picture, a photo or a PDF under a drawing
+    const pdfB64 = require('./fake-pdf.js')().toString('base64');
+    await test('2.7 pictures and PDFs to draw over: a picture becomes a drawing, a PDF becomes pages, and their files are kept', async () => {
+      const r = await page(async (pdfB64) => {
+        const bin = atob(pdfB64);
+        const pdf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) pdf[i] = bin.charCodeAt(i);
+        // a picture on the board becomes a drawing note with that picture under the ink
+        const c = document.createElement('canvas'); c.width = 300; c.height = 200;
+        const g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 300, 200);
+        const url = await keepSketchPicture(c.toDataURL('image/png'), 'map.png');
+        const n = addNote({ x: 5000, y: 0 }, { pic: true, ar: 1.5, w: 300, h: 200, edit: false, body: picBody(url, 'map.png') });
+        const bodyBefore = n.body;
+        pictureToSketch(n.id);
+        const conv = { open: sketchOpen(), pic: !!n.pic, pics: (n.sketch.pics || []).length, title: n.sketch.title, sameBody: n.body === bodyBefore, editorPics: sk.pics.length };
+        // a PDF's pages come in under it, one step back takes them all away
+        const got = await sketchImport([{ name: 'sheet.pdf', kind: 'pdf', ext: 'pdf', bytes: pdf }]);
+        const pages = sk.pics.slice(1).map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h, file: /^mbf:.*sheet%20p\d\.png$/.test(p.url) }));
+        const below = sk.pics[1].y >= sk.pics[0].y + sk.pics[0].h && sk.pics[1].x === sk.pics[0].x;
+        sketchUndo(true);
+        const undone = sk.pics.length;
+        sketchUndo(false);
+        // a picture from a file
+        await sketchImport([{ name: 'dot.png', kind: 'image', ext: 'png', dataUrl: c.toDataURL('image/png') }]);
+        closeSketch();
+        const files = sketchPicFiles(n);
+        const kept = referencedFileUrls();
+        const el = els.get(n.id);
+        const pics = await loadExportPictures(activeBoard());
+        let painted = true;
+        try { withTheme(pictureTheme(), () => paintBoardCanvas(activeBoard(), 1, pics)); } catch (e) { painted = String(e); }
+        // a board that changes id takes its drawing's pictures with it (relinkBoardHost reads bodies)
+        const copy = JSON.parse(JSON.stringify({ notes: [n] }));
+        relinkBoardHost(copy, state.activeBoard, 'elsewhere');
+        const moved = sketchPicFiles(copy.notes[0]).every((f) => f.url.startsWith('mbf://elsewhere/'));
+        await saveNow();
+        return { id: n.id, conv, got, pages, below, undone, pics: n.sketch.pics.length, files: files.length,
+          allKept: files.every((f) => kept.includes(f.url)), shown: el.querySelectorAll('.sk-svg image').length,
+          exported: pics.has(n.id + '#0') && pics.has(n.id + '#2'), painted, moved };
+      }, pdfB64);
+      ok(r.conv.open && !r.conv.pic && r.conv.pics === 1 && r.conv.sameBody && r.conv.editorPics === 1 && r.conv.title === 'map',
+        'Draw on it: the picture is now a drawing note with itself underneath, nothing copied: ' + JSON.stringify(r.conv));
+      ok(r.got === 2 && r.pages.length === 2 && r.pages.every((p) => p.file && p.w === 900), 'a two-page PDF is two pictures in the board\'s folder: ' + JSON.stringify(r.pages));
+      ok(r.below, 'the pages go under what was there, lined up with it');
+      ok(r.undone === 1, 'one undo takes the whole PDF away');
+      ok(r.pics === 4 && r.files === 4 && r.shown === 4, 'kept as four pictures, their files in the body: ' + JSON.stringify(r));
+      ok(r.allKept, 'every picture under a drawing is on the clean-up\'s list of files in use');
+      ok(r.exported && r.painted === true, 'the board picture draws them: ' + r.painted);
+      ok(r.moved, 'a board that changes id takes them with it');
+      const disk = onDisk().notes.find((x) => x.id === r.id);
+      ok(disk && disk.sketch && disk.sketch.pics.length === 4 && (disk.body.match(/<img /g) || []).length === 4, 'on disk: four places, four files');
+    });
   }
 ];

@@ -195,7 +195,7 @@ const MAIN_KEYS = [
   'main.trayOpen', 'main.trayCapture', 'main.trayQuit',
   'main.stillRunningTitle', 'main.stillRunningBody',
   'main.exportBoard', 'main.importBoard', 'main.exportImage',
-  'main.backupFolder', 'main.insertImage',
+  'main.backupFolder', 'main.insertImage', 'main.pickDrawing', 'main.filterDrawing',
   'main.filterJson', 'main.filterPng', 'main.filterImages',
   'main.crashTitle', 'main.crashBody', 'main.crashOk',
   // the phone's drawing page (src/tablet/phone.html) speaks the app's language too

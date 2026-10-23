@@ -71,6 +71,8 @@ const S_EN = {
   'main.importCanvas': 'Import a .canvas board',
   'main.filterCanvas': 'JSON Canvas',
   'main.importSamsung': 'Import from Samsung Notes',
+  'main.pickDrawing': 'Pictures and PDFs to draw on',
+  'main.filterDrawing': 'Pictures and PDFs',
   'main.filterSamsungAll': 'Samsung Notes and its exports',
   'main.filterSamsung': 'Samsung Notes',
   'main.exportImage': 'Export board as image',
@@ -971,6 +973,34 @@ ipcMain.handle('samsung:pick', async (e) => {
   return canceled ? [] : filePaths;
 });
 ipcMain.handle('samsung:read', (_e, p, id) => store.readSamsung(p, id));
+/* Pictures and PDFs to draw over in a drawing note (2.7, js/sketch.js). The
+   page cannot read a file, so main reads each one the user picked and hands
+   back its bytes and a kind decided here from the name — nothing else is
+   read, and nothing over DRAW_FILE_MAX. A PDF's pages are drawn in the page
+   (pdf.js); the pictures that come of them go into the board's folder through
+   files:attach-bytes like any other. */
+const DRAW_FILE_MAX = 80 * 1024 * 1024;
+const DRAW_IMG = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg'];
+ipcMain.handle('files:pick-drawing', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.pickDrawing'), properties: ['openFile', 'multiSelections'],
+    filters: [{ name: t('main.filterDrawing'), extensions: ['pdf', ...DRAW_IMG] }]
+  });
+  if (canceled) return [];
+  const out = [];
+  for (const p of filePaths.slice(0, 40)) {
+    const ext = path.extname(p).slice(1).toLowerCase();
+    const kind = ext === 'pdf' ? 'pdf' : DRAW_IMG.includes(ext) ? 'image' : '';
+    if (!kind) continue;
+    try {
+      if (fs.statSync(p).size > DRAW_FILE_MAX) { out.push({ name: path.basename(p), kind, error: 'too-big' }); continue; }
+      const bytes = fs.readFileSync(p);
+      out.push({ name: path.basename(p), kind, ext, bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.length) });
+    } catch (err) { out.push({ name: path.basename(p), kind, error: errText(err) }); }
+  }
+  return out;
+});
 
 /* Save a board picture. Takes a data: URL because that is what a canvas
    produces, and decodes it here so the renderer never holds a Buffer. */

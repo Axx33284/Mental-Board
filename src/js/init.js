@@ -728,6 +728,7 @@ function init() {
     if (what === 'video') addMediaFromPicker('video');
     if (what === 'draw') toggleInk(true);
     if (what === 'sketch') addSketch();
+    if (what === 'sketchFile') addSketchFromFiles();
     if (what === 'link') {
       const one = [...selection].find((id) => !isFrame(id)) || (state.notes[0] && state.notes[0].id);
       if (one) startLinking(one); else toast(t('msg.addNotesFirst'));

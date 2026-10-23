@@ -93,6 +93,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
     const n0 = state.notes.find((x) => x.id === targets[0]);
     html += `<div class="cm-label">${icon('image')}<span>${te('menu.picture')}</span></div>`;
     html += item('editPic', 'brush', te('menu.editPicture'), te('menu.dblclick'));
+    html += item('drawOn', 'draw_abstract', te('menu.drawOnPicture'));
     html += item('replacePic', 'image', te('menu.replacePicture'));
     html += item('link', 'link', te('menu.link'), 'L');
     if (n0 && firstFileUrl(n0)) html += item('whereFile', 'folder_open', te('menu.whereFile'));
@@ -356,6 +357,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
       case 'icon': openIconPicker(targets[0]); break;
       case 'shape': openShapeMenu(clientX, clientY, targets.filter((tid) => !isFrame(tid))); break;
       case 'editPic': editPicture(targets[0]); break;
+      case 'drawOn': pictureToSketch(targets[0]); break;
       case 'replacePic': replacePicture(targets[0]); break;
       case 'newNoteHere': addNote(worldPt); break;
       case 'edit': { const n = state.notes.find((x) => x.id === targets[0]); if (n) enterEdit(n); break; }
