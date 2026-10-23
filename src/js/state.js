@@ -232,6 +232,9 @@ function defaults() {
       /* The pen as it was last put down (2.1, js/ink.js): which tool, which
          colour (`text`, a COLORS name or a hex), and which of three sizes. */
       pen: { tool: 'pen', color: 'text', size: 1 },
+      // the same, for drawing notes (2.5, js/sketch.js), and whether one opens full screen
+      sketchPen: { tool: 'pen', color: 'text', size: 1 },
+      sketchFull: true,
       // menu sounds (2.1, js/sound.js): off unless asked for, and how loud
       sounds: false,
       soundVol: 60,
@@ -739,10 +742,14 @@ function adoptBoard(raw) {
     /* Its shape and where its writing sits in it (2.4, shapes.js). All four
        are absent on an ordinary note, so a board written before them reads
        back unchanged and one written after reads in an older build as plain. */
-    form: n.pic ? undefined : okForm(n.form),
-    textAt: n.pic ? undefined : okTextAt(n.textAt),
-    tx: n.pic ? undefined : okNudge(n.tx),
-    ty: n.pic ? undefined : okNudge(n.ty),
+    /* A drawing note (2.5, sketch.js): its page size, its title and its
+       strokes. Absent on every other note; an older build reads one as an
+       empty note. */
+    sketch: n.pic ? undefined : okSketch(n.sketch),
+    form: n.pic || n.sketch ? undefined : okForm(n.form),
+    textAt: n.pic || n.sketch ? undefined : okTextAt(n.textAt),
+    tx: n.pic || n.sketch ? undefined : okNudge(n.tx),
+    ty: n.pic || n.sketch ? undefined : okNudge(n.ty),
     /* Only on something sitting in the trash: which board it came from, and
        when it went in. */
     trashedFrom: typeof n.trashedFrom === 'string' ? n.trashedFrom : undefined,
@@ -864,6 +871,9 @@ function adopt(raw, keepSettings) {
   st.guides = st.guides !== false;
   st.minimap = st.minimap !== false;
   st.pen = healPen(st.pen);
+  st.sketchPen = healPen(st.sketchPen);
+  if (st.sketchPen.tool === 'select') st.sketchPen.tool = 'pen';
+  st.sketchFull = st.sketchFull !== false;
   st.sounds = !!st.sounds;
   st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);
   if (!KEY_SOUNDS.includes(st.keySounds)) st.keySounds = 'off';

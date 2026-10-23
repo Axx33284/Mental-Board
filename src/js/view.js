@@ -271,7 +271,7 @@ function restubMounted() {
     if (gesture && ((gesture.it && gesture.it.id === id) ||
         (gesture.items && gesture.items.some(({ it }) => it.id === id)))) return;
     const n = (byId || (byId = noteIndex())).get(id);
-    if (n && !n.pic) stubNote(el, n);
+    if (n && !n.pic && !n.sketch) stubNote(el, n);
   });
 }
 

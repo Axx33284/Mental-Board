@@ -90,7 +90,7 @@ const okNudge = (v) => { const n = Math.round(+v || 0); return n ? clamp(n, -NUD
    (both replace the element's insides, so the <svg> goes with them) and by the
    menu below after a change. Safe on a picture: pictures have no shape. */
 function paintForm(el, n) {
-  if (!el || !n || n.pic) return;
+  if (!el || !n || n.pic || n.sketch) return;
   const form = okForm(n.form);
   const at = okTextAt(n.textAt) || (form ? 'ic' : '');
   const tx = okNudge(n.tx) || 0, ty = okNudge(n.ty) || 0;
@@ -174,7 +174,7 @@ function setNoteForm(ids, form) {
   pushUndo();
   ids.forEach((id) => {
     const n = state.notes.find((x) => x.id === id);
-    if (!n || n.pic) return;
+    if (!n || n.pic || n.sketch) return;
     if (f) n.form = f; else delete n.form;
   });
   repaintForms(ids);
@@ -187,7 +187,7 @@ function setNoteForm(ids, form) {
    away, so the note under the panel *is* the preview. One undo step per
    change; a slider drag is one step, taken on its first movement. */
 function openShapeMenu(clientX, clientY, ids) {
-  const notes = ids.map((id) => state.notes.find((x) => x.id === id)).filter((n) => n && !n.pic);
+  const notes = ids.map((id) => state.notes.find((x) => x.id === id)).filter((n) => n && !n.pic && !n.sketch);
   if (!notes.length) return;
   const menu = $('ctxMenu');
   const first = notes[0];

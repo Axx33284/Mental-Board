@@ -18,6 +18,7 @@
    searching and wrong for a title. Cached on the body, like noteText(). */
 const titleCache = new Map();
 function noteTitle(n) {
+  if (n.sketch) return n.sketch.title || t('sketch.untitled');
   const hit = titleCache.get(n.id);
   if (hit && hit.body === n.body) return hit.title;
   const d = document.createElement('div');

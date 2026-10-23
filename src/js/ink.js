@@ -374,7 +374,9 @@ function inkPoints(k) {
    a quick flick thins the line, a slow drag swells it, the way a loaded brush
    behaves — and both ends taper over the first and last few points. The
    widths are smoothed, or every jitter of the hand shows as a bead. */
-function brushWidths(raw, size) {
+// z: screen pixels per unit of the points — the board's zoom, or a drawing note's page scale
+function brushWidths(raw, size, z) {
+  const zz = z || state.view.z;
   const n = raw.length;
   const ws = new Array(n);
   let prev = size;
@@ -384,7 +386,7 @@ function brushWidths(raw, size) {
     else if (i === 0) w = size;
     else {
       const dt = Math.max(1, raw[i].t - raw[i - 1].t);
-      const v = Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y) * state.view.z / dt;   // screen px per ms
+      const v = Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y) * zz / dt;   // screen px per ms
       w = size * clamp(1.4 - v * 0.38, 0.4, 1.4);
     }
     prev = prev + (w - prev) * 0.35;

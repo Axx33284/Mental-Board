@@ -49,6 +49,7 @@ function makeNote(n, stub) {
      worth, and a blank rectangle where a picture was reads as a broken board.
      Never stubbed. See pictures.js. */
   if (n.pic) { fillPicture(el, n); return el; }
+  if (n.sketch) { fillSketch(el, n); return el; }     // a drawing note, never stubbed either (sketch.js)
   if (stub) { stubNote(el, n); return el; }
   fillNote(el, n);
   return el;
@@ -68,6 +69,7 @@ function tiltOf(id) {
 
 function fillNote(el, n) {
   if (n.pic) { fillPicture(el, n); return; }
+  if (n.sketch) { fillSketch(el, n); return; }
   delete el.dataset.stub;
   /* No head, since 2.1. A note used to carry a row of five controls on its top
      edge — grip, icon, link, more, delete — that appeared on hover. Every one
@@ -115,7 +117,7 @@ function lazyImages(root) {
    is rebuilt outright. */
 function repaintNoteBody(el, n) {
   if (!el || !n || el.dataset.stub) return;
-  if (n.pic) { fillNote(el, n); return; }
+  if (n.pic || n.sketch) { fillNote(el, n); return; }
   const body = el.querySelector('.note-body');
   if (!body) return;
   body.innerHTML = n.body || '';

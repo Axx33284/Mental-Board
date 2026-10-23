@@ -151,10 +151,12 @@ function openCtxMenu(clientX, clientY, id, spell) {
     html += `<div class="cm-sep"></div>`;
     const item = (act, ic, label, key, cls) =>
       `<button class="cm-item${cls ? ' ' + cls : ''}" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
-    if (targets.length === 1) html += item('icon', 'mood', te('menu.icon'));
+    // a drawing note (sketch.js) has no icon badge, no shape and no text history
+    const oneSketch = targets.length === 1 && !!(state.notes.find((x) => x.id === targets[0]) || {}).sketch;
+    if (targets.length === 1 && !oneSketch) html += item('icon', 'mood', te('menu.icon'));
     /* A note's shape (2.4) — a panel of its own rather than more rows here,
        because it carries a grid of shapes, a place picker and two sliders. */
-    if (noteTargets.some((tid) => !(state.notes.find((x) => x.id === tid) || {}).pic)) html += item('shape', 'category', te('menu.shape'));
+    if (noteTargets.some((tid) => { const x = state.notes.find((y) => y.id === tid) || {}; return !x.pic && !x.sketch; })) html += item('shape', 'category', te('menu.shape'));
     if (first) html += item('focus', 'filter_alt', te('menu.focusColour'));
     /* "Show me everything that is blocked" was the one question a board full of
        people could not answer. Only on a note — a workflow frame has no status
@@ -167,7 +169,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
       if (n1 && okDateKey(n1.date)) html += item('focusDue', 'event', te('menu.focusDue'));
     }
     if (targets.length === 1 && !isFrame(targets[0])) {
-      html += item('edit', 'edit', te('menu.edit'), te('menu.dblclick'));
+      html += oneSketch ? item('edit', 'draw_abstract', te('sketch.edit'), te('menu.dblclick')) : item('edit', 'edit', te('menu.edit'), te('menu.dblclick'));
       html += item('link', 'link', te('menu.link'), 'L');
       /* Where this note's ropes go, one row per note at the other end. This is
          what the backlink badge in the old note head was for, and more: it
@@ -183,9 +185,9 @@ function openCtxMenu(clientX, clientY, id, spell) {
         html += item('unlink', 'link_off', te('menu.unlinkAll'));
       }
       html += item('remind', 'alarm', te('menu.remind'));
-      html += item('tpl', 'bookmarks', te('tpl.save'));
+      if (!oneSketch) html += item('tpl', 'bookmarks', te('tpl.save'));
       const n0 = state.notes.find((x) => x.id === targets[0]);
-      if (n0 && n0.hist && n0.hist.length) html += item('hist', 'history', te('menu.history', { n: n0.hist.length }));
+      if (n0 && !oneSketch && n0.hist && n0.hist.length) html += item('hist', 'history', te('menu.history', { n: n0.hist.length }));
       /* Where the app has actually put this. Only on a note that carries a file,
          because on any other note it would be a row that does nothing — and it
          is the honest answer to "you copied my video somewhere, where?". */
@@ -237,6 +239,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
       `<button class="cm-item" data-act="${act}">${icon(ic)}<span>${label}</span>${key ? `<span class="k">${key}</span>` : ''}</button>`;
     html += item('newNote', 'sticky_note_2', te('menu.newNote'), 'N');
     html += item('newFrame', 'select_all', te('menu.newFrame'), 'G');
+    html += item('newSketch', 'draw_abstract', te('menu.newSketch'));
     html += item('addPicture', 'image', te('menu.addPicture'));
     html += item('addVideo', 'movie', te('menu.addVideo'));
     if (clipboard.length) html += item('paste', 'content_paste', te('menu.paste', { n: clipboard.length }), 'Ctrl V');
@@ -385,6 +388,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
       case 'boardFiles': openBoardFiles(); break;
       case 'newNote': addNote(worldPt); break;
       case 'newFrame': addFrame(worldPt); break;
+      case 'newSketch': addSketch(worldPt); break;
       case 'addPicture': addMediaFromPicker('image', worldPt); break;
       case 'addVideo': addMediaFromPicker('video', worldPt); break;
       case 'paste': pasteClipboard(worldPt); break;

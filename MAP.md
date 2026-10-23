@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-three scripts or nine sheets holds the thing you are after, so you never
+twenty-four scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-three ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + twenty-four ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -130,6 +130,7 @@ The things that make it more than a note wall:
 | **Mono accent, and a theme change that fades** | js/helpers.js + js/theme.js §4v |
 | **A phone with a pen as a wireless drawing tablet, showing the board live** | src/tablet.js + js/tablet.js §4x |
 | **A drag stays under the pointer through a zoom; spelling suggestions on right-click** | js/items.js + js/menus.js §4z1 |
+| **A drawing note: write and draw by hand, full screen, with a pen's pressure** | js/sketch.js §4z2 |
 
 ---
 
@@ -143,7 +144,7 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           23 plain scripts, one global scope, no bundler   (§4)
+  js/           24 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png; vendored: katex/
   main.js       Electron main
@@ -168,7 +169,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
 | `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | ~15300 | All app logic, in 23 plain scripts sharing one global scope. See §4. |
+| `src/js/*.js` | ~17700 | All app logic, in 24 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
@@ -212,7 +213,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-three scripts that follow. Between them they hold one mutable `state`,
+twenty-four scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -615,10 +616,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-three files
+## 4. `src/js/` — the app, in twenty-four files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`) and 2.4 one (`shapes.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`) and 2.5 one (`sketch.js`, after `shapes.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -638,6 +639,7 @@ no bundler and no build step — the only thing joining them is the order
 | `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
 | `toolbars.js` | ~650 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu (ranked by `blockRank`) — the chrome that sits over the editor. |
 | `media.js` | ~740 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
+| `sketch.js` | ~370 | **A drawing note** (2.5): `okSketch` (healing), `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
 | `menus.js` | ~660 | The right-click menu (spelling suggestions on top — `awaitSpellMenu` `answerSpell` `wordRangeAt` `fixSpelling`, §4z1; colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
@@ -2270,6 +2272,60 @@ when it equals the word), and a fix goes through `execCommand('insertText')`
 — one undo step and one input event, like typing. The rows keep the caret by
 cancelling their `mousedown`. `spell:learn` adds to the session's
 dictionary, which lives in userData. Off with Settings ▸ spell-check.
+
+## 4z2. A drawing note (2.5) — `js/sketch.js`
+
+A note you write and draw in by hand instead of typing: + ▸ **Drawing note**,
+or right-click the canvas ▸ **New drawing note**. It opens full screen; Done
+(✓) or Escape puts it on the board, where it moves, resizes, ropes, takes a
+colour, status and date, copies and goes to the bin like any note. A
+double-click (or right-click ▸ **Draw in it**) opens it again.
+
+**It is a note** — `{ sketch: { w, h, title, strokes } }`, the way a picture
+is `{ pic: true }` (§4q), so none of the gesture engine, undo, the clipboard,
+the trash, board-to-board drags or the save path has a second branch. The
+places that *do* check: `makeNote`/`fillNote`/`repaintNoteBody` (items.js,
+draw it with `fillSketch`), `syncMounted` (view.js, never stubbed at far zoom,
+like a picture), `enterEdit` (editor.js, opens the editor), `addNote`
+(edit-ops.js), `adoptBoard` (state.js, `okSketch`), the shape code (no shape),
+the right-click menu (no icon, shape, template or history; "Draw in it"),
+`noteText`/`noteTitle` (its text is its title, so find and the rope menus
+see it), the JSON Canvas export (its title — the format has no strokes) and
+the board picture (`paintSketchOnCanvas`).
+
+**The page.** `w` × `h` is fixed when the note is made — the size of the
+window it was made in — and is the drawing's own coordinate space. The editor
+fits the page to the screen and the note fits it to the note (an SVG,
+`viewBox` = the page, `meet`), so nothing reflows when either is resized.
+Screen → page is `getScreenCTM().inverse()` (`sketchPoint`).
+
+**A stroke is a board-ink stroke** (§4v) in page units, so `inkLinePath`,
+`inkBrushPath`, `brushWidths` (now taking the scale as a third argument),
+`strokeNear`, `adoptInk`, `makeInkEl` and `paintInkOnCanvas` are reused
+unchanged. The pen's settings are separate (`settings.sketchPen`), so drawing
+in a note does not change the board pen; `settings.sketchFull` remembers
+whether you turned full screen off.
+
+**A pen.** Pressure comes from pointer events (`pointerType: 'pen'`): a
+Samsung S Pen on a Galaxy Book, a Surface pen, a Wacom. The brush turns it
+into width. Once a pen has touched the page a finger does not draw (palm
+rejection). The pen's eraser end (button 5) or barrel button erases. Moves
+and the release are heard on the **window**, as ink.js does — pointer capture
+alone was dropped by the mouse straight after it was taken, which ended a
+mouse stroke at its first point.
+
+**Undo.** Inside the editor, its own stack (Ctrl+Z / Ctrl+Y, the bar). On the
+board, one Ctrl+Z takes back everything done in one visit: `closeSketch()`
+takes one full step, and only if something changed. It writes a **new**
+`sketch` object, never edits the old one in place — a copy of the note may
+share it.
+
+Every key goes to the editor while it is open (`onKeyDown` → `onSketchKey`):
+D/M/B/E for a tool, [ ] for the size. Full screen is the browser's
+Fullscreen API on `#sketchDlg` ('fullscreen' is in main's permission list);
+it needs a click, so `openSketch` is always called from one.
+
+Test: **2.5** in `tools/test-app-features.js`.
 
 ## 4o. Lining a note up with its neighbours
 

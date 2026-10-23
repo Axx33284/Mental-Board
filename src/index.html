@@ -150,6 +150,7 @@
       <button class="fab-item" data-new="frame" data-icon="select_all"><span class="fi-ic"></span><span><span data-t="fab.frame"></span><em>G</em></span></button>
       <button class="fab-item" data-new="picture" data-icon="image"><span class="fi-ic"></span><span><span data-t="fab.picture"></span></span></button>
       <button class="fab-item" data-new="video" data-icon="movie"><span class="fi-ic"></span><span><span data-t="fab.video"></span></span></button>
+      <button class="fab-item" data-new="sketch" data-icon="draw_abstract"><span class="fi-ic"></span><span><span data-t="fab.sketch"></span></span></button>
       <button class="fab-item" data-new="draw" data-icon="draw"><span class="fi-ic"></span><span><span data-t="fab.draw"></span><em>P</em></span></button>
       <button class="fab-item" data-new="link" data-icon="link"><span class="fi-ic"></span><span><span data-t="fab.link"></span><em>L</em></span></button>
     </div>
@@ -917,6 +918,17 @@
   </div>
 </div>
 
+<!-- ───────────────────────── a drawing note, full screen (js/sketch.js) ───────────────────────── -->
+<div id="sketchDlg" class="hidden" role="dialog" data-t-aria="sketch.editor">
+  <header class="sk-head">
+    <input type="text" id="skTitle" dir="auto" maxlength="120" spellcheck="false" data-t-ph="sketch.titlePh" data-t-aria="sketch.titlePh">
+    <div class="sk-bar" id="skBar"></div>
+  </header>
+  <div class="sk-stage">
+    <svg id="skSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><rect id="skPage" class="sk-page" x="0" y="0"></rect></svg>
+  </div>
+</div>
+
 <!-- ───────────────────────── board picker (for /board) ───────────────────────── -->
 <div id="boardPick" class="overlay hidden">
   <div class="sheet small" role="dialog" data-t-aria="bp.title">
@@ -1165,6 +1177,7 @@
 <script src="js/media.js"></script>
 <script src="js/pictures.js"></script>
 <script src="js/shapes.js"></script>
+<script src="js/sketch.js"></script>
 <script src="js/menus.js"></script>
 <script src="js/edit-ops.js"></script>
 <script src="js/boards.js"></script>

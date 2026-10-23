@@ -139,11 +139,13 @@ const TEXT_CACHE_MAX = 4000;
 const textCache = new Map();
 function noteText(n) {
   if (!n) return '';
+  // a drawing note's text is its title (sketch.js), keyed so a rename is seen
+  const src = n.sketch ? '\u0001' + (n.sketch.title || '') : n.body;
   const hit = textCache.get(n.id);
-  if (hit && hit.body === n.body) return hit.text;
-  const text = stripHtml(n.body);
+  if (hit && hit.body === src) return hit.text;
+  const text = n.sketch ? (n.sketch.title || '') : stripHtml(n.body);
   if (textCache.size > TEXT_CACHE_MAX) textCache.clear();
-  textCache.set(n.id, { body: n.body, text, folded: foldSearch(text) });
+  textCache.set(n.id, { body: src, text, folded: foldSearch(text) });
   return text;
 }
 /* The same text through foldSearch(), cached beside it — so a search over a

@@ -1135,5 +1135,51 @@ module.exports = [
       ok(r.moved.x === 20 && r.moved.y === 20, 'and after moving on at the new zoom: ' + JSON.stringify(r.moved));
       ok(r.pan[0] === 0 && r.pan[1] === 0, 'the pan kept the zoom: ' + JSON.stringify(r.pan));
     });
+
+    // 2.5, MAP.md §4z2: a note you draw in
+    await test('2.5 a drawing note: drawn on, titled, kept on disk, undone whole, painted in the board picture', async () => {
+      const r = await page(async () => {
+        const n = addSketch({ x: 1200, y: 0 });
+        const opened = sketchOpen();
+        const svg = $('skSvg');
+        const box = svg.getBoundingClientRect();
+        const pe = (type, x, y, extra) => new PointerEvent(type, Object.assign({
+          bubbles: true, cancelable: true, pointerId: 7, pointerType: 'pen', isPrimary: true,
+          clientX: box.left + x, clientY: box.top + y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, pressure: 0.6
+        }, extra || {}));
+        state.settings.sketchPen = healPen({ tool: 'brush', color: 'blue', size: 1 });
+        svg.dispatchEvent(pe('pointerdown', 100, 100));
+        for (let i = 1; i <= 20; i++) window.dispatchEvent(pe('pointermove', 100 + i * 10, 100 + i * 4));
+        window.dispatchEvent(pe('pointerup', 300, 180));
+        // a finger once the pen has been used is a palm, and draws nothing
+        svg.dispatchEvent(pe('pointerdown', 400, 300, { pointerType: 'touch', pointerId: 8 }));
+        window.dispatchEvent(pe('pointerup', 400, 300, { pointerType: 'touch', pointerId: 8 }));
+        const live = sk.strokes.length, ws = !!(sk.strokes[0] && sk.strokes[0].ws);
+        $('skTitle').value = 'Groceries'; $('skTitle').dispatchEvent(new Event('input'));
+        closeSketch();
+        const el = els.get(n.id);
+        const shown = { title: el.querySelector('.sk-title').textContent, paths: el.querySelectorAll('.sk-svg path').length };
+        const kept = JSON.parse(JSON.stringify(n.sketch));
+        undo();
+        const undone = state.notes.find((x) => x.id === n.id).sketch.strokes.length;
+        redo();
+        await saveNow();
+        const pics = await loadExportPictures(activeBoard());
+        let painted = true;
+        try { withTheme(pictureTheme(), () => paintBoardCanvas(activeBoard(), 1, pics)); } catch (e) { painted = String(e); }
+        // nonsense off the disk is healed, not drawn
+        const healed = okSketch({ w: 'x', h: -4, title: 7, strokes: [{ pts: [1] }, { pts: [0, 0, 5, 5], tool: 'pen' }] });
+        return { id: n.id, opened, live, ws, shown, kept, undone, painted, healed, text: noteText(n), title: noteTitle(n) };
+      });
+      ok(r.opened, 'a new drawing note opens to be drawn on');
+      ok(r.live === 1 && r.ws, 'one pen stroke with widths from its pressure, and the palm drew nothing: ' + r.live);
+      ok(r.shown.title === 'Groceries' && r.shown.paths === 1, 'the board shows the title and the drawing: ' + JSON.stringify(r.shown));
+      ok(r.undone === 0, 'one undo takes back the whole time in the editor');
+      ok(r.painted === true, 'the board picture paints it: ' + r.painted);
+      ok(r.text === 'Groceries' && r.title === 'Groceries', 'find and the rope menus know it by its title');
+      ok(r.healed.w === 1600 && r.healed.h === 200 && r.healed.title === '' && r.healed.strokes.length === 1, 'healed: ' + JSON.stringify(r.healed));
+      const disk = onDisk().notes.find((x) => x.id === r.id);
+      ok(disk && disk.sketch && disk.sketch.title === 'Groceries' && disk.sketch.strokes.length === 1 && Array.isArray(disk.sketch.strokes[0].ws), 'kept on disk');
+    });
   }
 ];

@@ -318,7 +318,9 @@ function boardToCanvas(b, folder) {
     const src = note.pic ? picSrc(note) : '';
     const local = src && ref(src);
     if (local) { nodes.push(Object.assign({ type: 'file', file: local }, box)); return; }
-    const n = Object.assign({ type: 'text', text: noteToMarkdown(note.body, ref) }, box);
+    // a drawing note goes out as its title — JSON Canvas has no strokes (sketch.js)
+    const text = note.sketch ? '## ' + (note.sketch.title || t('sketch.untitled')) + '\n\n_' + t('sketch.exported') + '_' : noteToMarkdown(note.body, ref);
+    const n = Object.assign({ type: 'text', text }, box);
     const extra = {};
     if (note.status) extra.status = note.status;
     if (note.date) extra.date = note.date;

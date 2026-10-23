@@ -190,6 +190,7 @@ function onContextMenu(e) {
 }
 
 function onKeyDown(e) {
+  if (sketchOpen()) { onSketchKey(e); return; }    // a drawing note open full screen has every key (sketch.js)
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
 
   if (e.key === 'Escape') {
@@ -715,6 +716,7 @@ function init() {
     if (what === 'picture') addMediaFromPicker('image');
     if (what === 'video') addMediaFromPicker('video');
     if (what === 'draw') toggleInk(true);
+    if (what === 'sketch') addSketch();
     if (what === 'link') {
       const one = [...selection].find((id) => !isFrame(id)) || (state.notes[0] && state.notes[0].id);
       if (one) startLinking(one); else toast(t('msg.addNotesFirst'));
@@ -1048,6 +1050,7 @@ function init() {
   wireSounds();
   wireKeySounds();
   wirePad();
+  wireSketch();
   watchVpRect();
   wireExtras();
   paintStaticIcons();

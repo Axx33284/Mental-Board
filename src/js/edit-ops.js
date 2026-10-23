@@ -32,6 +32,8 @@ function addNote(worldPt, opts) {
   };
   // a picture on its own — see pictures.js
   if (o.pic) { n.pic = true; n.ar = +o.ar > 0 ? +o.ar : w / h; }
+  // a drawing note — see sketch.js
+  if (o.sketch) n.sketch = okSketch(o.sketch);
   state.notes.push(n);
   const el = makeNote(n);
   $('notesLayer').appendChild(el);
@@ -39,7 +41,7 @@ function addNote(worldPt, opts) {
   updateCulling();
   updateEmpty(); refreshFrameCounts(); save();
   setSelection([n.id], false);
-  if (!n.pic && (!opts || opts.edit !== false)) setTimeout(() => enterEdit(n), 20);
+  if (!n.pic && !n.sketch && (!opts || opts.edit !== false)) setTimeout(() => enterEdit(n), 20);
   return n;
 }
 
@@ -828,6 +830,12 @@ function paintBoardCanvas(board, scale, pictures) {
     if (shape) ctx.fill(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.fill(); }
     ctx.strokeStyle = pal.noteLine(n.color); ctx.lineWidth = 1.5;
     if (shape) ctx.stroke(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.stroke(); }
+    // a drawing note: its title and its drawing, in the note's own ink (sketch.js)
+    if (n.sketch) {
+      paintSketchOnCanvas(ctx, n, pal, (c) => (c === 'text' ? pal.noteInk(n.color) : inkColor(c)), FONT);
+      ctx.restore();
+      return;
+    }
 
     // the icon badge, drawn from the same path data the app uses on screen
     let top = box.y + (form ? 8 : 16);
