@@ -110,6 +110,9 @@ contextBridge.exposeInMainWorld('mbWin', {
   minimize: () => ipcRenderer.send('win:minimize'),
   toggleMaximize: () => ipcRenderer.send('win:toggle-maximize'),
   close: () => ipcRenderer.send('win:close'),
+  // Ctrl+Q: main hears the key, the page saves, then this ends the app (2.5.1)
+  quit: () => ipcRenderer.send('win:quit'),
+  onQuitKey: (cb) => ipcRenderer.on('win:quit-key', () => cb()),
   show: () => ipcRenderer.send('win:show'),
   /* Whether closing the window should hide it to the tray or end the app. The
      renderer owns the setting; this is how main is told. */

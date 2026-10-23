@@ -227,7 +227,7 @@ never touch individual elements.
 |--------|-----------|
 | `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` — and JSON Canvas (§4t): `pickCanvasPath(suggested)` `writeCanvas(file,json,id,names,folder)` `importCanvas()` `readCanvas(path)` `resolveCanvas(dir,rels)` — and Samsung Notes (§4w): `pickSamsung()` `readSamsung(path,boardId)` |
 | `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
-| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` — and spelling (§4z1): `onSpell(cb)` `learnWord(w)` |
+| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `quit()` `onQuitKey(cb)` (Ctrl+Q, §4k) `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` — and spelling (§4z1): `onSpell(cb)` `learnWord(w)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
 | `window.mbPad` | `start(address)` `stop()` `send(msg)` `addresses()` `onState(cb)` `onMessage(cb)` — the phone as a tablet (§4x). The renderer never sees the token and cannot pick a port; `send` passes only the `view` message. |
 | `window.mbSys` | `info()` → `{ compositing, software, softwareRender }` — whether Chromium is drawing this window without a GPU. See §4c. |
@@ -958,6 +958,36 @@ while the expression runs, so capture modules before any timer; and the page's
 DevTools socket must stay open until the app has gone — **detaching DevTools
 from a hung page lets the quit through**, which makes the test pass without
 the fix.
+
+### A Quit that never arrived: leftover tray icons (2.5.1)
+
+Twice in one day Quit from the tray "did nothing" — the app went on running
+hidden, and `hangs.log` stayed empty. That last fact is the clue: once
+`app.quit()` runs, the watchdog ends the process within 8 s or writes a line.
+So no quit ever began; Quit was pressed on **another icon**. Every test or
+sandbox copy (`--user-data-dir`) used to put the app's own icon, with the
+app's own tooltip, in the tray, and every one is force-killed at the end —
+`npm test` does it to its copy (`taskkill /f`), and so does anything driving
+one over CDP. Windows leaves a killed program's tray icon behind until a mouse
+passes over it, and Windows 11 hides app icons behind the ^ by default, so the
+real icon sat among identical dead ones whose Quit does nothing.
+
+- **`trayAllowed`** (main.js) — a `--user-data-dir` copy builds no tray unless
+  `--tray` is passed, and `runInBackground` is false for it, so its close
+  button quits. `buildTray()` and `win:background` both respect it.
+- **Ctrl+Q** quits from the window, tray or no tray. Main hears it in
+  `before-input-event` (by `input.code`, so inside a note and on any layout
+  too), sends `win:quit-key`; the page runs `closeAndQuit(true)` — the close
+  button's path, so a locked board is re-encrypted and a drawing note open full
+  screen is kept — and ends with `mbWin.quit()` → `win:quit`, which is the
+  tray's `quitting = true; app.quit()`. Listed in Settings ▸ shortcuts.
+
+Launching the app again while it runs hidden already shows the window
+(`second-instance`), so a hidden app is never out of reach.
+
+Tests: two more quits in `tools/test-app.js` — Ctrl+Q in a copy launched with
+`--tray` (where closing would only hide it), and the close button of a test
+copy, which must end it.
 
 ---
 
@@ -3331,6 +3361,11 @@ Boards` is never opened:
 ```bash
 ./node_modules/electron/dist/electron.exe . --user-data-dir=.sandbox --remote-debugging-port=9444
 ```
+
+A copy launched like this has **no tray icon** and its close button quits it
+(since 2.5.1, §4k): killed copies used to leave dead look-alike icons beside
+the real app's. Add `--tray` to try the tray itself — and then quit it from
+the tray or with Ctrl+Q, not with `taskkill /f`.
 
 Then connect a CDP client to `http://127.0.0.1:9444/json/list` (Node 22's
 built-in `WebSocket` works as is; Python needs `websocket-client` with

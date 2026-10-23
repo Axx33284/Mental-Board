@@ -267,14 +267,23 @@ async function cdpAt(port, pick) {
           waiting.set(id, (d) => r(d.result && d.result.result && d.result.result.value));
           sock.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true, includeCommandLineAPI: true } }));
         });
-        return { ev, fire: (expression) => sock.send(JSON.stringify({ id: ++n, method: 'Runtime.evaluate', params: { expression } })), close: () => sock.close() };
+        return {
+          ev, fire: (expression) => sock.send(JSON.stringify({ id: ++n, method: 'Runtime.evaluate', params: { expression } })),
+          send: (method, params) => sock.send(JSON.stringify({ id: ++n, method, params })),
+          close: () => sock.close()
+        };
       }
     } catch (_) {}
     await sleep(250);
   }
   throw new Error('nothing to attach to on port ' + port);
 }
-async function quitApp(name, prepare, within, after) {
+/* `how` (2.5.1): 'tray' asks main for app.quit() as the tray's Quit does;
+   'ctrlq' presses Ctrl+Q in the window, launched with --tray so closing would
+   only hide it; 'close' closes the window of a test copy, which has no tray
+   and so must end. */
+async function quitApp(name, prepare, within, after, how) {
+  how = how || 'tray';
   const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-quit-test-'));
   const boards = path.join(udd, 'My Boards');
   fs.mkdirSync(path.join(boards, 'Good', 'files'), { recursive: true });
@@ -283,16 +292,27 @@ async function quitApp(name, prepare, within, after) {
   const rport = 9900 + Math.floor(Math.random() * 300), mport = rport + 400;
   let proc = null, exited = false;
   await test(name, async () => {
-    proc = spawn(require('electron'), ['.', `--user-data-dir=${udd}`, `--remote-debugging-port=${rport}`, `--inspect=${mport}`], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
+    const args = ['.', `--user-data-dir=${udd}`, `--remote-debugging-port=${rport}`, `--inspect=${mport}`];
+    if (how === 'ctrlq') args.push('--tray');
+    proc = spawn(require('electron'), args, { cwd: ROOT, stdio: 'ignore', windowsHide: true });
     proc.on('exit', () => { exited = true; });
     const pg = await cdpAt(rport, (p) => p.type === 'page' && /index\.html/.test(p.url));
     for (let i = 0; i < 80 && await pg.ev('typeof flushSave === "function" && !!document.querySelector("#notesLayer")') !== true; i++) await sleep(250);
     await sleep(600);
     const main = await cdpAt(mport, () => true);
     await prepare(pg);
-    // what the tray's Quit does; the inspector has to be gone or the process waits for it on the way out
-    ok(await main.ev("(() => { const { app } = require('electron'); setTimeout(() => app.quit(), 300); return 1; })()") === 1, 'could not reach main');
-    main.close();       // the page's socket stays open: detaching DevTools from a hung page lets it go
+    if (how === 'tray') {
+      // what the tray's Quit does; the inspector has to be gone or the process waits for it on the way out
+      ok(await main.ev("(() => { const { app } = require('electron'); setTimeout(() => app.quit(), 300); return 1; })()") === 1, 'could not reach main');
+      main.close();       // the page's socket stays open: detaching DevTools from a hung page lets it go
+    } else {
+      main.close();
+      if (how === 'ctrlq') {
+        const key = { modifiers: 2, key: 'q', code: 'KeyQ', windowsVirtualKeyCode: 81, nativeVirtualKeyCode: 81 };
+        pg.send('Input.dispatchKeyEvent', Object.assign({ type: 'rawKeyDown' }, key));
+        pg.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, key));
+      } else pg.fire('WIN.close()');
+    }
     const t0 = Date.now();
     while (!exited && Date.now() - t0 < within) await sleep(100);
     pg.close();
@@ -315,6 +335,12 @@ async function quitSuite() {
     pg.fire('setTimeout(() => { for (;;) {} }, 0)');
     await sleep(800);
   }, 8000 + 5000);
+  // 2.5.1: Ctrl+Q ends the app even when closing the window would only hide it
+  await quitApp('Ctrl+Q writes the last edit and ends every process, tray or no tray', async (pg) => {
+    await pg.ev("(() => { state.notes[0].body = '<p>said before Ctrl+Q</p>'; return 1; })()");
+  }, 5000, (json) => ok(json.includes('said before Ctrl+Q'), 'the edit made just before Ctrl+Q is not on disk'), 'ctrlq');
+  // 2.5.1: a test copy has no tray icon to leave behind, so its close button ends it
+  await quitApp('a test copy has no tray: closing its window ends it', async () => {}, 5000, null, 'close');
 }
 
 (async () => {

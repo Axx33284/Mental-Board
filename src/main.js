@@ -131,6 +131,21 @@ const userDataOverridden =
   app.commandLine.hasSwitch('user-data-dir') ||
   process.argv.some((a) => a === '--user-data-dir' || a.startsWith('--user-data-dir='));
 
+/* A test or sandbox copy puts no icon in the tray (2.5.1), unless --tray is
+   passed to try the tray itself.
+
+   Every such copy ends by being force-killed — npm test does it to its own,
+   and so does anything driving one over CDP — and Windows leaves a killed
+   program's tray icon behind until a mouse happens to pass over it. Those
+   leftovers are the app's own icon with the app's own tooltip, they sit beside
+   the real one behind the ^, and pressing Quit on one does nothing. Twice in
+   one day the real app "would not quit" because Quit had landed on one of them,
+   and nothing in the app could tell: no quit ever began, so the watchdog below
+   never ran and hangs.log stayed empty. With no tray, close means quit for
+   such a copy, which is what a test wants anyway. */
+const trayAllowed = !userDataOverridden || process.argv.includes('--tray');
+if (!trayAllowed) runInBackground = false;
+
 app.setName('Mental Board');
 if (!userDataOverridden) {
   app.setPath('userData', path.join(app.getPath('appData'), 'Mental Board'));
@@ -364,6 +379,15 @@ function createWindow() {
     if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
       win.webContents.toggleDevTools();
       e.preventDefault();
+    }
+    /* Ctrl+Q quits, tray or no tray (2.5.1) — the one way out that does not
+       depend on finding the right icon behind the ^. Heard here rather than in
+       the page so it works inside a note too, and by the physical key so it
+       works on an Arabic layout. The page does the leaving (closeAndQuit), so
+       a locked board is re-encrypted first, exactly as for the close button. */
+    if (input.control && !input.shift && !input.alt && input.code === 'KeyQ') {
+      e.preventDefault();
+      win.webContents.send('win:quit-key');
     }
   });
 
@@ -666,7 +690,7 @@ function trayMenu() {
 }
 
 function buildTray() {
-  if (tray || !runInBackground) return;
+  if (tray || !runInBackground || !trayAllowed) return;
   try {
     tray = new Tray(trayImage());
     tray.setToolTip('Mental Board');
@@ -757,7 +781,7 @@ function noteStillRunning() {
 /* The renderer owns the setting; main is told what it is. Turning it off makes
    the close button quit again and takes the tray away in the same breath. */
 ipcMain.on('win:background', (_e, on) => {
-  runInBackground = !!on;
+  runInBackground = trayAllowed && !!on;
   if (runInBackground) buildTray(); else destroyTray();
 });
 
@@ -783,6 +807,8 @@ ipcMain.on('win:toggle-maximize', (e) => {
   w.isMaximized() ? w.unmaximize() : w.maximize();
 });
 ipcMain.on('win:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+// a real quit, the same as the tray's: Ctrl+Q, after the page has saved (closeAndQuit in init.js)
+ipcMain.on('win:quit', (e) => { if (!fromMain(e)) return; quitting = true; app.quit(); });
 ipcMain.on('win:show', () => showMain());
 ipcMain.handle('win:is-maximized', (e) => !!BrowserWindow.fromWebContents(e.sender)?.isMaximized());
 

@@ -27,14 +27,16 @@
    where close only hides — is still sitting there the next time the window is
    shown, attached to a session the user has finished with. The write still
    happens either way, with the last good envelope. */
-async function closeAndQuit() {
+async function closeAndQuit(really) {
+  if (sketchOpen()) closeSketch();       // a drawing note open full screen keeps what was drawn
   if (editing && editNote) editNote.body = bodyHtml(editing);
   if (state.boards.some((b) => b.enc && unlocked.has(b.id))) {
     try { await reencryptOpenBoards(); }
     catch (err) { console.error('re-encryption threw on the way out:', err); }
   }
   flushSave();
-  if (WIN) WIN.close();
+  // Ctrl+Q ends the app even with Run in background on; the close button only hides it then
+  if (WIN) { if (really === true && WIN.quit) WIN.quit(); else WIN.close(); }
 }
 
 function onPointerDown(e) {
@@ -1183,6 +1185,7 @@ function wireExtras() {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveCapture(); }
   });
   $('capture').addEventListener('pointerdown', (e) => { if (e.target === $('capture')) closeCapture(); });
+  if (WIN && WIN.onQuitKey) WIN.onQuitKey(() => closeAndQuit(true));
   if (WIN && WIN.onCapture) WIN.onCapture(() => { if (state.settings.capture) openCapture(); });
 
   // reminders

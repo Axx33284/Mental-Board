@@ -989,4 +989,5 @@ window.MB_LANG.en = {
   'sketch.clearBody': { one: 'Removes the {n} stroke on this page. Undo brings it back.', other: 'Removes all {n} strokes on this page. Undo brings them back.' },
   'sketch.full': 'This drawing is full. Start another drawing note.',
   'sketch.exported': 'A drawing from Mental Board',
+  'key.quit': 'Quit Mental Board — even when closing only hides it',
 };

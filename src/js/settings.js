@@ -805,7 +805,7 @@ const SHORTCUTS = [
   ['Ctrl + Shift + G', 'key.arrange'],
   ['Ctrl + C / V / X', 'key.copy'], ['Ctrl + Shift + C', 'kb.copyBoard'], ['Delete', 'key.delete'],
   ['Ctrl + Z', 'key.undo'], ['Ctrl + Shift + Z', 'key.redo'],
-  ['Ctrl + F', 'key.find'], ['Ctrl + B', 'key.boards'], ['Ctrl + P', 'key.palette'],
+  ['Ctrl + Q', 'key.quit'], ['Ctrl + F', 'key.find'], ['Ctrl + B', 'key.boards'], ['Ctrl + P', 'key.palette'],
   ['Ctrl + ,', 'key.settings'], ['Ctrl + .', 'key.focusMode'],
   ['/', 'key.blocks'], ['Ctrl + K', 'key.link'],
   ['Ctrl + Shift + D', 'view.agenda'], ['Ctrl + Shift + K', 'view.kanban'],
