@@ -294,6 +294,7 @@ function openSketch(id) {
   closeCtxMenu();
   sk = {
     n, strokes: n.sketch.strokes.slice(), pics: sketchPicsOf(n), undo: [], redo: [], live: null, erase: null,
+    sel: new Set(), pick: null,
     penSeen: false, changed: false, view: { x: 0, y: 0, z: 1 }, before: sketchBounds(n.sketch.strokes, n.sketch.pics)
   };
   const dlg = $('sketchDlg');
@@ -351,23 +352,37 @@ function fitSketchView() {
   setSketchView({ x: r.width / 2 - (b.x + b.w / 2) * z, y: r.height / 2 - (b.y + b.h / 2) * z, z });
 }
 
+/* What the editor holds goes into the note as it changes, and is saved like
+   any other change — within a second, not at Done (2.7.1). It used to live
+   only in the editor until Done: a crash, a power cut or the app being closed
+   mid-drawing lost everything since the drawing was opened, and on the user's
+   machine it did. The board's undo still sees one visit as one step: the step
+   is taken at the first change (`sk.undoTaken`), before the note is touched. */
+function commitSketch() {
+  if (!sk || !sk.dirty) return false;
+  const n = sk.n;
+  if (!sk.undoTaken) { pushUndo(); sk.undoTaken = true; }
+  const title = $('skTitle').value.trim().slice(0, SKETCH_TITLE_MAX);
+  // a new object, never an edit in place: a copy of this note may share the old one
+  n.sketch = { title, strokes: sk.strokes.slice() };
+  if (sk.pics.length) n.sketch.pics = sk.pics.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }));
+  // the pictures' files, in the same order, where every file-keeping pass will find them
+  n.body = sk.pics.map((p) => picBody(p.url, p.name)).join('');
+  sk.dirty = false;
+  saveSoon();
+  return true;
+}
 function closeSketch() {
   if (!sk) return;
   endSketchStroke();
-  const { n, strokes, pics, changed, before } = sk;
-  const title = $('skTitle').value.trim().slice(0, SKETCH_TITLE_MAX);
+  if (sk.dirty) commitSketch();
+  const { n, undoTaken, before } = sk;
   sk = null;
   $('sketchDlg').classList.add('hidden');
   $('skWorld').textContent = '';
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   padHostChanged();                 // a paired phone goes back to the board
-  if (!changed && title === n.sketch.title) return;
-  pushUndo();
-  // a new object, never an edit in place: a copy of this note may share the old one
-  n.sketch = { title, strokes };
-  if (pics.length) n.sketch.pics = pics.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }));
-  // the pictures' files, in the same order, where every file-keeping pass will find them
-  n.body = pics.map((p) => picBody(p.url, p.name)).join('');
+  if (!undoTaken) return;           // nothing changed in this visit
   fitSketchNote(n, before);
   const el = els.get(n.id);
   if (el) paintSketch(el, n);
@@ -377,20 +392,33 @@ function closeSketch() {
 function drawSketchStrokes() {
   const g = $('skWorld');
   g.textContent = '';
-  for (const p of sk.pics) g.appendChild(makeSketchPicEl(p));
-  for (const s of sk.strokes) g.appendChild(makeInkEl(s));
+  // what is selected rides the drag (a transform) until it is let go; a picture being resized, its new size
+  const k = sk.pick;
+  const moving = (it) => k && k.kind === 'move' && sk.sel.has(it) && (k.dx || k.dy);
+  for (const p of sk.pics) {
+    const el = makeSketchPicEl(k && k.kind === 'resize' && k.it === p ? Object.assign({}, p, { w: k.w, h: k.h }) : p);
+    if (moving(p)) el.setAttribute('transform', `translate(${k.dx} ${k.dy})`);
+    g.appendChild(el);
+  }
+  for (const s of sk.strokes) {
+    const el = makeInkEl(s);
+    if (moving(s)) el.setAttribute('transform', `translate(${k.dx} ${k.dy})`);
+    g.appendChild(el);
+  }
+  paintSketchSel(g);
   const bar = $('skBar');
   bar.querySelector('[data-sk="undo"]').disabled = !sk.undo.length;
   bar.querySelector('[data-sk="redo"]').disabled = !sk.redo.length;
   bar.querySelector('[data-sk="clear"]').disabled = !sk.strokes.length;
   if (typeof padDirty === 'function') padDirty();
+  if (sk.dirty) commitSketch();     // every change is on its way to the disk as it lands
 }
 // a step is the strokes and the pictures, so undo takes back an added picture too
 function sketchStep() {
   sk.undo.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice() });
   if (sk.undo.length > 200) sk.undo.shift();
   sk.redo = [];
-  sk.changed = true;
+  sk.changed = sk.dirty = true;
 }
 function sketchUndo(back) {
   const from = back ? sk.undo : sk.redo, to = back ? sk.redo : sk.undo;
@@ -398,7 +426,8 @@ function sketchUndo(back) {
   to.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice() });
   const s = from.pop();
   sk.strokes = s.strokes; sk.pics = s.pics;
-  sk.changed = true;
+  sk.sel.clear();
+  sk.changed = sk.dirty = true;
   drawSketchStrokes();
 }
 async function clearSketch() {
@@ -422,6 +451,7 @@ function buildSketchBar() {
   const sizeTips = [te('ink.size0'), te('ink.size1'), te('ink.size2')];
   const btn = (k, ic, tip) => `<button class="ik-btn" data-sk="${k}" title="${tip}" aria-label="${tip}">${icon(ic)}</button>`;
   bar.innerHTML =
+    tool('select', icon('arrow_selector_tool'), te('sketch.select')) +
     tool('pen', icon('ink_pen'), te('ink.pen')) + tool('marker', icon('ink_highlighter'), te('ink.marker')) +
     tool('brush', icon('brush'), te('ink.brush')) + tool('eraser', icon('ink_eraser'), te('ink.eraser')) +
     `<span class="ik-sep"></span>` +
@@ -440,15 +470,16 @@ function buildSketchBar() {
     `<button class="ik-btn ik-done" data-sk="done" title="${te('ink.done')}" aria-label="${te('ink.done')}">${icon('check')}</button>`;
   const set = (patch) => {
     state.settings.sketchPen = healPen(Object.assign({}, state.settings.sketchPen, patch));
+    if (sk && state.settings.sketchPen.tool !== 'select') sk.sel.clear();   // leaving the arrow lets go
     buildSketchBar(); saveSoon();
   };
-  bar.querySelectorAll('[data-tool]').forEach((el) => el.addEventListener('click', () => set({ tool: el.dataset.tool })));
-  bar.querySelectorAll('[data-size]').forEach((el) => el.addEventListener('click', () => set({ size: +el.dataset.size })));
-  bar.querySelectorAll('[data-ink-color]').forEach((el) => el.addEventListener('click', () => set({ color: el.dataset.inkColor, tool: p.tool === 'eraser' ? 'pen' : p.tool })));
+  bar.querySelectorAll('[data-tool]').forEach((el) => onPress(el, () => set({ tool: el.dataset.tool })));
+  bar.querySelectorAll('[data-size]').forEach((el) => onPress(el, () => set({ size: +el.dataset.size })));
+  bar.querySelectorAll('[data-ink-color]').forEach((el) => onPress(el, () => set({ color: el.dataset.inkColor, tool: p.tool === 'eraser' ? 'pen' : p.tool })));
   const pick = bar.querySelector('.ik-custom input');
   pick.addEventListener('input', () => { bar.querySelector('.ik-custom').style.setProperty('--sw', pick.value); });
   pick.addEventListener('change', () => set({ color: pick.value, tool: p.tool === 'eraser' ? 'pen' : p.tool }));
-  bar.querySelectorAll('[data-sk]').forEach((el) => el.addEventListener('click', () => {
+  bar.querySelectorAll('[data-sk]').forEach((el) => onPress(el, () => {
     const act = el.dataset.sk;
     if (act === 'done') closeSketch();
     else if (act === 'undo') sketchUndo(true);
@@ -461,6 +492,7 @@ function buildSketchBar() {
     else if (act === 'pct') skSurface.zoomCentre(1 / sk.view.z);
     else if (act === 'fit') fitSketchView();
   }));
+  $('sketchDlg').classList.toggle('sk-selecting', p.tool === 'select');
   if (sk) { drawSketchStrokes(); setSketchView(sk.view); }
 }
 
@@ -491,6 +523,7 @@ function onSketchDown(e) {
     eraseSketchAt(at);
     return;
   }
+  if (p.tool === 'select') { beginSketchPick(e, at); return; }
   if (sk.strokes.length >= SKETCH_MAX) { toast(t('sketch.full')); return; }
   const tool = p.tool === 'select' ? 'pen' : p.tool;
   const s = { id: uid(), tool, color: p.color, size: Math.round(INK_SIZES[tool][p.size] / at.k * 100) / 100 };
@@ -523,13 +556,14 @@ function paintSketchLive() {
 }
 function onSketchMove(e) {
   if (!sk) return;
+  if (sk.pick && e.pointerId === sk.pick.id) { moveSketchPick(sketchPoint(e)); return; }
   if (sk.erase && e.pointerId === sk.erase.id) { eraseSketchAt(sketchPoint(e)); return; }
   if (!sk.live || e.pointerId !== sk.live.id) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
   if (evs && evs.length) evs.forEach(addSketchPoint); else addSketchPoint(e);
 }
 function onSketchUp(e) {
-  const g = sk && (sk.live || sk.erase);
+  const g = sk && (sk.live || sk.erase || sk.pick);
   if (g && e.pointerId !== g.id) return;     // a second finger lifting is not the pen
   endSketchStroke();
 }
@@ -547,6 +581,7 @@ function endSketchStroke() {
   window.removeEventListener('pointercancel', onSketchUp);
   if (!sk) return;
   sk.erase = null;
+  if (sk.pick) endSketchPick();
   const L = sk.live;
   if (!L) return;
   sk.live = null;
@@ -600,13 +635,162 @@ function onSketchKey(e) {
   if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitSketchView(); return; }
   if (ctrl) return;
   const p = state.settings.sketchPen;
-  const tools = { d: 'pen', m: 'marker', b: 'brush', e: 'eraser' };
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sk.sel.size) { e.preventDefault(); deleteSketchSel(); return; }
+  const tools = { v: 'select', d: 'pen', m: 'marker', b: 'brush', e: 'eraser' };
   const code = (e.code || '').replace(/^Key/, '').toLowerCase();
   const pick = tools[code];
   const set = (patch) => { state.settings.sketchPen = healPen(Object.assign({}, p, patch)); buildSketchBar(); saveSoon(); };
   if (pick) { e.preventDefault(); set({ tool: pick }); return; }
   if (e.code === 'BracketLeft') { e.preventDefault(); set({ size: Math.max(0, p.size - 1) }); return; }
   if (e.code === 'BracketRight') { e.preventDefault(); set({ size: Math.min(2, p.size + 1) }); return; }
+}
+
+/* ---- selecting, moving, resizing, deleting (2.7.1) ----
+   The arrow (V) in a drawing note: press a line or a picture to select it
+   (Shift adds or takes away), drag to move everything selected, drag across
+   empty paper to select what the box touches, the corner of a single selected
+   picture to resize it (its shape kept), Delete to remove the selection. A
+   line is hit before the picture under it — the ink is on top. Each move,
+   resize or delete is one step of the editor's undo, and is saved like any
+   other change. A moved line gets a new id: its old one may still be in an
+   undo step with the old points, and ink.js caches a path per id. */
+const SK_HIT_PX = 8, SK_HANDLE_PX = 14;
+function sketchHit(at) {
+  const r = SK_HIT_PX / at.k;
+  for (let i = sk.strokes.length - 1; i >= 0; i--) if (strokeNear(sk.strokes[i], at, r)) return sk.strokes[i];
+  for (let i = sk.pics.length - 1; i >= 0; i--) {
+    const p = sk.pics[i];
+    if (at.x >= p.x && at.x <= p.x + p.w && at.y >= p.y && at.y <= p.y + p.h) return p;
+  }
+  return null;
+}
+function sketchItemBox(it) {
+  if (it.pts) { const b = inkBox(it); return { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }; }
+  return { x: it.x, y: it.y, w: it.w, h: it.h };
+}
+function beginSketchPick(e, at) {
+  const sel = sk.sel, id = e.pointerId;
+  const one = sel.size === 1 ? [...sel][0] : null;
+  const hs = SK_HANDLE_PX / at.k;
+  if (one && !one.pts && Math.abs(at.x - (one.x + one.w)) < hs && Math.abs(at.y - (one.y + one.h)) < hs) {
+    sk.pick = { kind: 'resize', id, it: one, w: one.w, h: one.h };
+    drawSketchStrokes();
+    return;
+  }
+  const hit = sketchHit(at);
+  if (hit && e.shiftKey) {
+    if (sel.has(hit)) sel.delete(hit); else sel.add(hit);
+    sk.pick = { kind: 'none', id };
+  } else if (hit) {
+    if (!sel.has(hit)) { sel.clear(); sel.add(hit); }
+    sk.pick = { kind: 'move', id, at0: at, dx: 0, dy: 0 };
+  } else {
+    sk.pick = { kind: 'lasso', id, at0: at, at1: at, base: new Set(e.shiftKey ? sel : []) };
+    if (!e.shiftKey) sel.clear();
+  }
+  drawSketchStrokes();
+  sketchSelChanged();
+}
+function moveSketchPick(at) {
+  const k = sk.pick;
+  if (k.kind === 'move') { k.dx = at.x - k.at0.x; k.dy = at.y - k.at0.y; }
+  else if (k.kind === 'resize') {
+    const ar = k.it.w / k.it.h;
+    k.w = Math.max(16 / at.k, at.x - k.it.x, (at.y - k.it.y) * ar);
+    k.h = k.w / ar;
+  } else if (k.kind === 'lasso') {
+    k.at1 = at;
+    const x0 = Math.min(k.at0.x, at.x), y0 = Math.min(k.at0.y, at.y), x1 = Math.max(k.at0.x, at.x), y1 = Math.max(k.at0.y, at.y);
+    sk.sel = new Set(k.base);
+    for (const s of sk.strokes) {
+      for (let i = 0; i < s.pts.length; i += 2) {
+        if (s.pts[i] >= x0 && s.pts[i] <= x1 && s.pts[i + 1] >= y0 && s.pts[i + 1] <= y1) { sk.sel.add(s); break; }
+      }
+    }
+    for (const p of sk.pics) if (p.x < x1 && p.x + p.w > x0 && p.y < y1 && p.y + p.h > y0) sk.sel.add(p);
+  } else return;
+  drawSketchStrokes();
+}
+function endSketchPick() {
+  const k = sk.pick;
+  sk.pick = null;
+  if (k.kind === 'move' && Math.hypot(k.dx, k.dy) * sk.view.z >= 1) {
+    sketchStep();
+    const moved = new Set();
+    const shift = (pts) => pts.map((v, i) => r1(v + (i % 2 ? k.dy : k.dx)));
+    sk.strokes = sk.strokes.map((s) => {
+      if (!sk.sel.has(s)) return s;
+      const n = Object.assign({}, s, { id: uid(), pts: shift(s.pts) });
+      moved.add(n); return n;
+    });
+    sk.pics = sk.pics.map((p) => {
+      if (!sk.sel.has(p)) return p;
+      const n = Object.assign({}, p, { x: r1(p.x + k.dx), y: r1(p.y + k.dy) });
+      moved.add(n); return n;
+    });
+    sk.sel = moved;
+  } else if (k.kind === 'resize' && (k.w !== k.it.w)) {
+    sketchStep();
+    const n = Object.assign({}, k.it, { w: r1(k.w), h: r1(k.h) });
+    sk.pics = sk.pics.map((p) => (p === k.it ? n : p));
+    sk.sel = new Set([n]);
+  }
+  drawSketchStrokes();
+  sketchSelChanged();
+}
+// the phone's bin and colours on the drawing's selection (js/tablet.js padSelection)
+function padSketchSelection(m) {
+  if (!sk) return;
+  if (m.act === 'delete') { deleteSketchSel(); return; }
+  if (m.act === 'clear') { sk.sel.clear(); drawSketchStrokes(); return; }
+  if (m.act === 'color' && inkColorOk(m.color) && [...sk.sel].some((it) => it.pts)) {
+    sketchStep();
+    const next = new Set();
+    sk.strokes = sk.strokes.map((s) => {
+      if (!sk.sel.has(s)) return s;
+      const n = Object.assign({}, s, { color: m.color });
+      next.add(n); return n;
+    });
+    for (const p of sk.sel) if (!p.pts) next.add(p);
+    sk.sel = next;
+    drawSketchStrokes();
+  }
+}
+// a paired phone lights its bin by how much is selected
+function sketchSelChanged() { if (typeof sendPadView === 'function') sendPadView(); }
+function deleteSketchSel() {
+  if (!sk || !sk.sel.size) return;
+  sketchStep();
+  sk.strokes = sk.strokes.filter((s) => !sk.sel.has(s));
+  sk.pics = sk.pics.filter((p) => !sk.sel.has(p));
+  sk.sel.clear();
+  drawSketchStrokes();
+  sketchSelChanged();
+}
+// the dashed boxes round what is selected, the lasso, and a single picture's corner handle
+function paintSketchSel(g) {
+  const k = sk.pick, z = sk.view.z;
+  const rect = (x, y, w, h, cls) => {
+    const r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('class', cls);
+    r.setAttribute('x', x); r.setAttribute('y', y); r.setAttribute('width', Math.max(0, w)); r.setAttribute('height', Math.max(0, h));
+    g.appendChild(r);
+    return r;
+  };
+  const pad = 4 / z;
+  for (const it of sk.sel) {
+    let b = sketchItemBox(it);
+    if (k && k.kind === 'move') b = { x: b.x + k.dx, y: b.y + k.dy, w: b.w, h: b.h };
+    if (k && k.kind === 'resize' && k.it === it) b = { x: b.x, y: b.y, w: k.w, h: k.h };
+    rect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2, 'sk-selbox');
+    if (sk.sel.size === 1 && !it.pts) {
+      const hs = 10 / z;
+      rect(b.x + b.w - hs / 2, b.y + b.h - hs / 2, hs, hs, 'sk-handle');
+    }
+  }
+  if (k && k.kind === 'lasso') {
+    rect(Math.min(k.at0.x, k.at1.x), Math.min(k.at0.y, k.at1.y), Math.abs(k.at1.x - k.at0.x), Math.abs(k.at1.y - k.at0.y), 'sk-lasso');
+  }
 }
 
 /* ---- bringing pictures and PDFs in (2.7) ---- */
@@ -707,12 +891,7 @@ async function sketchImport(items) {
   const room = SKETCH_PICS_MAX - sk.pics.length;
   if (room <= 0) { toast(t('sketch.picsFull')); return 0; }
   sketchStep();
-  // under everything already there, lined up with the pictures (sketchBounds' box has air round it)
-  let x = sk.pics.length ? Math.min(...sk.pics.map((p) => p.x)) : 0, y = -Infinity;
-  for (const p of sk.pics) y = Math.max(y, p.y + p.h);
-  for (const s of sk.strokes) y = Math.max(y, inkBox(s).y1);
-  if (!sk.pics.length && sk.strokes.length) x = Math.min(...sk.strokes.map((s) => inkBox(s).x0));
-  y = Number.isFinite(y) ? y + 40 : 0;
+  let { x, y } = sketchNextSpot(sk.strokes, sk.pics);
   for (const p of placed.slice(0, room)) {
     sk.pics.push({ x: r1(x), y: r1(y), w: r1(p.w), h: r1(p.h), url: p.url, name: p.name });
     y += p.h + 40;
@@ -723,6 +902,101 @@ async function sketchImport(items) {
   requestAnimationFrame(() => { if (sk && sk.n === n0) fitSketchView(); });
   return placed.length;
 }
+// under everything already there, lined up with the pictures (sketchBounds' box has air round it)
+function sketchNextSpot(strokes, pics) {
+  let x = pics.length ? Math.min(...pics.map((p) => p.x)) : 0, y = -Infinity;
+  for (const p of pics) y = Math.max(y, p.y + p.h);
+  for (const s of strokes) y = Math.max(y, inkBox(s).y1);
+  if (!pics.length && strokes.length) x = Math.min(...strokes.map((s) => inkBox(s).x0));
+  return { x, y: Number.isFinite(y) ? y + 40 : 0 };
+}
+/* Dropped files, as what sketchImport() takes — and the names of what a
+   drawing cannot hold, so the drop can say so instead of doing nothing. */
+async function sketchItemsFromFiles(files) {
+  const items = [], refused = [];
+  for (const f of [...(files || [])].slice(0, 40)) {
+    const ext = (/\.([a-z0-9]+)$/i.exec(f.name || '') || ['', ''])[1].toLowerCase();
+    const kind = ext === 'pdf' || f.type === 'application/pdf' ? 'pdf' : (/^image\//.test(f.type) || IMG_MIME[ext]) ? 'image' : '';
+    if (!kind) { refused.push(f.name || '?'); continue; }
+    try { items.push({ name: f.name, kind, ext, bytes: new Uint8Array(await f.arrayBuffer()) }); }
+    catch (_) { items.push({ name: f.name, kind, error: 'read' }); }
+  }
+  if (refused.length) toast(t('sketch.cannotHold', { names: refused.join(', ') }), 6000);
+  return items;
+}
+// files dropped on a drawing note on the board: it opens, and they go under its drawing
+async function dropIntoSketch(id, files) {
+  const n = state.notes.find((x) => x.id === id);
+  if (!n || !n.sketch || !canEditHere()) return false;
+  const items = await sketchItemsFromFiles(files);
+  if (!items.length) return true;
+  if (!sk || sk.n !== n) { if (sk) closeSketch(); openSketch(id); }
+  await sketchImport(items);
+  return true;
+}
+/* A picture note dragged onto a drawing note on the board goes under its
+   drawing, below what is there — the same file, nothing copied, the picture
+   note gone. Called by finishPicDrop() (pictures.js), whose undo dance has
+   already been done; one step. */
+function pictureIntoSketch(target, pic) {
+  const s = target.sketch;
+  const files = sketchPicFiles(target);
+  const spot = sketchNextSpot(s.strokes, s.pics || []);
+  const ar = pic.ar || pic.w / pic.h || 1;
+  const w = Math.min(SKETCH_PIC_MAX, pic.w * 2);
+  const pics = (s.pics || []).slice(0, files.length);
+  pics.push({ x: r1(spot.x), y: r1(spot.y), w: r1(w), h: r1(w / ar) });
+  target.sketch = Object.assign({}, s, { pics });
+  target.body = files.map((f) => picBody(f.url, f.name)).join('') + picBody(picSrc(pic), picName(pic));
+  fitSketchNote(target, null);
+  const el = els.get(target.id);
+  if (el) { placeEl(el, target); paintSketch(el, target); }
+}
+
+/* ---- the title, renamed on the board (2.7.1) ----
+   Double-click a drawing note's title, or right-click ▸ Rename: the title
+   becomes editable where it is, as a workflow's does (renameFrame). Enter
+   keeps it, Escape puts it back; one undo step. */
+function renameSketch(id) {
+  const n = state.notes.find((x) => x.id === id);
+  // the note may be culled on a big board — mounting it is part of renaming it, as for enterEdit()
+  const el = n && n.sketch && canEditHere() && ensureMounted(id);
+  if (!el) return;
+  const title = el.querySelector('.sk-title');
+  title.textContent = n.sketch.title;
+  title.classList.remove('empty');
+  title.classList.add('renaming');
+  title.setAttribute('contenteditable', 'true');
+  title.focus();
+  const r = document.createRange(); r.selectNodeContents(title);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  let settled = false;
+  const finish = (commit) => {
+    if (settled) return;
+    settled = true;
+    title.removeAttribute('contenteditable');
+    title.classList.remove('renaming');
+    title.removeEventListener('blur', onBlur);
+    title.removeEventListener('keydown', onKey);
+    const v = (title.textContent || '').replace(/\s+/g, ' ').trim().slice(0, SKETCH_TITLE_MAX);
+    if (commit && v !== n.sketch.title) {
+      pushUndo();
+      n.sketch = Object.assign({}, n.sketch, { title: v });
+      saveSoon(); drawLinks();
+    }
+    paintSketch(el, n);
+  };
+  const onBlur = () => finish(true);
+  // Enter keeps it directly — not by blurring, which does nothing to a window that is not in front
+  const onKey = (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); title.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); title.blur(); }
+  };
+  title.addEventListener('blur', onBlur);
+  title.addEventListener('keydown', onKey);
+}
+
 async function sketchAddFiles() {
   if (!sk) return;
   if (!FILES || !FILES.pickDrawing) { toast(t('msg.needDesktop')); return; }
@@ -764,15 +1038,7 @@ function wireSketch() {
   stage.addEventListener('drop', async (e) => {
     if (!sk) return;
     e.preventDefault(); e.stopPropagation();
-    const items = [];
-    for (const f of [...(e.dataTransfer && e.dataTransfer.files || [])].slice(0, 40)) {
-      const ext = (/\.([a-z0-9]+)$/i.exec(f.name || '') || ['', ''])[1].toLowerCase();
-      const kind = ext === 'pdf' || f.type === 'application/pdf' ? 'pdf' : (/^image\//.test(f.type) || IMG_MIME[ext]) ? 'image' : '';
-      if (!kind) continue;
-      try { items.push({ name: f.name, kind, ext, bytes: new Uint8Array(await f.arrayBuffer()) }); }
-      catch (_) { items.push({ name: f.name, kind, error: 'read' }); }
-    }
-    await sketchImport(items);
+    await sketchImport(await sketchItemsFromFiles(e.dataTransfer && e.dataTransfer.files));
   });
   svg.addEventListener('pointerdown', onSketchDown);
   svg.addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button is the eraser here
@@ -780,7 +1046,12 @@ function wireSketch() {
     get: () => (sk ? sk.view : { x: 0, y: 0, z: 1 }), set: setSketchView,
     min: 0.05, max: 12, cancel: cancelSketchStroke
   });
-  $('skTitle').addEventListener('input', () => { if (sk) sk.changed = true; });
+  $('skTitle').addEventListener('input', () => {
+    if (!sk) return;
+    sk.changed = sk.dirty = true;
+    clearTimeout(sk.titleTimer);
+    sk.titleTimer = setTimeout(commitSketch, 600);      // typing settles, then it is saved
+  });
   // the window's own fullscreen ending (F11, Escape) leaves the editor open, just not full screen
   document.addEventListener('fullscreenchange', () => {
     const b = $('skBar').querySelector('[data-sk="full"]');

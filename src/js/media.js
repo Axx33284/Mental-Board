@@ -270,7 +270,7 @@ function buildStudioChrome() {
   $('stColors').innerHTML = ST_COLORS.map((c) =>
     `<button data-c="${c}" class="${c === ST.color ? 'on' : ''}" style="background:${c}"></button>`).join('') +
     `<label class="ik-custom${ST_COLORS.includes(ST.color) ? '' : ' on'}" title="${te('ink.custom')}" style="--sw:${custom}"><input type="color" value="${custom}"></label>`;
-  $('stColors').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  $('stColors').querySelectorAll('button').forEach((b) => onPress(b, () => {
     ST.color = b.dataset.c; if (ST.tool === 'eraser' || ST.tool === 'crop') ST.tool = 'pen';
     buildStudioChrome(); drawStudio();
   }));
@@ -637,12 +637,12 @@ function wireStudioSurface() {
   stSurface = zoomPanSurface($('studioStage'), {
     get: () => ST.view, set: setStudioView, min: 0.02, max: 32, cancel: cancelStudioDrag
   });
-  $('stZoomIn').addEventListener('click', () => stSurface.zoomCentre(1.25));
-  $('stZoomOut').addEventListener('click', () => stSurface.zoomCentre(1 / 1.25));
-  $('stPct').addEventListener('click', () => stSurface.zoomCentre(1 / ST.view.z));
-  $('stFit').addEventListener('click', () => fitStudio());
-  $('stUndo').addEventListener('click', () => studioUndo(true));
-  $('stRedo').addEventListener('click', () => studioUndo(false));
+  onPress($('stZoomIn'), () => stSurface.zoomCentre(1.25));
+  onPress($('stZoomOut'), () => stSurface.zoomCentre(1 / 1.25));
+  onPress($('stPct'), () => stSurface.zoomCentre(1 / ST.view.z));
+  onPress($('stFit'), () => fitStudio());
+  onPress($('stUndo'), () => studioUndo(true));
+  onPress($('stRedo'), () => studioUndo(false));
   $('stCanvas').addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button erases here
 }
 

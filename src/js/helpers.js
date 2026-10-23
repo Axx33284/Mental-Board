@@ -27,6 +27,22 @@
 /* ─────────────── 1. helpers ─────────────── */
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+/* A tool button that acts on the press (2.7.1). The drawing bars used
+   'click', which only fires when the press and the release land on the same
+   element — a hand that moves a little across a 30px button, or a bar redrawn
+   between the two, and the choice silently did not happen. The user hit
+   exactly that in the drawing note's bar and the picture editor. A press is
+   one event and cannot be split. The keyboard still works: Enter or Space on a
+   focused button makes a click with no pointer behind it (detail 0). */
+function onPress(el, fn) {
+  if (!el) return;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();            // and the button does not steal the focus from the page
+    fn(e);
+  });
+  el.addEventListener('click', (e) => { if (e.detail === 0) fn(e); });
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 /* The largest / smallest of a list, without spreading it into a call.
 

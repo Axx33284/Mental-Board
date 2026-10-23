@@ -142,18 +142,21 @@ function finishPicDrop(g) {
   pushUndo();
   pic.x = nx; pic.y = ny;
 
-  const prev = target.body;
-  target.body = (target.body || '') + picBody(picSrc(pic), picName(pic)).replace('class="mb-img"', 'class="mb-img" loading="lazy" decoding="async"') + '<p><br></p>';
-  pushHistory(target, prev);
+  if (target.sketch) pictureIntoSketch(target, pic);      // under its drawing (sketch.js)
+  else {
+    const prev = target.body;
+    target.body = (target.body || '') + picBody(picSrc(pic), picName(pic)).replace('class="mb-img"', 'class="mb-img" loading="lazy" decoding="async"') + '<p><br></p>';
+    pushHistory(target, prev);
+  }
   state.notes = state.notes.filter((n) => n.id !== pic.id);
   state.links = state.links.filter((l) => l.from !== pic.id && l.to !== pic.id);
   els.get(pic.id)?.remove(); els.delete(pic.id); selection.delete(pic.id);
   const tel = els.get(target.id);
-  if (tel && !tel.classList.contains('editing')) repaintNoteBody(tel, target);
+  if (tel && !tel.classList.contains('editing') && !target.sketch) repaintNoteBody(tel, target);
   updateCulling(); drawLinks(); refreshFrameCounts(); drawCompass();
   setSelection([target.id], false);
   save();
-  toast(t('msg.pictureIntoNote'));
+  toast(t(target.sketch ? 'sketch.pictureIn' : 'msg.pictureIntoNote'));
   return true;
 }
 

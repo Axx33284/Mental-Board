@@ -157,6 +157,8 @@ function onDblClick(e) {
     return;
   }
   const noteEl = hit.closest('.note');
+  // a drawing note's title renames where it is; the rest of it opens the drawing
+  if (noteEl && hit.closest('.sk-title') && noteEl.classList.contains('sketch')) { renameSketch(noteEl.dataset.id); return; }
   if (noteEl) {
     const n = state.notes.find((x) => x.id === noteEl.dataset.id);
     // a picture has no text to edit; its double-click opens the studio
@@ -408,6 +410,10 @@ async function onCanvasDrop(e) {
   if (!canEditHere()) return;
 
   const pt = toWorld(e.clientX, e.clientY);
+
+  // onto a drawing note: pictures and PDFs go under its drawing, and anything else is named as refused (sketch.js)
+  const onSketch = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest && el.closest('.note.sketch')).find(Boolean);
+  if (onSketch && await dropIntoSketch(onSketch.dataset.id, files)) return;
 
   /* A board file is offered as an import before anything else looks at it. Only
      when it really is one of ours: an ordinary .json dropped on the canvas is
@@ -1063,6 +1069,7 @@ function init() {
   wireKeySounds();
   wirePad();
   wireSketch();
+  startAutosave();
   watchVpRect();
   wireExtras();
   paintStaticIcons();
@@ -1095,7 +1102,8 @@ function init() {
     ST.marks = []; ST.crop = { x: 0, y: 0, w: ST.img.naturalWidth, h: ST.img.naturalHeight };
     drawStudio();
   });
-  $('stTools').querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => {
+  // on the press, not the click — see onPress() in helpers.js
+  $('stTools').querySelectorAll('[data-tool]').forEach((b) => onPress(b, () => {
     ST.tool = b.dataset.tool; buildStudioChrome(); drawStudio();
   }));
   $('stWeight').addEventListener('input', () => { ST.weight = +$('stWeight').value; $('stWeightOut').textContent = num(ST.weight); });

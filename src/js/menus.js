@@ -171,6 +171,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
     }
     if (targets.length === 1 && !isFrame(targets[0])) {
       html += oneSketch ? item('edit', 'draw_abstract', te('sketch.edit'), te('menu.dblclick')) : item('edit', 'edit', te('menu.edit'), te('menu.dblclick'));
+      if (oneSketch) html += item('renameSketch', 'edit', te('menu.rename'));
       html += item('link', 'link', te('menu.link'), 'L');
       /* Where this note's ropes go, one row per note at the other end. This is
          what the backlink badge in the old note head was for, and more: it
@@ -363,6 +364,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
       case 'edit': { const n = state.notes.find((x) => x.id === targets[0]); if (n) enterEdit(n); break; }
       case 'link': startLinking(targets[0]); break;
       case 'rename': renameFrame(targets[0]); break;
+      case 'renameSketch': renameSketch(targets[0]); break;
       case 'selectInside': { const f = state.frames.find((x) => x.id === targets[0]); if (f) setSelection(notesInFrame(f).map((n) => n.id), false); break; }
       case 'flyHere': { const f = state.frames.find((x) => x.id === targets[0]); if (f) fitTo([f]); break; }
       case 'group': groupSelection(); break;

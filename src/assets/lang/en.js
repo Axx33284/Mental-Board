@@ -1004,4 +1004,7 @@ window.MB_LANG.en = {
   'sketch.fileFailed': 'Could not read {name}.',
   'sketch.fileTooBig': '{name} is too big to bring in (80 MB at most).',
   'sketch.picsFull': 'This drawing has as many pictures as it can hold.',
+  'sketch.select': 'Select and move (V) — Shift adds, Delete removes, drag a picture’s corner to resize',
+  'sketch.cannotHold': 'A drawing note can only hold pictures and PDFs — not: {names}. Save those as a PDF first.',
+  'sketch.pictureIn': 'The picture is now under the drawing.',
 };

@@ -872,7 +872,6 @@ function adopt(raw, keepSettings) {
   st.minimap = st.minimap !== false;
   st.pen = healPen(st.pen);
   st.sketchPen = healPen(st.sketchPen);
-  if (st.sketchPen.tool === 'select') st.sketchPen.tool = 'pen';
   st.sketchFull = st.sketchFull !== false;
   st.sounds = !!st.sounds;
   st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);
@@ -1175,6 +1174,20 @@ function saveDelay() {
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); scheduleMinimap(); if (typeof padDirty === 'function') padDirty(); }
 // the close path, and the only caller that wants the blocking write
 function flushSave() { clearTimeout(saveTimer); saveTimer = null; save(true); }
+
+/* Every 5 minutes, whatever happens, everything is saved (2.7.1). Every
+   change already saves within a second or two (saveSoon) and a drawing note
+   now saves as it is drawn, so this is the backstop for anything that ever
+   slips past them — an editor open for an hour, a change some path forgot to
+   announce. save() writes only the boards whose JSON differs from what is on
+   disk, so a tick with nothing new costs one serialise and no write. */
+const AUTOSAVE_MS = 5 * 60 * 1000;
+function startAutosave() {
+  setInterval(() => {
+    if (typeof sketchOpen === 'function' && sketchOpen()) commitSketch();
+    save();
+  }, AUTOSAVE_MS);
+}
 
 /* One dated copy per board per launch-day, in Backups\, handled by the store
    — a cheap no-op once today's file exists.

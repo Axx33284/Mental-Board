@@ -263,13 +263,14 @@ function buildInkBar() {
     `<button class="ik-btn${inkSel.size ? '' : ' hidden'}" data-ik="delsel" title="${te('ink.deleteSel')}">${icon('delete')}</button>` +
     `<button class="ik-btn" data-ik="clear" title="${te('ink.clear')}">${icon('delete_sweep')}</button>` +
     `<button class="ik-btn ik-done" data-ik="done" title="${te('ink.done')}">${icon('check')}</button>`;
-  bar.querySelectorAll('[data-tool]').forEach((el) => el.addEventListener('click', () => setPen({ tool: el.dataset.tool })));
-  bar.querySelectorAll('[data-size]').forEach((el) => el.addEventListener('click', () => setPen({ size: +el.dataset.size })));
-  bar.querySelectorAll('[data-ink-color]').forEach((el) => el.addEventListener('click', () => pickInkColor(el.dataset.inkColor)));
+  // on the press, not the click — see onPress() in helpers.js
+  bar.querySelectorAll('[data-tool]').forEach((el) => onPress(el, () => setPen({ tool: el.dataset.tool })));
+  bar.querySelectorAll('[data-size]').forEach((el) => onPress(el, () => setPen({ size: +el.dataset.size })));
+  bar.querySelectorAll('[data-ink-color]').forEach((el) => onPress(el, () => pickInkColor(el.dataset.inkColor)));
   const pick = bar.querySelector('.ik-custom input');
   pick.addEventListener('input', () => { bar.querySelector('.ik-custom').style.setProperty('--sw', pick.value); });
   pick.addEventListener('change', () => pickInkColor(pick.value));
-  bar.querySelectorAll('[data-ik]').forEach((el) => el.addEventListener('click', () => {
+  bar.querySelectorAll('[data-ik]').forEach((el) => onPress(el, () => {
     const act = el.dataset.ik;
     if (act === 'done') toggleInk(false);
     else if (act === 'layer') toggleInkLayer();
@@ -339,8 +340,21 @@ function beginInk(e) {
   if (s.tool === 'brush') el.style.fill = c;
   else { el.style.stroke = c; el.style.strokeWidth = s.size + 'px'; }
   $('inkSvg').appendChild(el);
-  inkStroke = { s, raw: [], el, shift: e.shiftKey, frame: 0 };
+  inkStroke = { s, raw: [], el, shift: e.shiftKey, frame: 0, over: inkPressedOn(e) };
   addInkPoint(e);
+}
+/* What a press with the pen out landed on: a note or a workflow, or nothing.
+   A *click* there — pressed and let go without moving — is somebody reaching
+   for the note, not drawing a dot on it, so it puts the pen away and selects
+   the note (2.7.1; finishInkStroke). A drag still draws, over notes as ever.
+   Before, every press drew while the pen was out, and the only way back to the
+   notes was Escape or the ✓ — which the user reported as the mouse being
+   unable to select anything after drawing. */
+function inkPressedOn(e) {
+  const hit = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el.closest && el.closest('.note'));
+  if (hit) return hit.closest('.note').dataset.id;
+  const f = frameAt(toWorld(e.clientX, e.clientY));
+  return f ? f.id : null;
 }
 function addInkPoint(e) {
   const k = inkStroke;
@@ -416,6 +430,16 @@ function finishInkStroke() {
   k.el.remove();
   const { raw, pts } = inkPoints(k);
   if (!pts.length) return;
+  // a click on a note or a workflow: not a dot — the pen goes away and that is selected
+  if (k.over && itemById(k.over)) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of raw) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    if (Math.max(x1 - x0, y1 - y0) * state.view.z < 4) {
+      toggleInk(false);
+      setSelection([k.over], false);
+      return;
+    }
+  }
   k.s.pts = pts;
   if (k.s.tool === 'brush') k.s.ws = brushWidths(raw, k.s.size);
   pushUndoInk();

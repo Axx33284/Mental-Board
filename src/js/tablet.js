@@ -231,8 +231,10 @@ function padCanDraw() { const b = activeBoard(); return !(b && (b.unreadable || 
 function sendPadView() {
   if (!padOn()) return;
   // rw: how many screen pixels wide the phone's region is here, so the phone draws its own line at the width it will land
-  const board = padHost().kind === 'board';
-  const m = { t: 'view', ro: board && !padCanDraw(), pal: padPalette(), sel: board ? inkSel.size : 0, rw: padRect().w };
+  const kind = padHost().kind, board = kind === 'board';
+  // how much is selected, where the phone is — its bin is lit by this
+  const sel = board ? inkSel.size : kind === 'sketch' ? sk.sel.size : 0;
+  const m = { t: 'view', ro: board && !padCanDraw(), pal: padPalette(), sel, rw: padRect().w };
   const key = JSON.stringify(m);
   if (key === padViewSent) return;
   padViewSent = key;
@@ -316,7 +318,11 @@ function movePadStroke(id, pts) {
   const k = padLive.get(id);
   if (!k) return;
   for (let i = 0; i < pts.length; i += 3) {
-    if (k.ed) { if (k.erase) padEditorErase(k, pts[i], pts[i + 1]); else addPadEditorPoint(k, pts[i], pts[i + 1], pts[i + 2]); }
+    if (k.ed) {
+      if (k.pick) { if (sk && sk.pick && padHostAlive(k.map)) moveSketchPick(Object.assign(padWorld(k.map, pts[i], pts[i + 1]), { k: k.map.z })); }
+      else if (k.erase) padEditorErase(k, pts[i], pts[i + 1]);
+      else addPadEditorPoint(k, pts[i], pts[i + 1], pts[i + 2]);
+    }
     else if (k.pick) { if (inkPick === k.pick) moveInkPick(padClient(k.map, pts[i], pts[i + 1])); }
     else if (k.erase) padErase(k, pts[i], pts[i + 1]);
     else addPadPoint(k, pts[i], pts[i + 1], pts[i + 2]);
@@ -403,6 +409,10 @@ function beginPadPick(m, map) {
   sendPadView();
 }
 function padSelection(m) {
+  // with a drawing note open, the phone's selection is the drawing's (sketch.js); the picture editor has none
+  const kind = padHost().kind;
+  if (kind === 'sketch') { padSketchSelection(m); sendPadView(); padDirty(); return; }
+  if (kind !== 'board') return;
   if (m.act === 'delete') deleteInkSelection();
   else if (m.act === 'color') recolorInkSelection(m.color);
   else if (m.act === 'clear') { inkSel.clear(); paintInkSelection(); }
@@ -455,7 +465,14 @@ function padColorCss(c) {
 }
 function beginPadEditorStroke(m, map) {
   hidePadCursor();
-  if (m.tool === 'select') return;
+  if (m.tool === 'select') {
+    // the drawing note's arrow, from the phone (the picture editor has nothing to select)
+    if (map.kind !== 'sketch' || sk.live || sk.erase || sk.pick) return;
+    const at = Object.assign(padWorld(map, m.x, m.y), { k: map.z });
+    beginSketchPick({ pointerId: 'pad:' + m.id, shiftKey: false }, at);
+    padLive.set(m.id, { ed: true, pick: true, map, k: m.k });
+    return;
+  }
   if (m.tool === 'eraser') {
     const k = { ed: true, erase: true, map, k: m.k, E: { r: INK_SIZES.eraser[m.size] / map.z, last: null, hit: 0 } };
     padLive.set(m.id, k);
@@ -501,6 +518,7 @@ function addPadEditorPoint(k, x, y, p) {
 }
 function endPadEditorStroke(k) {
   padDirty();
+  if (k.pick) { if (sk && sk.pick && padHostAlive(k.map)) endSketchPick(); return; }
   if (k.erase) return;
   if (k.mark) {
     if (!k.mark.pts.length && ST.marks[ST.marks.length - 1] === k.mark) { ST.marks.pop(); ST.undo.pop(); }

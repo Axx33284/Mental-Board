@@ -1111,4 +1111,7 @@ window.MB_LANG.ar = {
   'sketch.fileFailed': 'تعذّرت قراءة {name}.',
   'sketch.fileTooBig': '{name} أكبر من أن يُجلب (80 ميغابايت على الأكثر).',
   'sketch.picsFull': 'هذا الرسم يحمل أكبر عدد ممكن من الصور.',
+  'sketch.select': 'تحديد ونقل (V) — Shift للإضافة، Delete للحذف، اسحب زاوية الصورة لتغيير حجمها',
+  'sketch.cannotHold': 'ملاحظة الرسم تحمل الصور وملفات PDF فقط — لا: {names}. احفظها بصيغة PDF أولًا.',
+  'sketch.pictureIn': 'أصبحت الصورة تحت الرسم.',
 };

@@ -133,6 +133,7 @@ The things that make it more than a note wall:
 | **A drawing note: write and draw by hand, full screen, with a pen's pressure** | js/sketch.js §4z2 |
 | **Zoom and a pen in the drawing note and the picture editor; a drawing keeps only what was drawn** | js/sketch.js + js/media.js §4z3 |
 | **Draw over a picture, a photo or a PDF: pages under the ink of a drawing note** | js/sketch.js + assets/pdfjs §4z4 |
+| **A drawing note saves as it is drawn; select, move, resize, delete in it; drops; rename on the board; a 5-minute autosave** | js/sketch.js + js/state.js §4z5 |
 
 ---
 
@@ -2510,6 +2511,84 @@ goes in as a PDF exported from the app that made it.
 
 Test: **2.7** in `tools/test-app-features.js`, with a two-page PDF built by
 `tools/fake-pdf.js`.
+
+## 4z5. Mental Board 2.7.1 — nothing lost, and the mouse does what it is asked
+
+### A drawing note saves as it is drawn — `commitSketch()`
+
+Until 2.7.1 a drawing note's editor held everything in memory until Done. The
+user lost an evening's drawing to the app being closed mid-drawing. Now every
+change (a stroke, an erase, an undo, a picture added or moved, the title once
+typing settles) goes into the note and through `saveSoon()` like any other
+edit — `drawSketchStrokes()` commits whenever `sk.dirty`. The board's undo
+still sees a visit as one step: `pushUndo()` is taken at the first commit
+(`sk.undoTaken`), while the note is still as it was. `closeSketch()` only
+reshapes and repaints the note on the board.
+
+**The 5-minute autosave** (`startAutosave()`, state.js, `AUTOSAVE_MS`) is the
+backstop over that: it commits an open drawing and calls `save()`, which
+writes only boards whose JSON changed. Text notes already save on every input.
+The picture editor's marks are still kept only on Apply — they are burned
+into a new picture, which is not a thing to do behind the user's back.
+
+### The bars act on the press — `onPress()` (helpers.js)
+
+The drawing note's bar, the board's pen bar and the picture editor's tools,
+colours, zoom and undo used `click`, which only fires when the press and the
+release land on the same element: a hand that slid a little across a 30 px
+button, and the choice silently did not happen — the user's "the mouse cannot
+select a pen". `onPress(el, fn)` acts on `pointerdown` (main button), and
+still on a keyboard click (`detail === 0`). The colour window (`<input
+type=color>`) stays a click: it has to open.
+
+### With the board's pen out, a click selects — `inkPressedOn()` (ink.js)
+
+A press with the pen out remembers the note or workflow under it (`over`).
+If it is let go without moving (under 4 px), it was not a dot: the pen goes
+away and that item is selected (`finishInkStroke`). A drag still draws over
+notes as ever.
+
+### Selecting in a drawing note — the arrow (V)
+
+Press a line or a picture to select it (Shift adds or takes away); drag to
+move the selection; drag across empty paper to lasso; the corner of a single
+selected picture resizes it, shape kept; Delete removes the selection
+(`beginSketchPick` → `moveSketchPick` → `endSketchPick`, `deleteSketchSel`,
+`paintSketchSel`). Lines are hit before pictures (the ink is on top). While
+dragging, the selection rides a `transform`; on release the moved items are
+**new objects** (a moved line also gets a new id — ink.js caches a path per
+id, and the old one may still be in an undo step), so undo snapshots stay
+true.
+
+### Drops, and a picture dragged in
+
+- Files dropped **on a drawing note on the board** open it and go under its
+  drawing (`dropIntoSketch`, from `onCanvasDrop`); files dropped on the open
+  editor do the same. Anything that is not a picture or a PDF is **named** in a
+  message (`sketchItemsFromFiles` → `sketch.cannotHold`) instead of being
+  ignored.
+- A **picture note dragged onto a drawing note** goes under its drawing
+  (`finishPicDrop` → `pictureIntoSketch`): the same file, nothing copied,
+  placed below what is there (`sketchNextSpot`).
+
+### Renaming on the board — `renameSketch()`
+
+Double-click a drawing note's title (or right-click ▸ Rename): the title is
+edited where it is. Enter keeps it **directly**, not by blurring — a blur is
+nothing in a window that is not in front.
+
+### The phone, reviewed
+
+The pairing, the reconnection, palm rejection, the pen button and the
+preview width all hold for the editors (the preview is the board pen's
+on-screen size, which is what both editors land). Two gaps from 2.6.2 were
+fixed: the phone's arrow, bin and colours acted on the **board's** ink
+selection even with a drawing note open — they now select, move, delete and
+recolour in the drawing (`beginPadEditorStroke` select → the sketch pick,
+`padSketchSelection`); and the phone's bin was lit by the board's selection
+count — `sendPadView` now sends the drawing's (`sketchSelChanged()` tells it).
+
+Test: **2.7.1** in `tools/test-app-features.js`.
 
 ## 4o. Lining a note up with its neighbours
 

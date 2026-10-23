@@ -1374,5 +1374,98 @@ module.exports = [
       const disk = onDisk().notes.find((x) => x.id === r.id);
       ok(disk && disk.sketch && disk.sketch.pics.length === 4 && (disk.body.match(/<img /g) || []).length === 4, 'on disk: four places, four files');
     });
+
+    // 2.7.1, MAP.md §4z5: saved as it is drawn; select, move, resize, delete; drops; rename; tools on the press; the phone's arrow
+    await test('2.7.1 a drawing note saves as it is drawn, selects and moves, takes drops, renames, and the bars act on the press', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const n = addSketch({ x: 7000, y: 0 });
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const svg = $('skSvg'), box = $('skStage').getBoundingClientRect();
+        const scr = (x, y) => ({ x: box.left + sk.view.x + x * sk.view.z, y: box.top + sk.view.y + y * sk.view.z });
+        const pe = (type, p, extra) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 77, pointerType: 'mouse', clientX: p.x, clientY: p.y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }, extra || {}));
+        // a tool is taken on the press — a press with no click behind it
+        const pickTool = (tool) => $('skBar').querySelector(`[data-tool="${tool}"]`).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }));
+        pickTool('pen');
+        out.pressPen = state.settings.sketchPen.tool;
+        const line = (x0, y0, x1, y1) => {
+          svg.dispatchEvent(pe('pointerdown', scr(x0, y0)));
+          for (let i = 1; i <= 6; i++) window.dispatchEvent(pe('pointermove', scr(x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * i / 6)));
+          window.dispatchEvent(pe('pointerup', scr(x1, y1)));
+        };
+        line(20, 20, 220, 40);
+        // saved with the editor still open
+        await new Promise((res) => setTimeout(res, 100));
+        await saveNow();
+        out.savedOpen = (n.sketch.strokes || []).length;
+        // a picture, then the arrow: select it, move it, resize it from the corner, delete it
+        const c = document.createElement('canvas'); c.width = 200; c.height = 100; c.getContext('2d').fillRect(0, 0, 200, 100);
+        await sketchImport([{ name: 'p.png', kind: 'image', ext: 'png', dataUrl: c.toDataURL('image/png') }]);
+        await new Promise((res) => requestAnimationFrame(res));
+        pickTool('select');
+        const p0 = sk.pics[0];
+        const a = scr(p0.x + 50, p0.y + 50), b = scr(p0.x + 150, p0.y + 80);
+        svg.dispatchEvent(pe('pointerdown', a)); window.dispatchEvent(pe('pointermove', b)); window.dispatchEvent(pe('pointerup', b));
+        const p1 = sk.pics[0];
+        out.moved = [Math.round(p1.x - p0.x), Math.round(p1.y - p0.y)];
+        const c0 = scr(p1.x + p1.w, p1.y + p1.h), c1 = scr(p1.x + p1.w + 100, p1.y + p1.h);
+        svg.dispatchEvent(pe('pointerdown', c0)); window.dispatchEvent(pe('pointermove', c1)); window.dispatchEvent(pe('pointerup', c1));
+        const p2 = sk.pics[0];
+        out.resized = { w: Math.round(p2.w), shape: Math.abs(p2.w / p2.h - 2) < 0.01 };
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        out.deleted = sk.pics.length;
+        sketchUndo(true);
+        // a lasso round the line selects it, and the phone's bin takes it
+        const l0 = scr(0, 0), l1 = scr(240, 60);
+        svg.dispatchEvent(pe('pointerdown', l0)); window.dispatchEvent(pe('pointermove', l1)); window.dispatchEvent(pe('pointerup', l1));
+        out.lassoed = [...sk.sel].filter((it) => it.pts).length;
+        onPadMessage({ t: 'sel', act: 'delete' });
+        out.phoneDeleted = sk.strokes.length;
+        sketchUndo(true);
+        closeSketch();
+        out.stepsOnBoard = (() => { const before = n.sketch.strokes.length; undo(); const after = (state.notes.find((x) => x.id === n.id) || {}).sketch; redo(); return [before, after ? after.strokes.length : -1]; })();
+        // undo and redo rebuilt the board's notes: from here on, the note as it is now
+        const live = () => state.notes.find((x) => x.id === n.id);
+        // rename in place
+        renameSketch(n.id);
+        const tl = els.get(n.id).querySelector('.sk-title');
+        tl.textContent = 'Monday';
+        tl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        out.title = live().sketch.title;
+        // a drop: a picture goes in, a document is named as refused
+        const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+        let said = '';
+        const ot = window.toast; window.toast = (m) => { said += m; };
+        const picsBefore = (live().sketch.pics || []).length;
+        await dropIntoSketch(n.id, [new File([blob], 'shot.png', { type: 'image/png' }), new File(['x'], 'report.docx', { type: 'application/msword' })]);
+        window.toast = ot;
+        closeSketch();
+        out.dropped = live().sketch.pics.length - picsBefore;
+        out.refused = said.includes('report.docx');
+        // the board's pen: a click on a note puts the pen away and selects it; nothing is drawn
+        const other = addNote({ x: 9000, y: 0 }, { edit: false });
+        flyTo({ x: other.x + other.w / 2, y: other.y + other.h / 2 }, 1, 1);
+        await new Promise((res) => setTimeout(res, 50));
+        toggleInk(true);
+        const inkBefore = state.ink.length;
+        const vr = vpRect(), sp = toScreen(other.x + other.w / 2, other.y + other.h / 2);
+        const at = { clientX: vr.left + sp.x, clientY: vr.top + sp.y };
+        const ev = (type) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 78, pointerType: 'mouse', button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }, at));
+        $('viewport').dispatchEvent(ev('pointerdown'));
+        window.dispatchEvent(ev('pointerup'));
+        out.penClick = { inkMode, selected: selection.has(other.id), drew: state.ink.length - inkBefore };
+        return out;
+      });
+      ok(r.pressPen === 'pen', 'a press on a tool takes it, no click needed');
+      ok(r.savedOpen === 1, 'the line is in the note while the editor is still open: ' + r.savedOpen);
+      ok(r.moved[0] === 100 && r.moved[1] === 30, 'the arrow moves a picture: ' + JSON.stringify(r.moved));
+      ok(r.resized.w === 300 && r.resized.shape, 'its corner resizes it, keeping its shape: ' + JSON.stringify(r.resized));
+      ok(r.deleted === 0, 'Delete takes it');
+      ok(r.lassoed === 1 && r.phoneDeleted === 0, 'a lasso selects the line, and the phone\'s bin deletes it from the drawing: ' + JSON.stringify(r));
+      ok(r.stepsOnBoard[0] === 1 && r.stepsOnBoard[1] === 0, 'the whole visit is one step of the board\'s undo: ' + JSON.stringify(r.stepsOnBoard));
+      ok(r.title === 'Monday', 'renamed on the board');
+      ok(r.dropped === 1 && r.refused, 'a dropped picture goes in, a document is named as refused');
+      ok(!r.penClick.inkMode && r.penClick.selected && r.penClick.drew === 0, 'a click on a note with the pen out selects it: ' + JSON.stringify(r.penClick));
+    });
   }
 ];
