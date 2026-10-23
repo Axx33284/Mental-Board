@@ -367,6 +367,20 @@ function createWindow() {
     }
   });
 
+  /* Spelling (2.4.1). Chromium knows which word under a right-click is
+     misspelled and what it should be, and tells only main, in this event. The
+     page draws its own menu, so the answer is passed on to it (spell:menu) and
+     the page puts the suggestions at the top of the note's menu. It only fires
+     when the page lets the contextmenu event through — init.js does that for
+     a right-click in the text of the note being edited, and nowhere else. */
+  win.webContents.on('context-menu', (_e, p) => {
+    if (!p.isEditable) return;
+    win.webContents.send('spell:menu', {
+      word: String(p.misspelledWord || '').slice(0, 64),
+      suggestions: (p.dictionarySuggestions || []).slice(0, 6).map((s) => String(s).slice(0, 64))
+    });
+  });
+
   /* This window shows one file and nothing else, ever. A link in a note goes to
      the system browser through shell:open-external, which vets the scheme —
      nothing is allowed to navigate the app window itself or spawn a second
@@ -510,6 +524,11 @@ ipcMain.handle('pad:start', (e, address) => {
 });
 ipcMain.on('pad:stop', () => tablet.stop('stopped'));
 ipcMain.on('pad:send', (e, m) => { if (fromMain(e)) tablet.send(m); });
+// "Add to dictionary": one word, no spaces — the dictionary is the user's, across every app session
+ipcMain.on('spell:learn', (e, w) => {
+  if (!fromMain(e) || typeof w !== 'string' || !w || w.length > 64 || /\s/.test(w)) return;
+  try { e.sender.session.addWordToSpellCheckerDictionary(w); } catch (_) {}
+});
 ipcMain.handle('pad:addresses', () => tablet.addresses());
 /* The phone sees the board (2.2.1): the renderer names the region of its own
    window the phone maps to, main photographs exactly that and hands it to

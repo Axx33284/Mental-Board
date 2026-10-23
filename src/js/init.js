@@ -121,7 +121,7 @@ function onPointerDown(e) {
 
   // empty canvas -> lasso
   if (editing) exitEdit();
-  gesture = { kind: 'marquee', sx: e.clientX, sy: e.clientY, base: e.shiftKey ? [...selection] : [] };
+  gesture = { kind: 'marquee', sx: e.clientX, sy: e.clientY, w0: toWorld(e.clientX, e.clientY), base: e.shiftKey ? [...selection] : [] };
   if (!e.shiftKey) clearSelection();
   captureGesture(e);
 }
@@ -170,9 +170,16 @@ function frameAt(worldPt) {
 }
 
 function onContextMenu(e) {
-  e.preventDefault();
   const hit = hitAt(e);
   const noteEl = hit.closest('.note');
+  /* In the text of the note being edited, the event goes through to Chromium,
+     which tells main what is misspelled there; the menu opens when that answer
+     arrives (or without it, a moment later). See awaitSpellMenu() in menus.js. */
+  if (noteEl && editing && editing.contains(hit) && state.settings.spell && WIN && WIN.onSpell) {
+    awaitSpellMenu(e.clientX, e.clientY, noteEl.dataset.id);
+    return;
+  }
+  e.preventDefault();
   if (noteEl) { openCtxMenu(e.clientX, e.clientY, noteEl.dataset.id); return; }
   const rope = hit.closest('.lk-hit');
   if (rope) { openRopeMenu(e.clientX, e.clientY, rope.dataset.id); return; }

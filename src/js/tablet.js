@@ -237,7 +237,8 @@ function padMap() {
 }
 function padWorld(map, x, y) { return { x: (map.rx + x * map.rw - map.vx) / map.z, y: (map.ry + y * map.rh - map.vy) / map.z }; }
 // the same point as a pointer event's client coordinates, for ink.js's select gesture
-function padClient(map, x, y) { const r = vpRect(); return { clientX: r.left + map.rx + x * map.rw, clientY: r.top + map.ry + y * map.rh, shiftKey: false }; }
+// — and the world point, from the map the stroke began with, so a pan on the PC mid-gesture cannot move it
+function padClient(map, x, y) { const r = vpRect(); return { clientX: r.left + map.rx + x * map.rw, clientY: r.top + map.ry + y * map.rh, shiftKey: false, world: padWorld(map, x, y) }; }
 
 function beginPadStroke(m) {
   if (padLive.has(m.id)) endPadStroke(m.id);
@@ -352,9 +353,9 @@ function beginPadPick(m, map) {
   if (id) {
     if (!inkSel.has(id)) { inkSel.clear(); inkSel.add(id); }
     paintInkSelection();
-    inkPick = { kind: 'move', sx: e.clientX, sy: e.clientY, z: map.z, moved: false, dx: 0, dy: 0 };
+    inkPick = { kind: 'move', sx: e.clientX, sy: e.clientY, w0: e.world, moved: false, dx: 0, dy: 0 };
   } else {
-    inkPick = { kind: 'lasso', sx: e.clientX, sy: e.clientY, base: new Set() };
+    inkPick = { kind: 'lasso', sx: e.clientX, sy: e.clientY, w0: e.world, base: new Set() };
     inkSel.clear(); paintInkSelection();
   }
   padLive.set(m.id, { pick: inkPick, map, k: m.k });

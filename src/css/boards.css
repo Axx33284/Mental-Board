@@ -11,9 +11,9 @@
 
      pinned — a column down the left edge that insets #stage, so no note can
               ever hide underneath it. `#viewport`'s box moves, which is fine:
-              toWorld() reads it from getBoundingClientRect() every call, and
-              applySettings() re-runs applyView() afterwards so the grid lines
-              up again.
+              vpRect() caches it, and a ResizeObserver plus
+              applySettings() drop the cache (view.js), so toWorld() follows;
+              applySettings() re-runs applyView() so the grid lines up again.
      hover  — a 34px launcher and a flyout sized to its contents. See the
               hover-mode block below; that is the default.
 

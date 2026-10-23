@@ -89,6 +89,7 @@ function applyView() {
   syncInk();                        // and which strokes, on a board with many
   scheduleMinimap();
   if (typeof padDirty === 'function') padDirty();   // a paired phone sees the board move (js/tablet.js)
+  followCamera();                   // a drag in progress stays under the pointer (js/items.js)
 }
 /* The viewport's box, cached (2.1).
 

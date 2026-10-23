@@ -556,30 +556,34 @@ function beginInkPick(e) {
     }
     if (!inkSel.has(id)) { inkSel.clear(); inkSel.add(id); }
     paintInkSelection();
-    inkPick = { kind: 'move', sx: e.clientX, sy: e.clientY, z: state.view.z, moved: false, dx: 0, dy: 0 };
+    inkPick = { kind: 'move', sx: e.clientX, sy: e.clientY, w0: w, moved: false, dx: 0, dy: 0 };
     return;
   }
   // empty board: a lasso, added to the selection with Shift
-  inkPick = { kind: 'lasso', sx: e.clientX, sy: e.clientY, base: e.shiftKey ? new Set(inkSel) : new Set() };
+  inkPick = { kind: 'lasso', sx: e.clientX, sy: e.clientY, w0: w, base: e.shiftKey ? new Set(inkSel) : new Set() };
   if (!e.shiftKey) { inkSel.clear(); paintInkSelection(); }
 }
+// anchored to the board like the notes' gestures — see gestureDelta() in items.js
 function moveInkPick(e) {
   const g = inkPick;
+  g.last = e;
+  const w = e.world || toWorld(e.clientX, e.clientY);     // the phone brings its own (js/tablet.js)
   if (g.kind === 'move') {
     if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 3) return;
     if (!g.moved) { g.moved = true; pushUndoInk(); }
-    g.dx = (e.clientX - g.sx) / g.z; g.dy = (e.clientY - g.sy) / g.z;
+    g.dx = w.x - g.w0.x; g.dy = w.y - g.w0.y;
     paintInkSelection(g.dx, g.dy);
     return;
   }
   if (g.kind !== 'lasso') return;
   const r = vpRect();
+  const s = toScreen(g.w0.x, g.w0.y), cx = e.clientX - r.left, cy = e.clientY - r.top;
   const m = $('marquee');
   m.classList.remove('hidden');
-  m.style.left = Math.min(g.sx, e.clientX) - r.left + 'px'; m.style.top = Math.min(g.sy, e.clientY) - r.top + 'px';
-  m.style.width = Math.abs(e.clientX - g.sx) + 'px'; m.style.height = Math.abs(e.clientY - g.sy) + 'px';
-  const a = toWorld(Math.min(g.sx, e.clientX), Math.min(g.sy, e.clientY));
-  const b = toWorld(Math.max(g.sx, e.clientX), Math.max(g.sy, e.clientY));
+  m.style.left = Math.min(s.x, cx) + 'px'; m.style.top = Math.min(s.y, cy) + 'px';
+  m.style.width = Math.abs(cx - s.x) + 'px'; m.style.height = Math.abs(cy - s.y) + 'px';
+  const a = { x: Math.min(g.w0.x, w.x), y: Math.min(g.w0.y, w.y) };
+  const b = { x: Math.max(g.w0.x, w.x), y: Math.max(g.w0.y, w.y) };
   inkSel.clear();
   g.base.forEach((id) => inkSel.add(id));
   for (const s of state.ink) {
@@ -591,6 +595,10 @@ function moveInkPick(e) {
     }
   }
   paintInkSelection();
+}
+// the camera moved mid-pick (a wheel zoom): replay where the pointer is — from applyView()
+function followInkCamera() {
+  if (inkPick && inkPick.last && inkPick.w0) moveInkPick(inkPick.last);
 }
 function endInkPick() {
   const g = inkPick;

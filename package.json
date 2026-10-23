@@ -1,7 +1,7 @@
 {
   "name": "mental-board",
   "productName": "Mental Board",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "An infinite canvas for your head: rich-text notes and pictures you can move, resize, link, colour and group into workflows. Every board is a folder in My Boards.",
   "main": "src/main.js",
   "author": "Ahmad <ahmedbutixr@gmail.com>",

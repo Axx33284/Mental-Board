@@ -975,4 +975,7 @@ window.MB_LANG.en = {
   'set.padEgText': 'The tinted band is the space between the writing and the edge. Drag the sliders and watch it change — every note on the board follows.',
   'set.padHint': 'The presets fill in the four sliders; any other mix is your own. Nothing on the board moves or changes size — only the writing inside each note does.',
   'cols.even': 'Make the columns even (or double-click a line between them)',
+  'menu.spelling': 'Spelling',
+  'menu.noSuggestions': 'No spelling suggestions for this word.',
+  'menu.addToDictionary': 'Add to dictionary',
 };

@@ -119,7 +119,11 @@ contextBridge.exposeInMainWorld('mbWin', {
   setStrings: (table) => ipcRenderer.send('win:strings', table),
   isMaximized: () => ipcRenderer.invoke('win:is-maximized'),
   onMaximized: (cb) => ipcRenderer.on('win:maximized', (_e, v) => cb(v)),
-  onCapture: (cb) => ipcRenderer.on('capture:open', () => cb())
+  onCapture: (cb) => ipcRenderer.on('capture:open', () => cb()),
+  /* Spelling: what Chromium found under a right-click in a note being edited
+     ({ word, suggestions }), and the word to stop calling wrong. See menus.js. */
+  onSpell: (cb) => ipcRenderer.on('spell:menu', (_e, v) => cb(v)),
+  learnWord: (w) => ipcRenderer.send('spell:learn', String(w || ''))
 });
 
 contextBridge.exposeInMainWorld('mbTheme', {

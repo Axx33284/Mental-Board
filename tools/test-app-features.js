@@ -1099,5 +1099,41 @@ module.exports = [
       const z = await page(() => { for (let i = 0; i < 80; i++) zoomAt(400, 300, 0.8); const z = state.view.z; flyTo({ x: 300, y: 100 }, 1, 1); return z; });
       ok(Math.abs(z - 0.02) < 1e-9, 'minimum zoom: ' + z);
     });
+
+    // 2.4.1, MAP.md §4z1: a zoom in the middle of a drag used to slide the note off the pointer
+    await test('2.4.1 a dragged note stays under the pointer through a wheel zoom, and a pan keeps the zoom', async () => {
+      const r = await page(async () => {
+        flyTo({ x: 130, y: 110 }, 1, 1);
+        await new Promise((res) => setTimeout(res, 60));
+        const n = state.notes.find((x) => x.id === 'sa');
+        const vp = vpRect(), p0 = toScreen(n.x + 20, n.y + 20);
+        const at = (x, y) => ({ clientX: vp.left + x, clientY: vp.top + y, pointerId: 1, shiftKey: false });
+        const grab = (e) => { const w = toWorld(e.clientX, e.clientY); return { x: Math.round(w.x - n.x), y: Math.round(w.y - n.y) }; };
+        const e0 = at(p0.x, p0.y);
+        beginMove(e0, 'sa');
+        const e1 = at(p0.x + 60, p0.y + 40);
+        onGestureMove(e1);
+        zoomAt(e1.clientX, e1.clientY, 0.5);          // the pointer has not moved
+        const still = grab(e1);
+        const e2 = at(p0.x + 140, p0.y + 90);
+        onGestureMove(e2);
+        const moved = grab(e2);
+        endGesture();
+        undo();
+        // a pan with a zoom in the middle: the board point under the pointer stays there
+        beginPan(at(400, 300));
+        onGestureMove(at(420, 310));
+        zoomAt(vp.left + 420, vp.top + 310, 2);
+        const before = toWorld(vp.left + 420, vp.top + 310);
+        onGestureMove(at(470, 350));
+        const after = toWorld(vp.left + 470, vp.top + 350);
+        endGesture();
+        flyTo({ x: 300, y: 100 }, 1, 1);
+        return { still, moved, pan: [Math.round(after.x - before.x), Math.round(after.y - before.y)] };
+      });
+      ok(r.still.x === 20 && r.still.y === 20, 'still under the pointer after the zoom: ' + JSON.stringify(r.still));
+      ok(r.moved.x === 20 && r.moved.y === 20, 'and after moving on at the new zoom: ' + JSON.stringify(r.moved));
+      ok(r.pan[0] === 0 && r.pan[1] === 0, 'the pan kept the zoom: ' + JSON.stringify(r.pan));
+    });
   }
 ];

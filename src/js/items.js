@@ -506,6 +506,37 @@ function renameFrame(id) {
 /* ─────────────── 7. drag + resize ─────────────── */
 let gesture = null;   // { kind:'move'|'resize'|'pan'|'marquee', ... }
 
+/* A gesture is anchored to the board, not to the screen (2.4.1).
+
+   Every gesture used to remember where the press was *on screen* and the zoom
+   at that moment, and turn the pointer's screen travel into world travel with
+   that frozen zoom. Correct until the camera moves under the pointer — a wheel
+   zoom or a wheel pan in the middle of a drag, which the app has always
+   allowed. Then a note dragged at 100% and zoomed out to 50% moved half as far
+   as the pointer from then on and slid away from under it; a lasso's first
+   corner stayed on the screen while the board moved beneath it; a pan threw
+   the zoom's own translation away on the next pointermove.
+
+   So the press is kept as the world point under it (`w0`), each move is
+   measured as world point minus `w0`, and the camera telling us it moved
+   (`followCamera()`, from applyView) replays the last pointer event, so the
+   thing being dragged stays under the pointer even when the pointer itself
+   is still. A pan is the one gesture that *is* the camera: it runs on its
+   own increments and is never replayed. */
+function gestureDelta(g, e) {
+  const w = toWorld(e.clientX, e.clientY);
+  return { dx: w.x - g.w0.x, dy: w.y - g.w0.y };
+}
+let replaying = false;
+function followCamera() {
+  if (replaying) return;
+  replaying = true;
+  try {
+    if (gesture && gesture.kind !== 'pan' && gesture.last) onGestureMove(gesture.last);
+    if (typeof followInkCamera === 'function') followInkCamera();
+  } finally { replaying = false; }
+}
+
 function bringToFront(id) {
   const n = state.notes.find((x) => x.id === id);
   if (!n) return;
@@ -665,7 +696,7 @@ function beginMove(e, id) {
   if (!items.length) return;
   gesture = {
     kind: 'move', sx: e.clientX, sy: e.clientY, moved: false,
-    z: state.view.z,
+    w0: toWorld(e.clientX, e.clientY),
     items: items.map((it) => ({ it, ox: it.x, oy: it.y })),
     /* Which ropes this drag can possibly move. Worked out once here rather than
        per pointermove, so the drag loop can redraw those and leave every other
@@ -696,7 +727,7 @@ function beginResize(e, id, dir) {
   gesture = {
     kind: 'resize', dir, it, frame,
     ids: new Set([id]),
-    sx: e.clientX, sy: e.clientY, z: state.view.z,
+    sx: e.clientX, sy: e.clientY, w0: toWorld(e.clientX, e.clientY),
     ox: it.x, oy: it.y, ow: it.w, oh: it.h,
     minW: frame ? FRAME_MIN_W : (it.pic ? PIC_MIN : NOTE_MIN_W),
     minH: frame ? FRAME_MIN_H : (it.pic ? PIC_MIN : NOTE_MIN_H),
@@ -720,10 +751,11 @@ function captureGesture(e) {
 function onGestureMove(e) {
   if (!gesture) return;
   const g = gesture;
+  g.last = e;             // replayed by followCamera() when the board moves under it
 
   if (g.kind === 'move') {
-    let dx = (e.clientX - g.sx) / g.z, dy = (e.clientY - g.sy) / g.z;
     if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 3) return;
+    let { dx, dy } = gestureDelta(g, e);
     g.moved = true;
     /* Line the whole dragged block up with what is around it. The box is the
        union of everything travelling, so dragging five notes lines the five up
@@ -739,7 +771,7 @@ function onGestureMove(e) {
         if (y + it.h > y2) y2 = y + it.h;
       });
       const box = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
-      const fit = guideFit(box, g.guides, GUIDE_TOL / g.z);
+      const fit = guideFit(box, g.guides, GUIDE_TOL / state.view.z);
       dx += fit.dx; dy += fit.dy;
       box.x += fit.dx; box.y += fit.dy;
       drawGuides(fit, box);
@@ -756,7 +788,7 @@ function onGestureMove(e) {
   }
 
   if (g.kind === 'resize') {
-    const dx = (e.clientX - g.sx) / g.z, dy = (e.clientY - g.sy) / g.z;
+    const { dx, dy } = gestureDelta(g, e);
     const d = g.dir, it = g.it;
     let x = g.ox, y = g.oy, w = g.ow, h = g.oh;
     if (d.includes('e')) w = Math.max(g.minW, g.ow + dx);
@@ -773,22 +805,27 @@ function onGestureMove(e) {
   }
 
   if (g.kind === 'pan') {
-    state.view.x = g.ox + (e.clientX - g.sx);
-    state.view.y = g.oy + (e.clientY - g.sy);
+    // increments, not "start + travel": a wheel zoom mid-pan moves the view too
+    state.view.x += e.clientX - g.lx;
+    state.view.y += e.clientY - g.ly;
+    g.lx = e.clientX; g.ly = e.clientY;
     applyView();
     return;
   }
 
   if (g.kind === 'marquee') {
     const r = vpRect();
-    const x1 = Math.min(g.sx, e.clientX) - r.left, y1 = Math.min(g.sy, e.clientY) - r.top;
-    const x2 = Math.max(g.sx, e.clientX) - r.left, y2 = Math.max(g.sy, e.clientY) - r.top;
+    // the first corner is a point on the board, so it travels with a zoom
+    const s = toScreen(g.w0.x, g.w0.y), cx = e.clientX - r.left, cy = e.clientY - r.top;
+    const x1 = Math.min(s.x, cx), y1 = Math.min(s.y, cy);
+    const x2 = Math.max(s.x, cx), y2 = Math.max(s.y, cy);
     const m = $('marquee');
     m.classList.remove('hidden');
     m.style.left = x1 + 'px'; m.style.top = y1 + 'px';
     m.style.width = (x2 - x1) + 'px'; m.style.height = (y2 - y1) + 'px';
-    const a = toWorld(Math.min(g.sx, e.clientX), Math.min(g.sy, e.clientY));
-    const b = toWorld(Math.max(g.sx, e.clientX), Math.max(g.sy, e.clientY));
+    const w = toWorld(e.clientX, e.clientY);
+    const a = { x: Math.min(g.w0.x, w.x), y: Math.min(g.w0.y, w.y) };
+    const b = { x: Math.max(g.w0.x, w.x), y: Math.max(g.w0.y, w.y) };
     const hit = [];
     const test = (it) => (it.x < b.x && it.x + it.w > a.x && it.y < b.y && it.y + it.h > a.y);
     state.notes.forEach((n) => { if (test(n)) hit.push(n.id); });
@@ -849,12 +886,14 @@ function selectedItems() { return [...selection].map(itemById).filter(Boolean); 
 let spaceHeld = false;
 
 function beginPan(e) {
-  gesture = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: state.view.x, oy: state.view.y };
+  stopFlight();
+  gesture = { kind: 'pan', sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY };
   $('viewport').classList.add('panning');
   captureGesture(e);
 }
 
 function zoomAt(clientX, clientY, factor) {
+  stopFlight();           // a fly-to still running would drag the view off the cursor next frame
   const v = state.view;
   const r = vpRect();
   const cx = clientX - r.left, cy = clientY - r.top;
@@ -920,6 +959,7 @@ function onWheel(e) {
     const f = Math.pow(0.999, e.deltaY * (e.ctrlKey ? 2.4 : 1.6) * speed);
     zoomAt(e.clientX, e.clientY, clamp(f, 0.5, 2));
   } else {
+    stopFlight();
     state.view.x -= e.deltaX;
     state.view.y -= e.deltaY;
     applyView();
@@ -930,6 +970,12 @@ function onWheel(e) {
 /* Smoothly move the camera so that world point (cx,cy) sits in the middle of
    the viewport at zoom `z`. Used by the compass chips and find. */
 let flight = null;
+function stopFlight() {
+  if (!flight) return;
+  cancelAnimationFrame(flight);
+  flight = null;
+  saveSoon();
+}
 function flyTo(centre, z, ms) {
   const r = vpRect();
   const target = {

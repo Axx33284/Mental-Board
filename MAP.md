@@ -82,7 +82,7 @@ The things that make it more than a note wall:
 | **Statuses on notes, the user's own list** | js/state.js, js/items.js, js/menus.js |
 | **Note shape, and three spacing levels** | js/theme.js + css/later.css |
 | **Per-block text alignment** | js/toolbars.js + css/later.css |
-| **Eighteen themes** and nine accents plus your own, following Windows or the clock | js/theme.js + css/tokens.css |
+| **Twenty themes** and nine accents plus your own, following Windows or the clock | js/theme.js + css/tokens.css |
 | **Note text in four faces, three shadow depths** | js/theme.js + css/later.css §45 |
 | **Lines a note up with its neighbours as you drag it** | js/items.js §7 + css/later.css §46 |
 | **Focus mode: the canvas and nothing else** | js/init.js + css/later.css §47 |
@@ -129,6 +129,7 @@ The things that make it more than a note wall:
 | **Three graphics tiers, picked for the machine** | js/theme.js + js/view.js §4c |
 | **Mono accent, and a theme change that fades** | js/helpers.js + js/theme.js §4v |
 | **A phone with a pen as a wireless drawing tablet, showing the board live** | src/tablet.js + js/tablet.js §4x |
+| **A drag stays under the pointer through a zoom; spelling suggestions on right-click** | js/items.js + js/menus.js §4z1 |
 
 ---
 
@@ -225,7 +226,7 @@ never touch individual elements.
 |--------|-----------|
 | `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` — and JSON Canvas (§4t): `pickCanvasPath(suggested)` `writeCanvas(file,json,id,names,folder)` `importCanvas()` `readCanvas(path)` `resolveCanvas(dir,rels)` — and Samsung Notes (§4w): `pickSamsung()` `readSamsung(path,boardId)` |
 | `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
-| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` |
+| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` — and spelling (§4z1): `onSpell(cb)` `learnWord(w)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
 | `window.mbPad` | `start(address)` `stop()` `send(msg)` `addresses()` `onState(cb)` `onMessage(cb)` — the phone as a tablet (§4x). The renderer never sees the token and cannot pick a port; `send` passes only the `view` message. |
 | `window.mbSys` | `info()` → `{ compositing, software, softwareRender }` — whether Chromium is drawing this window without a GPU. See §4c. |
@@ -625,12 +626,12 @@ no bundler and no build step — the only thing joining them is the order
 
 | File | Lines | What is in it |
 |------|------:|---------------|
-| `helpers.js` | ~490 | `$()` `clamp` `uid` `esc` `stripHtml` `maxOf`/`minOf`, `THEMES` (18), `ACCENTS` (15, with `mono`), an item's colour (`okItemColor` `paintColor` `colorStyle` `colorName`, §4v), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
+| `helpers.js` | ~490 | `$()` `clamp` `uid` `esc` `stripHtml` `maxOf`/`minOf`, `THEMES` (20), `ACCENTS` (15, with `mono`), an item's colour (`okItemColor` `paintColor` `colorStyle` `colorName`, §4v), `icon()`, and the language layer: `t()` `te()` `num()` `pct()` `setLang` `applyStaticText`. See §4a. |
 | `state.js` | ~1150 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, `okDateKey()` (§4s), and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
 | `sound.js` | ~400 | **Menu sounds** and **typing sounds** (2.1, both in Settings ▸ Extra): `keySfx` `KEY_SWITCHES` `wireKeySounds`, and `sfx(kind)` — move, select, back, open, toggle — synthesised with Web Audio through a generated room reverb, and `wireSounds()`, which hears menus by delegation and a MutationObserver. Off unless `settings.sounds`. See §4v. |
 | `theme.js` | ~340 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, **`applyThemeFaded(ms)`** (a View Transition crossfade, §4v), `applyLang`, `applySettings`, `applyNotePad` (§4z), and the graphics tiers: `gpuName` `detectPerf` `resolvedPerf` (§4c). See §3d. |
 | `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `fillStubs` `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
-| `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `fitTo`, and `onWheel`, which lets a long note scroll — §4v). |
+| `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `stopFlight` `fitTo`, `followCamera` + `gestureDelta` — §4z1, and `onWheel`, which lets a long note scroll — §4v). |
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
 | `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
 | `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
@@ -639,7 +640,7 @@ no bundler and no build step — the only thing joining them is the order
 | `media.js` | ~740 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
-| `menus.js` | ~540 | The right-click menu (colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
+| `menus.js` | ~660 | The right-click menu (spelling suggestions on top — `awaitSpellMenu` `answerSpell` `wordRangeAt` `fixSpelling`, §4z1; colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
 | `edit-ops.js` | ~915 | Create, delete (`askThenDelete` is the one door), **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export** (`loadExportPictures` → `paintBoardCanvas`, which draws the ink since 2.1). See §4f and §4g. |
 | `boards.js` | ~1500 | Several boards, one rail: switching, the flyout, locking, drag-to-board, undo (including the `ink` step), the clipboard with its ropes (`clipLinks` `retieLinks`), **the paste ghost** (`beginPasteGhost` … `commitPasteGhost`), and the JSON export/import. |
 | `settings.js` | ~1640 | The settings panel and every dialog behind it (the formula window: `openMathDialog` `applyMath` `MATH_SNIPS`, §4y; the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()`, the stats cache, and the padding sliders with their example note (`wirePadStudio` `paintPadStudio`, §4z). See §5b. |
@@ -2224,6 +2225,51 @@ Narrow notes still stack the block into one column (container queries, now up
 to six columns), as `display: block`, so the widths are ignored while stacked.
 
 Tests: the **2.4** suite in `tools/test-app-features.js`.
+
+## 4z1. Mental Board 2.4.1
+
+### A gesture is anchored to the board, not the screen — `js/items.js`
+
+Every gesture used to keep where the press was *on screen* plus the zoom at
+that moment, and turn screen travel into world travel with that frozen zoom.
+Wheel-zooming or wheel-panning in the middle of a drag — always allowed — then
+slid the dragged note off the pointer (zoom 100%→50% and it moved half as far
+as the hand from then on), left a lasso's first corner stuck to the screen,
+and made a middle-button pan throw the zoom's own translation away. The same
+pattern was copied into ink.js's select gesture and the phone's.
+
+Now a move, resize or lasso keeps `w0`, the **world** point under the press,
+and measures each move as `toWorld(pointer) − w0` (`gestureDelta()`). The
+pan runs on increments (`lx`/`ly`). `applyView()` ends with
+`followCamera()`, which replays the gesture's last pointer event (`g.last`)
+and ink's (`followInkCamera()`), so what is being dragged stays under a
+pointer that has not moved while the board zooms under it. A pan is never
+replayed (it *is* the camera; the `replaying` flag stops the loop). The
+phone's select gesture brings its own world point on the fake event
+(`e.world`, `padClient()`), because its region map is frozen at the stroke's
+start. `zoomAt()`, a wheel pan and `beginPan()` call `stopFlight()`: a
+fly-to still running used to overwrite the view the next frame.
+
+**Rule:** a new gesture stores world coordinates at the press, never
+`clientX` plus a zoom.
+
+Test: **2.4.1** in `tools/test-app-features.js` (drag, zoom, move on; pan, zoom, pan on). It fails on the 2.4.0 code.
+
+### Spelling suggestions on right-click — `js/menus.js`, `main.js`
+
+Right-click a red-underlined word in the note being edited and the right
+spellings are the first rows of the note's menu, then **Add to dictionary**.
+Only Chromium knows the misspelling and its suggestions, and it tells main,
+not the page — the `context-menu` event, which fires only if the page does
+**not** `preventDefault()` the contextmenu. So `onContextMenu()` lets that one
+case through and calls `awaitSpellMenu()`; main forwards `{ word,
+suggestions }` as `spell:menu`; `answerSpell()` opens the menu with them, or
+without them after `SPELL_WAIT` (160 ms) if no answer comes. The word's Range
+is taken at the right-click (`wordRangeAt()`, or Chromium's own selection
+when it equals the word), and a fix goes through `execCommand('insertText')`
+— one undo step and one input event, like typing. The rows keep the caret by
+cancelling their `mousedown`. `spell:learn` adds to the session's
+dictionary, which lives in userData. Off with Settings ▸ spell-check.
 
 ## 4o. Lining a note up with its neighbours
 

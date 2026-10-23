@@ -8,12 +8,81 @@
 /* ─────────────── 12. context menu ─────────────── */
 function closeCtxMenu() { const m = $('ctxMenu'); m.classList.add('hidden'); m.classList.remove('cm-wide'); }
 
-function openCtxMenu(clientX, clientY, id) {
+/* ---- spelling (2.4.1) ----
+   Right-click a word with the red underline, in a note being edited, and the
+   right spellings are the first rows of the menu — the way Windows shows them.
+
+   Only Chromium knows what is misspelled and what it should be, and it tells
+   main, not the page (the `context-menu` event in main.js). So the right-click
+   is let through, the menu waits for main's answer, and opens with it. The
+   wait is capped: no answer in SPELL_WAIT ms and the menu opens as it always
+   did. The word's range is taken now, at the right-click, because pressing a
+   row later must not depend on where the caret has wandered by then. */
+const SPELL_WAIT = 160;
+let spellAsk = null;      // { x, y, id, range, timer } while a right-click waits for main
+function awaitSpellMenu(x, y, id) {
+  if (spellAsk) clearTimeout(spellAsk.timer);
+  spellAsk = { x, y, id, range: wordRangeAt(x, y) };
+  spellAsk.timer = setTimeout(() => answerSpell(null), SPELL_WAIT);
+}
+function answerSpell(info) {
+  const ask = spellAsk;
+  if (!ask) return;
+  clearTimeout(ask.timer);
+  spellAsk = null;
+  let spell = null;
+  if (info && info.word && ask.range && editing && editing.contains(ask.range.startContainer)) {
+    // the word Chromium means has to be the word we hold, or a fix would land on the wrong one
+    const sel = getSelection();
+    const picked = sel.rangeCount && !sel.isCollapsed && editing.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+    const range = picked && picked.toString().trim() === info.word ? picked.cloneRange()
+      : (ask.range.toString() === info.word ? ask.range : null);
+    if (range) spell = { word: info.word, suggestions: info.suggestions || [], range, body: editing };
+  }
+  openCtxMenu(ask.x, ask.y, ask.id, spell);
+}
+if (WIN && WIN.onSpell) WIN.onSpell(answerSpell);
+
+// the word under a point, as a Range inside one text node
+function wordRangeAt(x, y) {
+  const at = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+  if (!at || at.startContainer.nodeType !== 3) return null;
+  const node = at.startContainer, s = node.data;
+  const isW = (ch) => /[\p{L}\p{M}\p{N}'’]/u.test(ch);
+  let a = at.startOffset, b = at.startOffset;
+  while (a > 0 && isW(s[a - 1])) a--;
+  while (b < s.length && isW(s[b])) b++;
+  while (a < b && /['’]/.test(s[a])) a++;          // quotes round a word are not part of it
+  while (b > a && /['’]/.test(s[b - 1])) b--;
+  if (a === b) return null;
+  const r = document.createRange();
+  r.setStart(node, a); r.setEnd(node, b);
+  return r;
+}
+// put the right spelling in, through the editor, so it is one undo and one input event
+function fixSpelling(spell, word) {
+  if (!spell.body.isConnected || editing !== spell.body) return;
+  spell.body.focus();
+  const sel = getSelection();
+  sel.removeAllRanges(); sel.addRange(spell.range);
+  document.execCommand('insertText', false, word);
+}
+function spellRows(spell) {
+  let html = `<div class="cm-label">${icon('edit_note')}<span>${te('menu.spelling')}</span></div>`;
+  if (spell.suggestions.length) {
+    html += spell.suggestions.map((s, i) =>
+      `<button class="cm-item cm-spell" data-spell="${i}">${icon('check')}<span dir="auto">${esc(s)}</span></button>`).join('');
+  } else html += `<p class="cm-hint">${te('menu.noSuggestions')}</p>`;
+  html += `<button class="cm-item cm-spell" data-spell="learn">${icon('menu_book')}<span>${te('menu.addToDictionary')}</span></button>`;
+  return html + `<div class="cm-sep"></div>`;
+}
+
+function openCtxMenu(clientX, clientY, id, spell) {
   const menu = $('ctxMenu');
   menu.classList.remove('cm-wide');            // the shape panel's width (shapes.js)
   const targets = id ? (selection.has(id) && selection.size > 1 ? [...selection] : [id]) : [];
   if (id && !selection.has(id)) setSelection([id], false);
-  let html = '';
+  let html = spell ? spellRows(spell) : '';
 
   const onePic = targets.length === 1 && !!(state.notes.find((x) => x.id === targets[0]) || {}).pic;
   if (onePic) {
@@ -265,7 +334,19 @@ function openCtxMenu(clientX, clientY, id) {
     closeCtxMenu();
   }));
 
-  menu.querySelectorAll('.cm-item').forEach((b) => b.addEventListener('click', () => {
+  menu.querySelectorAll('.cm-spell').forEach((b) => {
+    b.addEventListener('mousedown', (e) => e.preventDefault());   // the note keeps the caret
+    b.addEventListener('click', () => {
+      closeCtxMenu();
+      if (b.dataset.spell === 'learn') {
+        WIN.learnWord(spell.word);
+        // Chromium re-checks the text it is asked to; nudging the attribute is that ask
+        spell.body.spellcheck = false; spell.body.spellcheck = true;
+      } else fixSpelling(spell, spell.suggestions[+b.dataset.spell]);
+    });
+  });
+
+  menu.querySelectorAll('.cm-item:not(.cm-spell)').forEach((b) => b.addEventListener('click', () => {
     const act = b.dataset.act;
     closeCtxMenu();
     switch (act) {
