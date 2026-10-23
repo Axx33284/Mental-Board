@@ -202,7 +202,22 @@ function wireImgBar() {
   }));
 }
 
-/* ---- the studio: crop, draw, annotate ---------------------------------- */
+/* ---- the studio: crop, draw, annotate ----------------------------------
+
+   Since 2.6 the studio is a surface you zoom and pan (sketch.js
+   zoomPanSurface — the wheel at the pointer, middle button or Space to drag,
+   two fingers to pinch), and a pen draws in it as a pen: the line follows its
+   pressure, a palm is ignored once the pen has touched the picture, and its
+   eraser end or button erases. The canvas fills the stage and the picture is
+   drawn through `ST.view` ({ x, y, z }: picture pixel (px, py) lands at
+   (x + px·z, y + py·z) in the stage), so getting close to a picture costs
+   nothing — the canvas never grows with the zoom.
+
+   Marks are kept in picture pixels and burned into the picture only on Apply.
+   A pen or highlighter line is `{ type, pts: [[x, y]], ws?, color, w }`; `ws`,
+   one width per point, is there only when a pen with pressure drew it, and is
+   drawn with ink.js's brush outline. Undo is the studio's own (`ST.undo`):
+   the marks and the crop, a step per change. */
 const ST = {
   img: null,          // HTMLImageElement of the working source
   src: '',            // data url of the working source
@@ -211,11 +226,14 @@ const ST = {
   tool: 'crop',
   color: '#ff5252',
   weight: 4,
-  scale: 1,           // canvas px per image px
+  view: { x: 0, y: 0, z: 1 },   // where the picture sits in the stage, and how close
+  undo: [], redo: [],
+  penSeen: false,     // once a pen has drawn, one finger is a palm
   drag: null,
   target: null        // the <img> in the note being edited
 };
 const ST_COLORS = ['#ff5252', '#ffb300', '#ffe94d', '#43d17a', '#41c9e2', '#5b8cff', '#b07cff', '#ffffff', '#101014'];
+let stSurface = null;
 
 // file:// images taint a canvas, so read the bytes through preload instead
 async function toDataUrl(src) {
@@ -237,66 +255,96 @@ async function openStudio(target) {
   img.onload = () => {
     ST.img = img; ST.src = dataUrl;
     ST.crop = { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
-    ST.marks = []; ST.tool = 'crop';
+    ST.marks = []; ST.tool = 'crop'; ST.undo = []; ST.redo = []; ST.penSeen = false;
     $('studio').classList.remove('hidden');
     buildStudioChrome();
-    requestAnimationFrame(fitStudio);
+    requestAnimationFrame(() => fitStudio());
   };
   img.onerror = () => toast(t('msg.imageFailed'));
   img.src = dataUrl;
 }
-function closeStudio() { $('studio').classList.add('hidden'); ST.img = null; ST.target = null; }
+function closeStudio() { $('studio').classList.add('hidden'); ST.img = null; ST.target = null; ST.drag = null; }
 
 function buildStudioChrome() {
+  const custom = ST_COLORS.includes(ST.color) ? '#e05a5a' : ST.color;
   $('stColors').innerHTML = ST_COLORS.map((c) =>
-    `<button data-c="${c}" class="${c === ST.color ? 'on' : ''}" style="background:${c}"></button>`).join('');
+    `<button data-c="${c}" class="${c === ST.color ? 'on' : ''}" style="background:${c}"></button>`).join('') +
+    `<label class="ik-custom${ST_COLORS.includes(ST.color) ? '' : ' on'}" title="${te('ink.custom')}" style="--sw:${custom}"><input type="color" value="${custom}"></label>`;
   $('stColors').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-    ST.color = b.dataset.c; buildStudioChrome();
+    ST.color = b.dataset.c; if (ST.tool === 'eraser' || ST.tool === 'crop') ST.tool = 'pen';
+    buildStudioChrome(); drawStudio();
   }));
+  const pick = $('stColors').querySelector('input');
+  pick.addEventListener('input', () => pick.parentElement.style.setProperty('--sw', pick.value));
+  pick.addEventListener('change', () => {
+    ST.color = pick.value; if (ST.tool === 'eraser' || ST.tool === 'crop') ST.tool = 'pen';
+    buildStudioChrome(); drawStudio();
+  });
   $('stTools').querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === ST.tool));
+  $('stWeight').value = ST.weight;
+  $('stWeightOut').textContent = num(ST.weight);
   $('stHint').textContent = ST.tool ? t('studio.hint.' + ST.tool) : '';
+  $('stUndo').disabled = !ST.undo.length;
+  $('stRedo').disabled = !ST.redo.length;
 }
 
-function fitStudio() {
+/* The canvas is the stage's size, in device pixels. `keepView` is a resize:
+   the picture stays where it was; otherwise it is fitted, never past 100%. */
+function fitStudio(keepView) {
   if (!ST.img) return;
-  const stage = $('studioStage').getBoundingClientRect();
-  const maxW = stage.width - 48, maxH = stage.height - 48;
-  ST.scale = Math.min(maxW / ST.img.naturalWidth, maxH / ST.img.naturalHeight, 1);
-  const c = $('stCanvas');
-  c.width = Math.round(ST.img.naturalWidth * ST.scale);
-  c.height = Math.round(ST.img.naturalHeight * ST.scale);
-  $('stWrap').style.width = c.width + 'px';
-  $('stWrap').style.height = c.height + 'px';
+  const r = $('studioStage').getBoundingClientRect();
+  const c = $('stCanvas'), dpr = devicePixelRatio || 1;
+  c.width = Math.max(1, Math.round(r.width * dpr));
+  c.height = Math.max(1, Math.round(r.height * dpr));
+  if (!keepView) {
+    const z = Math.min((r.width - 48) / ST.img.naturalWidth, (r.height - 48) / ST.img.naturalHeight, 1);
+    ST.view = { x: (r.width - ST.img.naturalWidth * z) / 2, y: (r.height - ST.img.naturalHeight * z) / 2, z };
+  }
+  setStudioView(ST.view);
+}
+function setStudioView(v) {
+  ST.view = { x: v.x, y: v.y, z: v.z };
+  $('stPct').textContent = pct(Math.round(v.z * 100));
   drawStudio();
 }
 
 function drawStudio() {
+  if (!ST.img) return;
   const c = $('stCanvas');
   const g = c.getContext('2d');
+  const dpr = devicePixelRatio || 1, v = ST.view;
+  g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, c.width, c.height);
-  g.drawImage(ST.img, 0, 0, c.width, c.height);
-  ST.marks.forEach((m) => drawMark(g, m, ST.scale, 0, 0));
+  g.setTransform(dpr * v.z, 0, 0, dpr * v.z, dpr * v.x, dpr * v.y);
+  // closer than 1:1 shows the pixels as pixels — that is what you are pointing at
+  g.imageSmoothingEnabled = v.z < 2;
+  const W = ST.img.naturalWidth, H = ST.img.naturalHeight;
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 18 / v.z;
+  g.drawImage(ST.img, 0, 0, W, H);
+  g.restore();
+  ST.marks.forEach((m) => drawMark(g, m, 1, 0, 0));
   // dim everything outside the crop
-  const k = ST.scale, cr = ST.crop;
-  if (cr && (cr.x || cr.y || cr.w !== ST.img.naturalWidth || cr.h !== ST.img.naturalHeight) || ST.tool === 'crop') {
+  const cr = ST.crop;
+  if (cr && (cr.x || cr.y || cr.w !== W || cr.h !== H) || ST.tool === 'crop') {
     g.save();
     g.fillStyle = 'rgba(0,0,0,.5)';
     g.beginPath();
-    g.rect(0, 0, c.width, c.height);
-    g.rect(cr.x * k, cr.y * k, cr.w * k, cr.h * k);
+    g.rect(0, 0, W, H);
+    g.rect(cr.x, cr.y, cr.w, cr.h);
     g.fill('evenodd');
+    g.strokeStyle = '#fff'; g.lineWidth = 1 / v.z;
+    g.strokeRect(cr.x, cr.y, cr.w, cr.h);
     g.restore();
-    g.strokeStyle = '#fff'; g.lineWidth = 1;
-    g.strokeRect(cr.x * k + .5, cr.y * k + .5, cr.w * k - 1, cr.h * k - 1);
   }
   positionCropHandles();
 }
 function positionCropHandles() {
-  const box = $('stCrop'), k = ST.scale, cr = ST.crop;
+  const box = $('stCrop'), v = ST.view, cr = ST.crop;
   if (!cr) return;
   box.classList.toggle('hidden', ST.tool !== 'crop');
-  box.style.left = (cr.x * k) + 'px'; box.style.top = (cr.y * k) + 'px';
-  box.style.width = (cr.w * k) + 'px'; box.style.height = (cr.h * k) + 'px';
+  box.style.left = (v.x + cr.x * v.z) + 'px'; box.style.top = (v.y + cr.y * v.z) + 'px';
+  box.style.width = (cr.w * v.z) + 'px'; box.style.height = (cr.h * v.z) + 'px';
 }
 
 function drawMark(g, m, k, ox, oy) {
@@ -305,10 +353,20 @@ function drawMark(g, m, k, ox, oy) {
   g.lineWidth = Math.max(1, m.w * k);
   g.lineCap = 'round'; g.lineJoin = 'round';
   const X = (v) => (v - ox) * k, Y = (v) => (v - oy) * k;
-  if (m.type === 'pen' && m.pts.length > 1) {
-    g.beginPath(); g.moveTo(X(m.pts[0][0]), Y(m.pts[0][1]));
-    for (let i = 1; i < m.pts.length; i++) g.lineTo(X(m.pts[i][0]), Y(m.pts[i][1]));
-    g.stroke();
+  if ((m.type === 'pen' || m.type === 'marker') && m.pts.length) {
+    if (m.type === 'marker') { g.globalAlpha = 0.38; g.lineWidth = Math.max(1, m.w * 3 * k); g.lineCap = 'square'; }
+    if (m.ws && m.pts.length > 1) {
+      // a pen with pressure: ink.js's brush outline, filled
+      const flat = [];
+      m.pts.forEach((p) => flat.push(X(p[0]), Y(p[1])));
+      try { g.fill(new Path2D(inkBrushPath(flat, m.ws.map((w) => w * k)))); } catch (_) {}
+    } else if (m.pts.length === 1) {
+      g.beginPath(); g.arc(X(m.pts[0][0]), Y(m.pts[0][1]), g.lineWidth / 2, 0, Math.PI * 2); g.fill();
+    } else {
+      g.beginPath(); g.moveTo(X(m.pts[0][0]), Y(m.pts[0][1]));
+      for (let i = 1; i < m.pts.length; i++) g.lineTo(X(m.pts[i][0]), Y(m.pts[i][1]));
+      g.stroke();
+    }
   } else if (m.type === 'box') {
     g.strokeRect(X(m.x), Y(m.y), m.w2 * k, m.h2 * k);
   } else if (m.type === 'arrow') {
@@ -326,6 +384,7 @@ function drawMark(g, m, k, ox, oy) {
     g.textBaseline = 'top';
     const pad = size * 0.32;
     const tw = g.measureText(m.text).width;
+    m.tw = tw / k;                   // its width in picture pixels, for the eraser
     g.fillStyle = 'rgba(0,0,0,.62)';
     roundRectPath(g, X(m.x) - pad, Y(m.y) - pad, tw + pad * 2, size * 1.28 + pad, size * 0.3);
     g.fill();
@@ -345,46 +404,133 @@ function roundRectPath(g, x, y, w, h, r) {
   g.closePath();
 }
 
-// canvas pixel -> image pixel
+// stage pixel -> image pixel, kept on the picture
 function stPoint(e) {
-  const r = $('stCanvas').getBoundingClientRect();
+  const r = $('stCanvas').getBoundingClientRect(), v = ST.view;
   return {
-    x: clamp((e.clientX - r.left) / ST.scale, 0, ST.img.naturalWidth),
-    y: clamp((e.clientY - r.top) / ST.scale, 0, ST.img.naturalHeight)
+    x: clamp((e.clientX - r.left - v.x) / v.z, 0, ST.img.naturalWidth),
+    y: clamp((e.clientY - r.top - v.y) / v.z, 0, ST.img.naturalHeight)
   };
 }
 
+/* ---- undo, the studio's own ---- */
+function studioStep() {
+  ST.undo.push({ marks: ST.marks.slice(), crop: { ...ST.crop } });
+  if (ST.undo.length > 200) ST.undo.shift();
+  ST.redo = [];
+  buildStudioChrome();
+}
+function studioUndo(back) {
+  const from = back ? ST.undo : ST.redo, to = back ? ST.redo : ST.undo;
+  if (!ST.img || !from.length) return;
+  to.push({ marks: ST.marks.slice(), crop: { ...ST.crop } });
+  const s = from.pop();
+  ST.marks = s.marks; ST.crop = s.crop;
+  buildStudioChrome(); drawStudio();
+}
+
+/* ---- the eraser: whole marks, the way the board's eraser takes whole strokes ---- */
+function segDist(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const L = dx * dx + dy * dy;
+  const t0 = L ? clamp(((p.x - a[0]) * dx + (p.y - a[1]) * dy) / L, 0, 1) : 0;
+  return Math.hypot(p.x - a[0] - dx * t0, p.y - a[1] - dy * t0);
+}
+function markNear(m, p, r) {
+  if (m.type === 'pen' || m.type === 'marker') {
+    const half = (m.type === 'marker' ? m.w * 3 : Math.max(...(m.ws || [m.w]))) / 2;
+    if (m.pts.length === 1) return Math.hypot(p.x - m.pts[0][0], p.y - m.pts[0][1]) <= r + half;
+    for (let i = 1; i < m.pts.length; i++) if (segDist(p, m.pts[i - 1], m.pts[i]) <= r + half) return true;
+    return false;
+  }
+  if (m.type === 'arrow') return segDist(p, [m.x1, m.y1], [m.x2, m.y2]) <= r + m.w / 2;
+  if (m.type === 'box') {
+    const c = [[m.x, m.y], [m.x + m.w2, m.y], [m.x + m.w2, m.y + m.h2], [m.x, m.y + m.h2]];
+    return c.some((a, i) => segDist(p, a, c[(i + 1) % 4]) <= r + m.w / 2);
+  }
+  if (m.type === 'text') {
+    const w = m.tw || m.text.length * m.size * 0.6;
+    return p.x >= m.x - r && p.x <= m.x + w + r && p.y >= m.y - r && p.y <= m.y + m.size * 1.3 + r;
+  }
+  return false;
+}
+function studioErase(p) {
+  const d = ST.drag;
+  const from = d.last || p;
+  d.last = p;
+  const steps = Math.max(1, Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) / (d.r * 0.5)));
+  let hit = false;
+  for (let i = 1; i <= steps; i++) {
+    const k = i / steps, q = { x: from.x + (p.x - from.x) * k, y: from.y + (p.y - from.y) * k };
+    const keep = ST.marks.filter((m) => !markNear(m, q, d.r));
+    if (keep.length !== ST.marks.length) {
+      if (!d.hit) studioStep();           // one undo step per sweep, none for a sweep that took nothing
+      d.hit = true; hit = true;
+      ST.marks = keep;
+    }
+  }
+  if (hit) drawStudio();
+}
+
 function studioDown(e) {
-  if (!ST.img || e.button !== 0) return;
+  if (!ST.img || ST.drag || (stSurface && stSurface.busy())) return;
+  if (e.pointerType === 'pen') ST.penSeen = true;
+  else if (e.pointerType === 'touch' && ST.penSeen) return;     // a palm, once a pen has been used
+  if (e.button !== 0 && e.button !== 5) return;
   const handle = e.target.closest('.stc');
   const p = stPoint(e);
   e.preventDefault();
-  if (ST.tool === 'crop') {
+  // the pen's eraser end (button 5) or its barrel button erases, whatever the tool
+  const tool = (e.button === 5 || (e.pointerType === 'pen' && (e.buttons & 2))) ? 'eraser' : ST.tool;
+  if (tool === 'crop') {
+    studioStep();
     ST.drag = handle ? { kind: 'crop-h', corner: [...handle.classList].find((c) => /^(nw|ne|sw|se)$/.test(c)), c0: { ...ST.crop } }
                      : { kind: 'crop-new', ox: p.x, oy: p.y };
     if (ST.drag.kind === 'crop-new') ST.crop = { x: p.x, y: p.y, w: 0, h: 0 };
-  } else if (ST.tool === 'pen') {
-    ST.marks.push({ type: 'pen', pts: [[p.x, p.y]], color: ST.color, w: ST.weight });
-    ST.drag = { kind: 'pen' };
-  } else if (ST.tool === 'box') {
+  } else if (tool === 'eraser') {
+    ST.drag = { kind: 'erase', r: Math.max(ST.weight * 2, 10 / ST.view.z), hit: false };
+    studioErase(p);
+  } else if (tool === 'pen' || tool === 'marker') {
+    studioStep();
+    const pr = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null;
+    ST.marks.push({ type: tool, pts: [[p.x, p.y]], color: ST.color, w: ST.weight });
+    ST.drag = { kind: 'pen', raw: [{ x: p.x, y: p.y, p: pr, t: e.timeStamp }], pressure: pr != null && tool === 'pen' };
+  } else if (tool === 'box') {
+    studioStep();
     ST.marks.push({ type: 'box', x: p.x, y: p.y, w2: 0, h2: 0, color: ST.color, w: ST.weight });
     ST.drag = { kind: 'box', ox: p.x, oy: p.y };
-  } else if (ST.tool === 'arrow') {
+  } else if (tool === 'arrow') {
+    studioStep();
     ST.marks.push({ type: 'arrow', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: ST.color, w: ST.weight });
     ST.drag = { kind: 'arrow' };
-  } else if (ST.tool === 'text') {
+  } else if (tool === 'text') {
     openStudioText(p);
     return;
   }
+  ST.drag.id = e.pointerId;
   window.addEventListener('pointermove', studioMove);
   window.addEventListener('pointerup', studioUp);
+  window.addEventListener('pointercancel', studioUp);
   drawStudio();
 }
 function studioMove(e) {
-  if (!ST.drag) return;
-  const p = stPoint(e);
   const d = ST.drag;
+  if (!d || e.pointerId !== d.id) return;
   const last = ST.marks[ST.marks.length - 1];
+  if (d.kind === 'pen') {
+    // every point the pen reported, not only the one per frame — a quick line stays smooth
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+    for (const q of (evs && evs.length ? evs : [e])) {
+      const p = stPoint(q);
+      last.pts.push([p.x, p.y]);
+      d.raw.push({ x: p.x, y: p.y, p: q.pointerType === 'pen' && q.pressure > 0 ? q.pressure : null, t: q.timeStamp });
+    }
+    if (d.pressure) last.ws = brushWidths(d.raw, ST.weight, ST.view.z);
+    drawStudio();
+    return;
+  }
+  const p = stPoint(e);
+  if (d.kind === 'erase') { studioErase(p); return; }
   if (d.kind === 'crop-new') {
     ST.crop = { x: Math.min(d.ox, p.x), y: Math.min(d.oy, p.y), w: Math.abs(p.x - d.ox), h: Math.abs(p.y - d.oy) };
   } else if (d.kind === 'crop-h') {
@@ -393,8 +539,6 @@ function studioMove(e) {
     const nx1 = d.corner[1] === 'w' ? p.x : x1, nx2 = d.corner[1] === 'e' ? p.x : x2;
     const ny1 = d.corner[0] === 'n' ? p.y : y1, ny2 = d.corner[0] === 's' ? p.y : y2;
     ST.crop = { x: Math.min(nx1, nx2), y: Math.min(ny1, ny2), w: Math.abs(nx2 - nx1), h: Math.abs(ny2 - ny1) };
-  } else if (d.kind === 'pen') {
-    last.pts.push([p.x, p.y]);
   } else if (d.kind === 'box') {
     last.x = Math.min(d.ox, p.x); last.y = Math.min(d.oy, p.y);
     last.w2 = Math.abs(p.x - d.ox); last.h2 = Math.abs(p.y - d.oy);
@@ -403,28 +547,38 @@ function studioMove(e) {
   }
   drawStudio();
 }
-function studioUp() {
+function studioUp(e) {
+  if (e && ST.drag && e.pointerId !== ST.drag.id) return;
   window.removeEventListener('pointermove', studioMove);
   window.removeEventListener('pointerup', studioUp);
+  window.removeEventListener('pointercancel', studioUp);
   const d = ST.drag; ST.drag = null;
-  if (!d) return;
+  if (!d || !ST.img) return;
   // a click rather than a drag: keep the whole image, drop the empty mark
   if (d.kind === 'crop-new' && (ST.crop.w < 8 || ST.crop.h < 8)) {
     ST.crop = { x: 0, y: 0, w: ST.img.naturalWidth, h: ST.img.naturalHeight };
   }
   const last = ST.marks[ST.marks.length - 1];
-  if (last && ((last.type === 'box' && (last.w2 < 4 || last.h2 < 4)) ||
-               (last.type === 'arrow' && Math.hypot(last.x2 - last.x1, last.y2 - last.y1) < 6) ||
-               (last.type === 'pen' && last.pts.length < 2))) ST.marks.pop();
+  if (d.kind !== 'erase' && last && ((last.type === 'box' && (last.w2 < 4 || last.h2 < 4)) ||
+               (last.type === 'arrow' && Math.hypot(last.x2 - last.x1, last.y2 - last.y1) < 6))) { ST.marks.pop(); ST.undo.pop(); }
+  buildStudioChrome();
   drawStudio();
+}
+// a second finger landed: whatever the first one started was the start of a pinch
+function cancelStudioDrag() {
+  const d = ST.drag;
+  if (!d) return;
+  if (d.kind !== 'erase') studioUndo(true);
+  ST.redo.pop();
+  studioUp();
 }
 
 function openStudioText(p) {
   const holder = $('stMarks');
   const inp = document.createElement('input');
   inp.className = 'st-text-in';
-  inp.style.left = (p.x * ST.scale) + 'px';
-  inp.style.top = (p.y * ST.scale) + 'px';
+  inp.style.left = (ST.view.x + p.x * ST.view.z) + 'px';
+  inp.style.top = (ST.view.y + p.y * ST.view.z) + 'px';
   inp.style.color = ST.color;
   inp.placeholder = t('studio.notePlaceholder');
   holder.appendChild(inp);
@@ -438,7 +592,8 @@ function openStudioText(p) {
     const v = inp.value.trim();
     inp.remove();
     if (keep && v) {
-      ST.marks.push({ type: 'text', x: p.x, y: p.y, text: v, color: ST.color, size: Math.max(14, ST.weight * 5) });
+      studioStep();
+      ST.marks.push({ type: 'text', x: p.x, y: p.y, text: v, color: ST.color, size: Math.max(14, Math.min(ST.weight * 5, 160)) });
       drawStudio();
     }
   };
@@ -449,6 +604,44 @@ function openStudioText(p) {
   });
   const commit = () => finish(true);
   inp.addEventListener('blur', commit);
+}
+
+/* Keys while the studio is open. Returns true when the key was the studio's,
+   so the board's shortcuts never fire behind it; Escape goes on to close it. */
+function onStudioKey(e) {
+  if (e.key === 'Escape') return false;
+  if (e.target.closest && e.target.closest('input, textarea')) return true;
+  const ctrl = e.ctrlKey || e.metaKey;
+  const k = (e.key || '').toLowerCase();
+  const ch = chordKey(e);
+  if (ctrl && k === 'z') { e.preventDefault(); studioUndo(!e.shiftKey); }
+  else if (ctrl && k === 'y') { e.preventDefault(); studioUndo(false); }
+  else if (ctrl && (ch === '=' || ch === '+')) { e.preventDefault(); stSurface.zoomCentre(1.25); }
+  else if (ctrl && ch === '-') { e.preventDefault(); stSurface.zoomCentre(1 / 1.25); }
+  else if (ctrl && ch === '0') { e.preventDefault(); stSurface.zoomCentre(1 / ST.view.z); }
+  else if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitStudio(); }
+  else if (!ctrl) {
+    const tools = { KeyC: 'crop', KeyD: 'pen', KeyM: 'marker', KeyE: 'eraser', KeyR: 'box', KeyA: 'arrow', KeyT: 'text' };
+    if (tools[e.code]) { e.preventDefault(); ST.tool = tools[e.code]; buildStudioChrome(); drawStudio(); }
+    else if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+      e.preventDefault();
+      ST.weight = clamp(ST.weight + (e.code === 'BracketLeft' ? -1 : 1), 1, 40);
+      buildStudioChrome();
+    }
+  }
+  return true;
+}
+function wireStudioSurface() {
+  stSurface = zoomPanSurface($('studioStage'), {
+    get: () => ST.view, set: setStudioView, min: 0.02, max: 32, cancel: cancelStudioDrag
+  });
+  $('stZoomIn').addEventListener('click', () => stSurface.zoomCentre(1.25));
+  $('stZoomOut').addEventListener('click', () => stSurface.zoomCentre(1 / 1.25));
+  $('stPct').addEventListener('click', () => stSurface.zoomCentre(1 / ST.view.z));
+  $('stFit').addEventListener('click', () => fitStudio());
+  $('stUndo').addEventListener('click', () => studioUndo(true));
+  $('stRedo').addEventListener('click', () => studioUndo(false));
+  $('stCanvas').addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button erases here
 }
 
 function rotateStudio() {
@@ -464,6 +657,8 @@ function rotateStudio() {
     ST.img = img; ST.src = url;
     ST.crop = { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
     ST.marks = [];                 // annotations were positioned for the old orientation
+    ST.undo = []; ST.redo = [];    // and so was every step back to them
+    buildStudioChrome();
     fitStudio();
   };
   img.src = url;

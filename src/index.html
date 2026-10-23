@@ -890,12 +890,18 @@
       <div class="st-tools" id="stTools">
         <button data-tool="crop" class="on" data-t-title="studio.crop"></button>
         <button data-tool="pen" data-t-title="studio.pen"></button>
+        <button data-tool="marker" data-t-title="studio.marker"></button>
+        <button data-tool="eraser" data-t-title="studio.eraser"></button>
         <button data-tool="box" data-t-title="studio.box"></button>
         <button data-tool="arrow" data-t-title="studio.arrow"></button>
         <button data-tool="text" data-t-title="studio.text"></button>
       </div>
       <div class="st-colors" id="stColors"></div>
-      <label class="st-width"><span data-t="studio.size"></span> <input type="range" id="stWeight" min="1" max="14" step="1" value="4"></label>
+      <label class="st-width"><span data-t="studio.size"></span> <input type="range" id="stWeight" min="1" max="40" step="1" value="4"><output id="stWeightOut"></output></label>
+      <div class="st-tools st-undo">
+        <button id="stUndo" data-t-title="menu.undo"></button>
+        <button id="stRedo" data-t-title="menu.redo"></button>
+      </div>
       <button class="sheet-x" id="studioClose" data-t-aria="tb.close"></button>
     </header>
     <div class="studio-stage" id="studioStage">
@@ -909,6 +915,12 @@
       </div>
     </div>
     <footer class="studio-foot">
+      <div class="st-zoom" dir="ltr">
+        <button id="stZoomOut" data-t-title="zoom.out"></button>
+        <button id="stPct" data-t-title="zoom.reset"></button>
+        <button id="stZoomIn" data-t-title="zoom.in"></button>
+        <button id="stFit" data-t-title="zoom.fit"></button>
+      </div>
       <span class="st-hint" id="stHint"></span>
       <button class="btn" id="stRotate"><span class="b-ic"></span><span data-t="studio.rotate"></span></button>
       <button class="btn" id="stReset"><span class="b-ic"></span><span data-t="studio.reset"></span></button>
@@ -924,8 +936,8 @@
     <input type="text" id="skTitle" dir="auto" maxlength="120" spellcheck="false" data-t-ph="sketch.titlePh" data-t-aria="sketch.titlePh">
     <div class="sk-bar" id="skBar"></div>
   </header>
-  <div class="sk-stage">
-    <svg id="skSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><rect id="skPage" class="sk-page" x="0" y="0"></rect></svg>
+  <div class="sk-stage" id="skStage">
+    <svg id="skSvg" xmlns="http://www.w3.org/2000/svg"><g id="skWorld"></g></svg>
   </div>
 </div>
 

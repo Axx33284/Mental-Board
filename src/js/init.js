@@ -193,6 +193,7 @@ function onContextMenu(e) {
 
 function onKeyDown(e) {
   if (sketchOpen()) { onSketchKey(e); return; }    // a drawing note open full screen has every key (sketch.js)
+  if (!$('studio').classList.contains('hidden') && onStudioKey(e)) return;   // and so has the picture editor (media.js)
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
 
   if (e.key === 'Escape') {
@@ -1081,15 +1082,17 @@ function init() {
   $('stRotate').addEventListener('click', rotateStudio);
   $('stReset').addEventListener('click', () => {
     if (!ST.img) return;
+    studioStep();
     ST.marks = []; ST.crop = { x: 0, y: 0, w: ST.img.naturalWidth, h: ST.img.naturalHeight };
     drawStudio();
   });
   $('stTools').querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => {
     ST.tool = b.dataset.tool; buildStudioChrome(); drawStudio();
   }));
-  $('stWeight').addEventListener('input', () => { ST.weight = +$('stWeight').value; });
+  $('stWeight').addEventListener('input', () => { ST.weight = +$('stWeight').value; $('stWeightOut').textContent = num(ST.weight); });
   $('stWrap').addEventListener('pointerdown', studioDown);
-  window.addEventListener('resize', () => { if (ST.img) fitStudio(); });
+  wireStudioSurface();
+  window.addEventListener('resize', () => { if (ST.img) fitStudio(true); });
 
   if (WIN && WIN.onMaximized) WIN.onMaximized(() => {});
   $('viewport').focus();
@@ -1415,6 +1418,13 @@ const STATIC_ICONS = [
   ['#imgBar [data-img="delete"]', 'delete'],
   ['#stTools [data-tool="crop"]', 'crop'],
   ['#stTools [data-tool="pen"]', 'draw'],
+  ['#stTools [data-tool="marker"]', 'ink_highlighter'],
+  ['#stTools [data-tool="eraser"]', 'ink_eraser'],
+  ['#stUndo', 'undo'],
+  ['#stRedo', 'redo'],
+  ['#stZoomOut', 'zoom_out'],
+  ['#stZoomIn', 'zoom_in'],
+  ['#stFit', 'fit_screen'],
   ['#stTools [data-tool="box"]', 'crop_square'],
   ['#stTools [data-tool="arrow"]', 'north_east'],
   ['#stTools [data-tool="text"]', 'title'],

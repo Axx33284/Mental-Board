@@ -1169,6 +1169,7 @@ module.exports = [
         try { withTheme(pictureTheme(), () => paintBoardCanvas(activeBoard(), 1, pics)); } catch (e) { painted = String(e); }
         // nonsense off the disk is healed, not drawn
         const healed = okSketch({ w: 'x', h: -4, title: 7, strokes: [{ pts: [1] }, { pts: [0, 0, 5, 5], tool: 'pen' }] });
+        healed.legacyPage = 'w' in healed || 'h' in healed;      // 2.6: no page, only what was drawn
         return { id: n.id, opened, live, ws, shown, kept, undone, painted, healed, text: noteText(n), title: noteTitle(n) };
       });
       ok(r.opened, 'a new drawing note opens to be drawn on');
@@ -1177,9 +1178,85 @@ module.exports = [
       ok(r.undone === 0, 'one undo takes back the whole time in the editor');
       ok(r.painted === true, 'the board picture paints it: ' + r.painted);
       ok(r.text === 'Groceries' && r.title === 'Groceries', 'find and the rope menus know it by its title');
-      ok(r.healed.w === 1600 && r.healed.h === 200 && r.healed.title === '' && r.healed.strokes.length === 1, 'healed: ' + JSON.stringify(r.healed));
+      ok(!r.healed.legacyPage && r.healed.title === '' && r.healed.strokes.length === 1, 'healed: ' + JSON.stringify(r.healed));
       const disk = onDisk().notes.find((x) => x.id === r.id);
       ok(disk && disk.sketch && disk.sketch.title === 'Groceries' && disk.sketch.strokes.length === 1 && Array.isArray(disk.sketch.strokes[0].ws), 'kept on disk');
+    });
+
+    // 2.6, MAP.md §4z3: a drawing note has no page, and the picture editor zooms and takes a pen
+    await test('2.6 a drawing note keeps only what was drawn, and zooms at the pointer', async () => {
+      const r = await page(async () => {
+        const n = addSketch({ x: 1800, y: 0 });
+        const svg = $('skSvg'), stage = $('skStage');
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const box = stage.getBoundingClientRect();
+        const pe = (type, x, y) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 3, pointerType: 'mouse', clientX: box.left + x, clientY: box.top + y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 });
+        const line = (x0, y0, x1, y1) => {
+          svg.dispatchEvent(pe('pointerdown', x0, y0));
+          for (let i = 1; i <= 8; i++) window.dispatchEvent(pe('pointermove', x0 + (x1 - x0) * i / 8, y0 + (y1 - y0) * i / 8));
+          window.dispatchEvent(pe('pointerup', x1, y1));
+        };
+        line(100, 100, 300, 100);
+        // the wheel zooms at the pointer: the drawing point under it stays under it
+        const under = sketchPoint({ clientX: box.left + 400, clientY: box.top + 300 });
+        stage.dispatchEvent(new WheelEvent('wheel', { deltaY: 400, ctrlKey: true, clientX: box.left + 400, clientY: box.top + 300, bubbles: true, cancelable: true }));
+        const still = sketchPoint({ clientX: box.left + 400, clientY: box.top + 300 });
+        const z = sk.view.z;
+        line(500, 400, 600, 500);       // far away, at the new zoom
+        const b = sketchBounds(sk.strokes);
+        closeSketch();
+        const vb = els.get(n.id).querySelector('.sk-svg').getAttribute('viewBox').split(' ').map(Number);
+        return { z, drift: Math.hypot(under.x - still.x, under.y - still.y), b, vb, keys: Object.keys(n.sketch), shape: n.w / (n.h - 40) };
+      });
+      ok(r.z < 1, 'Ctrl+wheel zoomed out: ' + r.z);
+      ok(r.drift < 0.01, 'the point under the pointer stayed under it: ' + r.drift);
+      ok(r.b.w > 400 && Math.abs(r.vb[2] - r.b.w) < 1 && Math.abs(r.vb[0] - r.b.x) < 1, 'the note shows exactly the drawn area, which grew: ' + JSON.stringify({ b: r.b, vb: r.vb }));
+      ok(JSON.stringify(r.keys) === '["title","strokes"]', 'no page size is kept: ' + r.keys);
+      ok(Math.abs(r.shape - r.b.w / r.b.h) / (r.b.w / r.b.h) < 0.1, 'the note took the drawing\'s shape: ' + r.shape);
+    });
+
+    await test('2.6 the picture editor: a pen with pressure, zoom, the eraser, its own undo, applied as a file', async () => {
+      const r = await page(async () => {
+        const c = document.createElement('canvas'); c.width = 400; c.height = 300;
+        const g = c.getContext('2d'); g.fillStyle = '#3a6ea5'; g.fillRect(0, 0, 400, 300);
+        const n = addNote({ x: 2600, y: 0 }, { pic: true, ar: 4 / 3, w: 400, h: 300, edit: false, body: picBody(c.toDataURL('image/png'), 'probe') });
+        const before = picSrc(n);
+        editPicture(n.id);
+        for (let i = 0; i < 40 && !ST.img; i++) await new Promise((res) => setTimeout(res, 50));
+        await new Promise((res) => requestAnimationFrame(res));
+        const cv = $('stCanvas');
+        const at = (px, py) => { const r0 = cv.getBoundingClientRect(); return { x: r0.left + ST.view.x + px * ST.view.z, y: r0.top + ST.view.y + py * ST.view.z }; };
+        const pe = (type, p, extra) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 9, pointerType: 'pen', clientX: p.x, clientY: p.y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, pressure: 0.2 }, extra || {}));
+        // zoom in at the middle of the picture
+        const mid = at(200, 150);
+        stSurface.zoomAt(mid.x, mid.y, 2);
+        const z = ST.view.z;
+        ST.tool = 'pen'; ST.weight = 6;
+        $('stWrap').dispatchEvent(pe('pointerdown', at(100, 150)));
+        for (let i = 1; i <= 12; i++) window.dispatchEvent(pe('pointermove', at(100 + i * 10, 150), { pressure: Math.min(1, 0.2 + i * 0.07) }));
+        window.dispatchEvent(pe('pointerup', at(220, 150)));
+        const pen = ST.marks[0];
+        const ws = pen && pen.ws ? [Math.min(...pen.ws), Math.max(...pen.ws)] : null;
+        // a palm, once the pen has drawn, adds nothing
+        $('stWrap').dispatchEvent(pe('pointerdown', at(50, 50), { pointerType: 'touch', pointerId: 10 }));
+        window.dispatchEvent(pe('pointerup', at(50, 50), { pointerType: 'touch', pointerId: 10 }));
+        const afterPalm = ST.marks.length;
+        // the pen's eraser end takes the line
+        $('stWrap').dispatchEvent(pe('pointerdown', at(160, 140), { button: 5, buttons: 32 }));
+        window.dispatchEvent(pe('pointermove', at(160, 160), { buttons: 32 }));
+        window.dispatchEvent(pe('pointerup', at(160, 160)));
+        const erased = ST.marks.length;
+        studioUndo(true);
+        const back = ST.marks.length;
+        $('stApply').click();
+        for (let i = 0; i < 40 && picSrc(n) === before; i++) await new Promise((res) => setTimeout(res, 50));
+        return { z, ws, afterPalm, erased, back, applied: picSrc(n) !== before, file: /^mbf:/.test(picSrc(n)), closed: $('studio').classList.contains('hidden') };
+      });
+      ok(r.z > 1.5, 'zoomed in: ' + r.z);
+      ok(r.ws && r.ws[1] > r.ws[0] * 1.5, 'the line follows the pen\'s pressure: ' + JSON.stringify(r.ws));
+      ok(r.afterPalm === 1, 'a palm drew nothing');
+      ok(r.erased === 0 && r.back === 1, 'the eraser end took the line and undo brought it back');
+      ok(r.applied && r.file && r.closed, 'applied, as a file in the board\'s folder');
     });
   }
 ];

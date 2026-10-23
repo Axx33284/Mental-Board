@@ -1,38 +1,156 @@
 /* Mental Board — sketch.js
    A drawing note: a note you write and draw on by hand instead of typing.
+   Also the zoomable surface both hand-drawing editors stand on.
 
    Part of the plain scripts sharing one global scope, loaded in the order
    index.html lists them — that order is the only thing holding them together,
    so a file may use anything declared above it at load time and anything at
    all once init() runs. See MAP.md §4. */
-/* ─────────────── 11f. drawing notes (2.5) ───────────────
+/* ─────────────── 11e. a surface you can zoom and pan (2.6) ───────────────
+
+   The drawing note's editor and the picture editor (media.js) are both a
+   picture you draw on that you also need to get closer to. One piece of code
+   moves the camera for both, so there is one set of rules to learn and one
+   place for the pen-and-fingers logic to be right:
+
+   - the wheel zooms at the pointer — always with Ctrl, and without it too
+     unless Settings says the wheel pans, exactly as on the board;
+   - the middle button, or Space held, drags the view;
+   - two fingers pan and pinch. A second finger landing cancels whatever the
+     first one started (`opts.cancel`), because that first touch was the start
+     of a pinch, not a line.
+
+   The view is `{ x, y, z }`: a point (wx, wy) of the picture is drawn at
+   (x + wx·z, y + wy·z) in the surface's own box. `opts.get()` / `opts.set(v)`
+   read and apply it; the surface never stores a copy. Its listener runs in the
+   capture phase on the surface, so a press it takes for the camera never
+   reaches the drawing handlers underneath. */
+function zoomPanSurface(el, opts) {
+  const zmin = opts.min || 0.05, zmax = opts.max || 16;
+  const touches = new Map();
+  let drag = null;          // { kind: 'pan', lx, ly, id } | { kind: 'pinch', d0, m0, v0 }
+  let space = false;
+  const visible = () => el.isConnected && el.getClientRects().length > 0;
+  const local = (cx, cy) => { const r = el.getBoundingClientRect(); return { x: cx - r.left, y: cy - r.top }; };
+
+  function zoomAt(cx, cy, f) {
+    const v = opts.get(), p = local(cx, cy);
+    const z = clamp(v.z * f, zmin, zmax);
+    opts.set({ x: p.x - (p.x - v.x) / v.z * z, y: p.y - (p.y - v.y) / v.z * z, z });
+  }
+  function zoomCentre(f) { const r = el.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, f); }
+
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zoom = e.ctrlKey || state.settings.wheel === 'zoom';
+    const v = opts.get();
+    if (zoom) {
+      const speed = clamp(+state.settings.zoomSpeed || 100, 40, 220) / 100;
+      zoomAt(e.clientX, e.clientY, clamp(Math.pow(0.999, e.deltaY * (e.ctrlKey ? 2.4 : 1.6) * speed), 0.5, 2));
+    } else opts.set({ x: v.x - e.deltaX, y: v.y - e.deltaY, z: v.z });
+  }, { passive: false });
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      listen();             // every finger is followed, so the pinch starts from where they really are
+      if (touches.size === 2) {
+        e.stopPropagation(); e.preventDefault();
+        if (opts.cancel) opts.cancel();
+        const [a, b] = [...touches.values()];
+        drag = { kind: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, m0: local((a.x + b.x) / 2, (a.y + b.y) / 2), v0: opts.get() };
+      }
+      return;
+    }
+    if (e.button === 1 || (e.button === 0 && space)) {
+      e.stopPropagation(); e.preventDefault();
+      drag = { kind: 'pan', lx: e.clientX, ly: e.clientY, id: e.pointerId };
+      el.classList.add('zp-panning');
+      listen();
+    }
+  }, true);
+
+  function listen() {
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+  function onMove(e) {
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!drag) return;
+    if (drag.kind === 'pan' && e.pointerId === drag.id) {
+      const v = opts.get();
+      opts.set({ x: v.x + e.clientX - drag.lx, y: v.y + e.clientY - drag.ly, z: v.z });
+      drag.lx = e.clientX; drag.ly = e.clientY;
+    } else if (drag.kind === 'pinch' && touches.size >= 2) {
+      const [a, b] = [...touches.values()];
+      const m = local((a.x + b.x) / 2, (a.y + b.y) / 2);
+      const v0 = drag.v0;
+      const z = clamp(v0.z * Math.hypot(a.x - b.x, a.y - b.y) / drag.d0, zmin, zmax);
+      // the picture point under the fingers' midpoint stays under it, wherever the fingers go
+      const wx = (drag.m0.x - v0.x) / v0.z, wy = (drag.m0.y - v0.y) / v0.z;
+      opts.set({ x: m.x - wx * z, y: m.y - wy * z, z });
+    }
+  }
+  function onUp(e) {
+    touches.delete(e.pointerId);
+    if (drag && (drag.kind === 'pan' ? e.pointerId === drag.id : touches.size < 2)) {
+      drag = null;
+      el.classList.remove('zp-panning');
+    }
+    if (!drag && !touches.size) {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }
+  }
+  // the touches the surface has not heard end (a lifted finger outside it) are still forgotten
+  el.addEventListener('pointerup', (e) => touches.delete(e.pointerId), true);
+  el.addEventListener('pointercancel', (e) => touches.delete(e.pointerId), true);
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || !visible() || (e.target.closest && e.target.closest('input, textarea'))) return;
+    e.preventDefault();
+    space = true; el.classList.add('zp-space');
+  });
+  window.addEventListener('keyup', (e) => { if (e.code === 'Space') { space = false; el.classList.remove('zp-space'); } });
+  window.addEventListener('blur', () => { space = false; el.classList.remove('zp-space'); });
+
+  return { zoomAt, zoomCentre, busy: () => !!drag || touches.size > 1 };
+}
+
+/* ─────────────── 11f. drawing notes (2.5, an infinite page since 2.6) ───────────────
 
    A note whose inside is a drawing, with a title on top. It **is** a note —
-   `{ sketch: { w, h, title, strokes } }` on an ordinary note, the way a picture
-   is `{ pic: true }` (pictures.js) — so moving, resizing, ropes, colour, status,
-   dates, undo, copy, the trash and board-to-board drags all handle it already,
-   with no second code path. What is its own:
+   `{ sketch: { title, strokes } }` on an ordinary note, the way a picture is
+   `{ pic: true }` (pictures.js) — so moving, resizing, ropes, colour, status,
+   dates, undo, copy, the trash and board-to-board drags all handle it already.
+   What is its own:
 
-   - how it is drawn on the board: the title, then the drawing scaled to fit
-     the note (an SVG with the page as its viewBox, `meet`), never stubbed at
-     far zoom — a drawing is its own landmark, like a picture;
-   - its editor: a double-click opens it full screen (`openSketch`) with the
-     board pen's tools — pen, marker, brush, eraser, three sizes, the same
-     colours — plus undo, redo, clear and the title. Done (or Escape) puts it
-     back on the board as one undo step.
+   - on the board: the title, then the drawing scaled to fit the note, never
+     stubbed at far zoom — a drawing is its own landmark, like a picture;
+   - its editor: a double-click opens it full screen with the board pen's
+     tools, zoom and pan (the surface above), undo, redo, clear and the title.
+     Done (or Escape) puts it back on the board as one undo step.
 
-   The page. `w` × `h` is the drawing's own coordinate space, fixed when the
-   note is made (the size of the screen it was made on), so the drawing never
-   reflows: the editor fits the page to whatever screen it opens on, the note
-   fits it to whatever size the note is. A stroke is exactly a board-ink stroke
-   (ink.js: `{ id, tool, color, size, pts, ws? }`) in page units, so the paths,
-   the brush, the eraser test, healing a stroke off disk and painting the board
-   picture are ink.js's, unchanged.
+   **There is no page** (2.6). The drawing is as big as what has been drawn:
+   the editor is an infinite surface like the board, and what the note shows
+   — and all that is kept — is the box round the strokes (`sketchBounds`).
+   Draw in 800×400 and the note is 800×400 of drawing; draw on past its edge
+   next time and it grows to take that in. Nobody picks a size. When the
+   drawing's shape changes, the note takes the new shape (`fitSketchNote`),
+   keeping its width. A 2.5.0 drawing had a fixed `w` × `h` page; its strokes
+   are already in the same units, so it opens unchanged and the page is
+   simply forgotten.
 
-   A pen. Pressure comes from a pen (a Samsung S Pen on a Galaxy Book, a Surface
-   pen, a Wacom) through ordinary pointer events; the brush reads it. Once a pen
-   has touched the page, a finger no longer draws — that is the palm resting on
-   the screen. The pen's eraser end, or its barrel button, erases. */
+   A stroke is exactly a board-ink stroke (ink.js: `{ id, tool, color, size,
+   pts, ws? }`), so the paths, the brush, the eraser test, healing off disk and
+   the board picture are ink.js's, unchanged.
+
+   A pen. Pressure comes from a pen (a Samsung S Pen on a Galaxy Book, a
+   Surface pen, a Wacom) through ordinary pointer events; the brush reads it.
+   Once a pen has touched the page one finger no longer draws — that is the
+   palm on the screen — and two fingers move and pinch the view. The pen's
+   eraser end, or its barrel button, erases. */
 
 const SKETCH_MAX = 5000;            // strokes in one drawing; past this a stroke is refused
 const SKETCH_TITLE_MAX = 120;
@@ -41,14 +159,27 @@ const SKETCH_TITLE_MAX = 120;
 function okSketch(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
   return {
-    w: clamp(Math.round(+raw.w) || 1600, 200, 8000),
-    h: clamp(Math.round(+raw.h) || 1000, 200, 8000),
     title: typeof raw.title === 'string' ? raw.title.slice(0, SKETCH_TITLE_MAX) : '',
     strokes: adoptInk(raw.strokes).slice(0, SKETCH_MAX)
   };
 }
 
+/* The box round what has been drawn, with a little air, or null when nothing
+   has. This is the drawing's whole size: nothing outside it is shown or kept. */
+function sketchBounds(strokes) {
+  if (!strokes || !strokes.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of strokes) {
+    const b = inkBox(s);
+    if (b.x0 < x0) x0 = b.x0; if (b.y0 < y0) y0 = b.y0;
+    if (b.x1 > x1) x1 = b.x1; if (b.y1 > y1) y1 = b.y1;
+  }
+  const pad = Math.max(8, Math.max(x1 - x0, y1 - y0) * 0.04);
+  return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
+}
+
 /* ---- on the board ---- */
+const SKETCH_TITLE_H = 40;          // the title row and the room round the drawing, in note px
 function fillSketch(el, n) {
   delete el.dataset.stub;
   el.classList.add('sketch');
@@ -60,30 +191,42 @@ function fillSketch(el, n) {
   paintNoteStatus(el, n);
 }
 function paintSketch(el, n) {
-  const sk = n.sketch;
+  const s = n.sketch;
   const title = el.querySelector('.sk-title');
-  title.textContent = sk.title || t('sketch.untitled');
-  title.classList.toggle('empty', !sk.title);
+  title.textContent = s.title || t('sketch.untitled');
+  title.classList.toggle('empty', !s.title);
   const svg = el.querySelector('.sk-svg');
-  svg.setAttribute('viewBox', `0 0 ${sk.w} ${sk.h}`);
+  const b = sketchBounds(s.strokes) || { x: 0, y: 0, w: 400, h: 250 };
+  svg.setAttribute('viewBox', `${r1(b.x)} ${r1(b.y)} ${r1(b.w)} ${r1(b.h)}`);
   svg.textContent = '';
-  for (const s of sk.strokes) svg.appendChild(makeInkEl(s));
+  for (const st of s.strokes) svg.appendChild(makeInkEl(st));
+}
+/* The note takes the drawing's shape, keeping its width: a drawing that grew
+   sideways makes a wider-than-tall note, one that grew down a taller one.
+   Only when the shape changed — a note the user sized stays as sized while
+   the drawing keeps its proportions. */
+function fitSketchNote(n, before) {
+  const b = sketchBounds(n.sketch.strokes);
+  if (!b) return;
+  const ar = b.w / b.h;
+  if (before && Math.abs(before.w / before.h - ar) / ar < 0.08) return;
+  const inner = n.w - 12;
+  const h = clamp(Math.round(inner / ar + SKETCH_TITLE_H), NOTE_MIN_H, 1400);
+  n.h = h;
+  const el = els.get(n.id);
+  if (el) placeEl(el, n);
 }
 // make one, and open it straight away — a drawing note that starts empty is a page to draw on
 function addSketch(worldPt) {
   if (!canEditHere()) return null;
-  const w = Math.round(clamp(innerWidth, 400, 4000)), h = Math.round(clamp(innerHeight - 64, 300, 4000));
-  const nw = 420;
-  const n = addNote(worldPt, {
-    sketch: { w, h, title: '', strokes: [] },
-    w: nw, h: Math.round(nw * h / w) + 40, edit: false
-  });
+  const n = addNote(worldPt, { sketch: { title: '', strokes: [] }, w: 420, h: 300, edit: false });
   if (n) openSketch(n.id);
   return n;
 }
 
 /* ---- the editor ---- */
-let sk = null;      // the open editor: { n, strokes, title, undo, redo, live, erase, penSeen, changed }
+let sk = null;      // the open editor: { n, strokes, undo, redo, live, erase, penSeen, changed, view, before }
+let skSurface = null;
 
 const sketchOpen = () => !!sk;
 
@@ -94,23 +237,21 @@ function openSketch(id) {
   if (inkMode) toggleInk(false);
   closeCtxMenu();
   sk = {
-    n, strokes: n.sketch.strokes.slice(), title: n.sketch.title,
-    undo: [], redo: [], live: null, erase: null, penSeen: false, changed: false
+    n, strokes: n.sketch.strokes.slice(), undo: [], redo: [], live: null, erase: null,
+    penSeen: false, changed: false, view: { x: 0, y: 0, z: 1 }, before: sketchBounds(n.sketch.strokes)
   };
   const dlg = $('sketchDlg');
   dlg.classList.remove('hidden');
   dlg.style.setProperty('--sk-bg', sketchPaper(n));
-  $('skTitle').value = sk.title;
+  $('skTitle').value = n.sketch.title;
   buildSketchBar();
-  const svg = $('skSvg');
-  svg.setAttribute('viewBox', `0 0 ${n.sketch.w} ${n.sketch.h}`);
-  $('skPage').setAttribute('width', n.sketch.w);
-  $('skPage').setAttribute('height', n.sketch.h);
   drawSketchStrokes();
   /* Full screen, as asked for — the page gets the whole display. Inside a
      click or a double-click, so the browser allows it; if it says no, the
-     editor still covers the window. */
+     editor still covers the window. The view is fitted once the screen has
+     its final size. */
   if (state.settings.sketchFull !== false) enterSketchFull();
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (sk) fitSketchView(); }));
 }
 // the paper is the note's own colour, so the drawing looks the same open and closed
 function sketchPaper(n) {
@@ -130,28 +271,52 @@ function toggleSketchFull() {
   saveSoon();
 }
 
+/* ---- the camera ---- */
+function setSketchView(v) {
+  if (!sk) return;
+  sk.view = { x: v.x, y: v.y, z: v.z };
+  $('skWorld').setAttribute('transform', `translate(${v.x} ${v.y}) scale(${v.z})`);
+  // the dots of the paper move and scale with the drawing, as the board's do
+  const stage = $('skStage');
+  const g = 28 * v.z;
+  const step = g < 9 ? g * Math.ceil(9 / g) : g;
+  stage.style.backgroundSize = `${step}px ${step}px`;
+  stage.style.backgroundPosition = `${v.x}px ${v.y}px`;
+  const pctEl = $('skBar').querySelector('[data-sk="pct"]');
+  if (pctEl) pctEl.textContent = pct(Math.round(v.z * 100));
+}
+// everything drawn in view, never closer than 100%; an empty page at 100% with room top left
+function fitSketchView() {
+  const r = $('skStage').getBoundingClientRect();
+  const b = sketchBounds(sk.strokes);
+  if (!b) { setSketchView({ x: 60, y: 60, z: 1 }); return; }
+  const z = clamp(Math.min((r.width - 80) / b.w, (r.height - 80) / b.h), 0.05, 1);
+  setSketchView({ x: r.width / 2 - (b.x + b.w / 2) * z, y: r.height / 2 - (b.y + b.h / 2) * z, z });
+}
+
 function closeSketch() {
   if (!sk) return;
   endSketchStroke();
-  const { n, strokes, changed } = sk;
+  const { n, strokes, changed, before } = sk;
   const title = $('skTitle').value.trim().slice(0, SKETCH_TITLE_MAX);
   sk = null;
   $('sketchDlg').classList.add('hidden');
-  $('skSvg').querySelectorAll('.ink').forEach((p) => p.remove());
+  $('skWorld').textContent = '';
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   if (!changed && title === n.sketch.title) return;
   pushUndo();
   // a new object, never an edit in place: a copy of this note may share the old one
-  n.sketch = { w: n.sketch.w, h: n.sketch.h, title, strokes };
+  n.sketch = { title, strokes };
+  fitSketchNote(n, before);
   const el = els.get(n.id);
   if (el) paintSketch(el, n);
   drawLinks(); scheduleMinimap(); saveSoon();
 }
 
 function drawSketchStrokes() {
-  const svg = $('skSvg');
-  svg.querySelectorAll('.ink').forEach((p) => p.remove());
-  for (const s of sk.strokes) svg.appendChild(makeInkEl(s));
+  const g = $('skWorld');
+  g.textContent = '';
+  for (const s of sk.strokes) g.appendChild(makeInkEl(s));
   const bar = $('skBar');
   bar.querySelector('[data-sk="undo"]').disabled = !sk.undo.length;
   bar.querySelector('[data-sk="redo"]').disabled = !sk.redo.length;
@@ -200,6 +365,10 @@ function buildSketchBar() {
     ['text', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'].filter((c) => c === 'text' || COLORS.includes(c)).map(sw).join('') +
     `<label class="ik-custom${isHex(p.color) ? ' on' : ''}" title="${te('ink.custom')}" style="--sw:${custom}"><input type="color" value="${custom}"></label>` +
     `<span class="ik-sep"></span>` +
+    btn('zout', 'zoom_out', te('zoom.out')) +
+    `<button class="ik-btn sk-pct" data-sk="pct" title="${te('zoom.reset')}"></button>` +
+    btn('zin', 'zoom_in', te('zoom.in')) + btn('fit', 'fit_screen', te('zoom.fit')) +
+    `<span class="ik-sep"></span>` +
     btn('undo', 'undo', te('menu.undo')) + btn('redo', 'redo', te('menu.redo')) +
     btn('clear', 'delete_sweep', te('ink.clear')) + btn('full', 'open_in_full', te('sketch.fullScreen')) +
     `<button class="ik-btn ik-done" data-sk="done" title="${te('ink.done')}" aria-label="${te('ink.done')}">${icon('check')}</button>`;
@@ -220,21 +389,22 @@ function buildSketchBar() {
     else if (act === 'redo') sketchUndo(false);
     else if (act === 'clear') clearSketch();
     else if (act === 'full') toggleSketchFull();
+    else if (act === 'zin') skSurface.zoomCentre(1.25);
+    else if (act === 'zout') skSurface.zoomCentre(1 / 1.25);
+    else if (act === 'pct') skSurface.zoomCentre(1 / sk.view.z);
+    else if (act === 'fit') fitSketchView();
   }));
-  if (sk) drawSketchStrokes();
+  if (sk) { drawSketchStrokes(); setSketchView(sk.view); }
 }
 
 /* ---- a stroke on the page ---- */
-// a pointer's position in page units, and how many screen pixels one page unit is
+// a pointer's position in drawing units, and how many screen pixels one unit is
 function sketchPoint(e) {
-  const svg = $('skSvg');
-  const m = svg.getScreenCTM();
-  if (!m) return { x: 0, y: 0, k: 1 };
-  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
-  return { x: p.x, y: p.y, k: m.a || 1 };
+  const r = $('skStage').getBoundingClientRect(), v = sk.view;
+  return { x: (e.clientX - r.left - v.x) / v.z, y: (e.clientY - r.top - v.y) / v.z, k: v.z };
 }
 function onSketchDown(e) {
-  if (!sk || sk.live || sk.erase) return;
+  if (!sk || sk.live || sk.erase || skSurface.busy()) return;
   if (e.pointerType === 'pen') sk.penSeen = true;
   else if (e.pointerType === 'touch' && sk.penSeen) return;     // a palm, once a pen has been used
   if (e.button !== 0 && e.button !== 5) return;
@@ -262,7 +432,7 @@ function onSketchDown(e) {
   const c = inkColorCss(s.color);
   if (tool === 'brush') el.style.fill = c;
   else { el.style.stroke = c; el.style.strokeWidth = s.size + 'px'; }
-  $('skSvg').appendChild(el);
+  $('skWorld').appendChild(el);
   sk.live = { s, raw: [], el, k: at.k, frame: 0, id: e.pointerId };
   addSketchPoint(e);
 }
@@ -293,6 +463,14 @@ function onSketchMove(e) {
 function onSketchUp(e) {
   const g = sk && (sk.live || sk.erase);
   if (g && e.pointerId !== g.id) return;     // a second finger lifting is not the pen
+  endSketchStroke();
+}
+// the stroke being drawn is dropped, not kept: a second finger made it the start of a pinch
+function cancelSketchStroke() {
+  if (!sk || !sk.live) return;
+  if (sk.live.frame) cancelAnimationFrame(sk.live.frame);
+  sk.live.el.remove();
+  sk.live = null;
   endSketchStroke();
 }
 function endSketchStroke() {
@@ -345,6 +523,12 @@ function onSketchKey(e) {
   if (e.key === 'Escape') { e.preventDefault(); closeSketch(); return; }
   if (ctrl && k === 'z') { e.preventDefault(); sketchUndo(!e.shiftKey); return; }
   if (ctrl && k === 'y') { e.preventDefault(); sketchUndo(false); return; }
+  // the board's own zoom keys, on the drawing
+  const ch = chordKey(e);
+  if (ctrl && (ch === '=' || ch === '+')) { e.preventDefault(); skSurface.zoomCentre(1.25); return; }
+  if (ctrl && ch === '-') { e.preventDefault(); skSurface.zoomCentre(1 / 1.25); return; }
+  if (ctrl && ch === '0') { e.preventDefault(); skSurface.zoomCentre(1 / sk.view.z); return; }
+  if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitSketchView(); return; }
   if (ctrl) return;
   const p = state.settings.sketchPen;
   const tools = { d: 'pen', m: 'marker', b: 'brush', e: 'eraser' };
@@ -360,6 +544,10 @@ function wireSketch() {
   const svg = $('skSvg');
   svg.addEventListener('pointerdown', onSketchDown);
   svg.addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button is the eraser here
+  skSurface = zoomPanSurface($('skStage'), {
+    get: () => (sk ? sk.view : { x: 0, y: 0, z: 1 }), set: setSketchView,
+    min: 0.05, max: 12, cancel: cancelSketchStroke
+  });
   $('skTitle').addEventListener('input', () => { if (sk) sk.changed = true; });
   // the window's own fullscreen ending (F11, Escape) leaves the editor open, just not full screen
   document.addEventListener('fullscreenchange', () => {
@@ -370,18 +558,20 @@ function wireSketch() {
 
 /* ---- the board picture (edit-ops.js paintBoardCanvas) ---- */
 function paintSketchOnCanvas(ctx, n, pal, inkColor, font) {
-  const sk = n.sketch;
-  const titleH = 34;
+  const s = n.sketch;
   ctx.save();
   ctx.fillStyle = pal.noteInk(n.color);
   ctx.font = `600 15px ${font}`;
   ctx.textBaseline = 'middle';
-  ctx.fillText(sk.title || t('sketch.untitled'), n.x + 14, n.y + titleH / 2 + 2, n.w - 28);
-  const room = { x: n.x + 6, y: n.y + titleH, w: n.w - 12, h: n.h - titleH - 6 };
-  const k = Math.min(room.w / sk.w, room.h / sk.h);
-  ctx.beginPath(); ctx.rect(room.x, room.y, room.w, room.h); ctx.clip();
-  ctx.translate(room.x + (room.w - sk.w * k) / 2, room.y + (room.h - sk.h * k) / 2);
-  ctx.scale(k, k);
-  paintInkOnCanvas(ctx, sk.strokes, inkColor);
+  ctx.fillText(s.title || t('sketch.untitled'), n.x + 14, n.y + 34 / 2 + 2, n.w - 28);
+  const b = sketchBounds(s.strokes);
+  if (b) {
+    const room = { x: n.x + 6, y: n.y + 34, w: n.w - 12, h: n.h - 34 - 6 };
+    const k = Math.min(room.w / b.w, room.h / b.h);
+    ctx.beginPath(); ctx.rect(room.x, room.y, room.w, room.h); ctx.clip();
+    ctx.translate(room.x + (room.w - b.w * k) / 2 - b.x * k, room.y + (room.h - b.h * k) / 2 - b.y * k);
+    ctx.scale(k, k);
+    paintInkOnCanvas(ctx, s.strokes, inkColor);
+  }
   ctx.restore();
 }

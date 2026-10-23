@@ -1510,6 +1510,36 @@ html[dir="rtl"] #flowsMenu { right: auto; left: 14px; }
 .sk-bar { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .sk-bar .ik-btn:disabled { opacity: .35; pointer-events: none; }
 .sk-bar .ik-btn.on { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.sk-stage { flex: 1 1 auto; min-height: 0; padding: 14px; display: flex; }
-#skSvg { flex: 1; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
-.sk-page { fill: var(--sk-bg, var(--surface)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+/* No page since 2.6: the paper is the whole stage, in the note's colour, with
+   dots that move and scale with the drawing (setSketchView). */
+.sk-stage {
+  flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden;
+  background-color: var(--sk-bg, var(--surface));
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--text) 16%, transparent) 1px, transparent 1.4px);
+}
+#skSvg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.sk-pct { min-width: 52px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the zoomable surface (sketch.js zoomPanSurface): Space held, or dragging the view */
+.zp-space, .zp-space * { cursor: grab !important; }
+.zp-panning, .zp-panning * { cursor: grabbing !important; }
+
+/* ─────────────── 73. the picture editor, zoomable (2.6, js/media.js) ───────────────
+   Most of the window, and the canvas is the whole stage: the picture is drawn
+   through ST.view, so zooming never grows the canvas. */
+.studio-shell { width: min(1600px, 97vw); height: min(1100px, 95vh); }
+.studio-stage { position: relative; display: block; padding: 0; touch-action: none; }
+.st-wrap { position: absolute; inset: 0; box-shadow: none; }
+#stCanvas { width: 100%; height: 100%; max-width: none; touch-action: none; }
+.st-width output { min-width: 18px; font-variant-numeric: tabular-nums; color: var(--dim); }
+.st-width input { width: 120px; }
+.st-tools button:disabled { opacity: .35; pointer-events: none; }
+.st-colors { align-items: center; flex-wrap: wrap; }
+.st-colors .ik-custom { width: 20px; height: 20px; }
+.st-zoom { display: flex; align-items: center; gap: 2px; }
+.st-zoom button {
+  height: 30px; min-width: 30px; padding: 0 6px; border-radius: 7px; display: grid; place-items: center;
+  color: var(--dim); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.st-zoom button:hover { background: var(--surface-3); color: var(--text); }
+.st-zoom .mi { width: 18px; height: 18px; }
+#stPct { min-width: 52px; }

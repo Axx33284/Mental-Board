@@ -131,6 +131,7 @@ The things that make it more than a note wall:
 | **A phone with a pen as a wireless drawing tablet, showing the board live** | src/tablet.js + js/tablet.js §4x |
 | **A drag stays under the pointer through a zoom; spelling suggestions on right-click** | js/items.js + js/menus.js §4z1 |
 | **A drawing note: write and draw by hand, full screen, with a pen's pressure** | js/sketch.js §4z2 |
+| **Zoom and a pen in the drawing note and the picture editor; a drawing keeps only what was drawn** | js/sketch.js + js/media.js §4z3 |
 
 ---
 
@@ -638,8 +639,8 @@ no bundler and no build step — the only thing joining them is the order
 | `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
 | `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
 | `toolbars.js` | ~650 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu (ranked by `blockRank`) — the chrome that sits over the editor. |
-| `media.js` | ~740 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
-| `sketch.js` | ~370 | **A drawing note** (2.5): `okSketch` (healing), `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
+| `media.js` | ~900 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — zoomable, with a pen's pressure, highlighter, eraser and its own undo since 2.6, §4z3: `ST.view` `setStudioView` `studioStep`/`studioUndo` `markNear` `onStudioKey` `wireStudioSurface` — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
+| `sketch.js` | ~470 | **The zoomable surface** both drawing editors use (`zoomPanSurface`, §4z3), and **a drawing note** (2.5; no page since 2.6): `okSketch` (healing), `sketchBounds` `fitSketchNote`, `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
 | `menus.js` | ~660 | The right-click menu (spelling suggestions on top — `awaitSpellMenu` `answerSpell` `wordRangeAt` `fixSpelling`, §4z1; colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
@@ -2323,11 +2324,9 @@ the right-click menu (no icon, shape, template or history; "Draw in it"),
 see it), the JSON Canvas export (its title — the format has no strokes) and
 the board picture (`paintSketchOnCanvas`).
 
-**The page.** `w` × `h` is fixed when the note is made — the size of the
-window it was made in — and is the drawing's own coordinate space. The editor
-fits the page to the screen and the note fits it to the note (an SVG,
-`viewBox` = the page, `meet`), so nothing reflows when either is resized.
-Screen → page is `getScreenCTM().inverse()` (`sketchPoint`).
+**The page — none since 2.6, see §4z3.** 2.5.0 had a fixed `w` × `h` page
+the size of the window; its strokes are in the same units as now, so such a
+note opens unchanged and the page is dropped (`okSketch` no longer keeps it).
 
 **A stroke is a board-ink stroke** (§4v) in page units, so `inkLinePath`,
 `inkBrushPath`, `brushWidths` (now taking the scale as a third argument),
@@ -2356,6 +2355,61 @@ Fullscreen API on `#sketchDlg` ('fullscreen' is in main's permission list);
 it needs a click, so `openSketch` is always called from one.
 
 Test: **2.5** in `tools/test-app-features.js`.
+
+## 4z3. Zoom, and a pen, in both drawing editors (2.6)
+
+### One zoomable surface — `zoomPanSurface()` in `sketch.js`
+
+The drawing note's editor and the picture editor both stand on it, so the
+camera has one set of rules and one implementation: the wheel zooms at the
+pointer (Ctrl always; plain wheel unless Settings says the wheel pans, as on
+the board), the middle button or Space drags, two fingers pan and pinch. A
+second finger landing calls `opts.cancel` — the first finger's line was the
+start of a pinch. The view is `{ x, y, z }` and lives with its owner
+(`sk.view`, `ST.view`); the surface only reads and sets it. Its
+`pointerdown` runs in the **capture** phase on the stage, so a press it takes
+for the camera never reaches the drawing handlers. Ctrl+= / Ctrl+− / Ctrl+0 /
+Shift+1 do what they do on the board, in either editor.
+
+### A drawing note has no page
+
+The editor is an infinite surface (`<g id="skWorld">` with the view's
+transform, the paper's dots moved and scaled with it in `setSketchView`), and
+the drawing is exactly as big as what was drawn: `sketchBounds()` — the union
+of the strokes' `inkBox`es plus 4% air — is the note's `viewBox`, the board
+picture's frame and the editor's fit. Nothing outside it exists, so nothing
+outside it is stored: a note is `{ title, strokes }`. Draw past the edge on
+the next visit and the box grows; nobody picks a size. When the box's shape
+changes, `fitSketchNote()` gives the note that shape, keeping its width
+(height clamped 120–1400); a note the user sized keeps its size while the
+shape stays the same.
+
+### The picture editor zooms, and draws like a pen
+
+The canvas is the stage, in device pixels, and the picture is drawn through
+`ST.view` (`drawStudio` sets the transform; crop handles and the text field
+are placed through it) — so zooming never grows the canvas, and closer than
+200% the pixels are shown as pixels. New:
+
+- **pressure** — a pen line keeps `ws`, a width per point from
+  `brushWidths()` (ink.js), and is filled with `inkBrushPath()`; a mouse line
+  is the plain stroke it always was;
+- **highlighter** (M) and **eraser** (E) — the eraser takes whole marks
+  (`markNear`), and so do the pen's eraser end (button 5) and barrel button;
+- **palm rejection** — once a pen has drawn, one finger does nothing;
+- **any colour** (the colour window beside the swatches), **sizes 1–40**;
+- **undo / redo** of its own (`ST.undo`: the marks and the crop, a step per
+  change; Ctrl+Z inside the studio never reaches the board's undo —
+  `onStudioKey`, which also swallows the board's letter shortcuts);
+- keys: C crop, D draw, M highlighter, E eraser, R box, A arrow, T text,
+  [ ] size.
+
+Marks are still in picture pixels and burned in only on Apply, which still
+writes a file into the board's folder.
+
+Tests: **2.6** in `tools/test-app-features.js` (the note's box and shape, a
+zoom that keeps the point under the pointer; the studio's pressure, palm,
+eraser end, undo and Apply).
 
 ## 4o. Lining a note up with its neighbours
 
