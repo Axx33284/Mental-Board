@@ -18,3 +18,9 @@
 # to scroll 200 icon path strings to find the one line that changed by hand.
 assets/icons.js linguist-generated=true
 package-lock.json linguist-generated=true
+
+# Vendored libraries are kept byte for byte as they were published: no
+# line-ending changes on checkout, no diffs. pdf.js is minified JavaScript plus
+# binary fonts and character maps (MAP.md §4z4).
+src/assets/pdfjs/** -text -diff
+src/assets/katex/** -text -diff
