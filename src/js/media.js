@@ -258,12 +258,12 @@ async function openStudio(target) {
     ST.marks = []; ST.tool = 'crop'; ST.undo = []; ST.redo = []; ST.penSeen = false;
     $('studio').classList.remove('hidden');
     buildStudioChrome();
-    requestAnimationFrame(() => fitStudio());
+    requestAnimationFrame(() => { fitStudio(); padHostChanged(); });
   };
   img.onerror = () => toast(t('msg.imageFailed'));
   img.src = dataUrl;
 }
-function closeStudio() { $('studio').classList.add('hidden'); ST.img = null; ST.target = null; ST.drag = null; }
+function closeStudio() { $('studio').classList.add('hidden'); ST.img = null; ST.target = null; ST.drag = null; padHostChanged(); }
 
 function buildStudioChrome() {
   const custom = ST_COLORS.includes(ST.color) ? '#e05a5a' : ST.color;
@@ -338,6 +338,7 @@ function drawStudio() {
     g.restore();
   }
   positionCropHandles();
+  if (typeof padDirty === 'function') padDirty();       // a paired phone sees the picture (js/tablet.js)
 }
 function positionCropHandles() {
   const box = $('stCrop'), v = ST.view, cr = ST.crop;
@@ -454,8 +455,9 @@ function markNear(m, p, r) {
   }
   return false;
 }
-function studioErase(p) {
-  const d = ST.drag;
+// `d` is the sweep: the mouse's or the pen's (ST.drag), or a paired phone's (js/tablet.js)
+function studioErase(p, d) {
+  d = d || ST.drag;
   const from = d.last || p;
   d.last = p;
   const steps = Math.max(1, Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) / (d.r * 0.5)));

@@ -1964,8 +1964,42 @@ appears under the pen immediately, stays, and is replaced by the PC's own
 rendering of it a picture later — there is no fading echo any more, and
 nothing for it to fade from.
 
-Considered and left: "handwrite a note" — ink that belongs to a note rather
-than the board — needs a note that can hold strokes; not in this.
+"Handwrite a note" arrived in 2.5 as the drawing note (§4z2) — and the phone
+draws in it since 2.6.2, below.
+
+### The phone draws in whatever is open (2.6.2)
+
+The phone used to know only the board. With a drawing note or the picture
+editor open, its pen drew on the board *behind* the editor — invisible, and on
+a desktop with no pen of its own (the user's machine: an MSI desktop, two
+monitors, no digitizer) the phone *is* the S Pen, so the editors could not be
+drawn in with it at all.
+
+`padHost()` is now the one question "what is the phone on?": the board
+(`vpRect()`, `state.view`), a drawing note's editor (`#skStage`, `sk.view`)
+or the picture editor (`#studioStage`, `ST.view`). All three views have the
+board's form — `{ x, y, z }` relative to their own box — so `padRect()`, the
+pictures (`padPump`), `padMap()`/`padWorld()`, the hover ring, the outline,
+pan and zoom are unchanged arithmetic on a different box. The editors call
+`padHostChanged()` when they open and close, and `padDirty()` when they
+redraw.
+
+A stroke on an editor goes through the editor's own steps
+(`beginPadEditorStroke` → `addPadEditorPoint` → `endPadEditorStroke`,
+`padEditorErase`): in a drawing note it is a board-ink stroke added with
+`sketchStep()`, in the picture editor a mark added with `studioStep()` — the
+phone's pen and brush are its pen (with pressure, `ws`), its marker the
+highlighter, and its colour resolved to a real one (`padColorCss()`), since a
+mark is burned into pixels. Undo from the phone is the editor's undo; the
+phone's arrow draws nothing there. `map.kind`/`map.id` pin a stroke to what it
+began on: if that closes mid-line, the rest is dropped.
+
+In full screen only the full-screen element is drawn, so the outline and the
+ring are moved into it (`padLayer()`).
+
+Test: **2.6.2** in `tools/test-app-features.js` — a phone line in an open
+drawing note (mapped through the note's view, with pressure), its eraser and
+undo, the picture editor's pen, and nothing on the board behind.
 
 ### Palm rejection, the pen button, the eraser
 

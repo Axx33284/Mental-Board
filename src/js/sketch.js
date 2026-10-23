@@ -251,7 +251,7 @@ function openSketch(id) {
      editor still covers the window. The view is fitted once the screen has
      its final size. */
   if (state.settings.sketchFull !== false) enterSketchFull();
-  requestAnimationFrame(() => requestAnimationFrame(() => { if (sk) fitSketchView(); }));
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (sk) fitSketchView(); padHostChanged(); }));
 }
 // the paper is the note's own colour, so the drawing looks the same open and closed
 function sketchPaper(n) {
@@ -284,6 +284,7 @@ function setSketchView(v) {
   stage.style.backgroundPosition = `${v.x}px ${v.y}px`;
   const pctEl = $('skBar').querySelector('[data-sk="pct"]');
   if (pctEl) pctEl.textContent = pct(Math.round(v.z * 100));
+  if (typeof padDirty === 'function') padDirty();       // a paired phone sees the drawing move (js/tablet.js)
 }
 // everything drawn in view, never closer than 100%; an empty page at 100% with room top left
 function fitSketchView() {
@@ -303,6 +304,7 @@ function closeSketch() {
   $('sketchDlg').classList.add('hidden');
   $('skWorld').textContent = '';
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  padHostChanged();                 // a paired phone goes back to the board
   if (!changed && title === n.sketch.title) return;
   pushUndo();
   // a new object, never an edit in place: a copy of this note may share the old one
@@ -321,6 +323,7 @@ function drawSketchStrokes() {
   bar.querySelector('[data-sk="undo"]').disabled = !sk.undo.length;
   bar.querySelector('[data-sk="redo"]').disabled = !sk.redo.length;
   bar.querySelector('[data-sk="clear"]').disabled = !sk.strokes.length;
+  if (typeof padDirty === 'function') padDirty();
 }
 function sketchStep() {
   sk.undo.push(sk.strokes.slice());
@@ -452,6 +455,7 @@ function paintSketchLive() {
   const pts = [];
   L.raw.forEach((q) => pts.push(r1(q.x), r1(q.y)));
   L.el.setAttribute('d', L.s.tool === 'brush' ? inkBrushPath(pts, brushWidths(L.raw, L.s.size, L.k)) : inkLinePath(pts));
+  if (typeof padDirty === 'function') padDirty();
 }
 function onSketchMove(e) {
   if (!sk) return;
@@ -494,8 +498,9 @@ function endSketchStroke() {
   drawSketchStrokes();
 }
 // whole strokes, along the whole sweep since the last event — ink.js's rule, on the page
-function eraseSketchAt(w) {
-  const E = sk.erase;
+// `E` is the sweep: the mouse's or the pen's (sk.erase), or a paired phone's (js/tablet.js)
+function eraseSketchAt(w, E) {
+  E = E || sk.erase;
   const from = E.last || w;
   E.last = w;
   const steps = Math.max(1, Math.ceil(Math.hypot(w.x - from.x, w.y - from.y) / (E.r * 0.5)));

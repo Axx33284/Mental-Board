@@ -1258,5 +1258,68 @@ module.exports = [
       ok(r.erased === 0 && r.back === 1, 'the eraser end took the line and undo brought it back');
       ok(r.applied && r.file && r.closed, 'applied, as a file in the board\'s folder');
     });
+
+    // 2.6.2, MAP.md §4x: a paired phone's S Pen draws in whatever is open, not on the board behind it
+    await test('2.6.2 a paired phone draws in an open drawing note and in the picture editor', async () => {
+      const r = await page(async () => {
+        onPadMessage({ t: 'size', a: 0.5, px: 1080 });
+        const inkBefore = (state.ink || []).length;
+        // a drawing note, open
+        const n = addSketch({ x: 3400, y: 0 });
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const host = padHost(), p = padRect(), stage = $('skStage').getBoundingClientRect();
+        const v = sk.view;
+        onPadMessage({ t: 'down', id: 'q1', x: 0.2, y: 0.4, p: 0.2, tool: 'brush', size: 1, color: 'red' });
+        const pts = [];
+        for (let i = 1; i <= 10; i++) pts.push(0.2 + i * 0.03, 0.4, 0.2 + i * 0.07);
+        onPadMessage({ t: 'move', id: 'q1', pts });
+        onPadMessage({ t: 'up', id: 'q1' });
+        const s = sk.strokes[0];
+        const want = { x: (p.x + 0.2 * p.w - v.x) / v.z, y: (p.y + 0.4 * p.h - v.y) / v.z };
+        const sketchOut = {
+          kind: host.kind, n: sk.strokes.length, tool: s && s.tool, color: s && s.color,
+          off: s ? Math.hypot(s.pts[0] - want.x, s.pts[1] - want.y) : -1, ws: !!(s && s.ws),
+          fits: Math.abs(p.h - stage.height) < 1,
+          board: (state.ink || []).length === inkBefore
+        };
+        // the phone's eraser and undo work on the drawing too
+        onPadMessage({ t: 'down', id: 'q2', x: 0.35, y: 0.4, p: 0.5, tool: 'eraser', size: 2, color: 'text' });
+        onPadMessage({ t: 'up', id: 'q2' });
+        sketchOut.erased = sk.strokes.length;
+        onPadMessage({ t: 'undo' });
+        sketchOut.back = sk.strokes.length;
+        closeSketch();
+        sketchOut.kept = n.sketch.strokes.length;
+        sketchOut.after = padHost().kind;
+        // the picture editor, open
+        const c = document.createElement('canvas'); c.width = 400; c.height = 300;
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 400, 300);
+        const pic = addNote({ x: 4200, y: 0 }, { pic: true, ar: 4 / 3, w: 400, h: 300, edit: false, body: picBody(c.toDataURL('image/png'), 'phone') });
+        editPicture(pic.id);
+        for (let i = 0; i < 40 && !ST.img; i++) await new Promise((res) => setTimeout(res, 50));
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const kindStudio = padHost().kind;
+        onPadMessage({ t: 'down', id: 'q3', x: 0.4, y: 0.5, p: 0.1, tool: 'pen', size: 1, color: 'blue' });
+        const pts2 = [];
+        for (let i = 1; i <= 10; i++) pts2.push(0.4 + i * 0.01, 0.5, 0.1 + i * 0.08);
+        onPadMessage({ t: 'move', id: 'q3', pts: pts2 });
+        onPadMessage({ t: 'up', id: 'q3' });
+        const m = ST.marks[0];
+        const studioOut = { kind: kindStudio, n: ST.marks.length, type: m && m.type, rgb: m && /^rgb/.test(m.color), ws: !!(m && m.ws && m.ws[5] > m.ws[1]) };
+        onPadMessage({ t: 'undo' });
+        studioOut.undone = ST.marks.length;
+        closeStudio();
+        return { sketch: sketchOut, studio: studioOut, board: (state.ink || []).length === inkBefore };
+      });
+      const s = r.sketch, st = r.studio;
+      ok(s.kind === 'sketch' && s.fits, 'with a drawing note open the phone is a region of the note\'s page: ' + JSON.stringify(s));
+      ok(s.n === 1 && s.tool === 'brush' && s.color === 'red' && s.ws, 'the phone\'s line is in the drawing, with its pressure: ' + JSON.stringify(s));
+      ok(s.off >= 0 && s.off < 0.5, 'where the pen was, through the drawing\'s own view: ' + s.off);
+      ok(s.erased === 0 && s.back === 1 && s.kept === 1, 'the phone\'s eraser and undo work on the drawing, and Done keeps it: ' + JSON.stringify(s));
+      ok(s.after === 'board', 'closing the note gives the phone the board back');
+      ok(st.kind === 'studio' && st.n === 1 && st.type === 'pen' && st.rgb && st.ws, 'the picture editor takes the phone\'s pen, in a real colour, with pressure: ' + JSON.stringify(st));
+      ok(st.undone === 0, 'and its undo');
+      ok(r.board, 'nothing landed on the board behind either');
+    });
   }
 ];

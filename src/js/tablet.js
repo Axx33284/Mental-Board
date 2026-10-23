@@ -134,10 +134,38 @@ function qrSvg(rows) {
   return `<svg viewBox="0 0 ${n + q * 2} ${n + q * 2}" shape-rendering="crispEdges" aria-hidden="true"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 
+/* ---- what the phone draws on (2.6.2) ----
+   The board — or, while one is open, a drawing note's editor (sketch.js) or
+   the picture editor (media.js). Both editors have a view in exactly the
+   board's form ({ x, y, z } relative to their own stage), so the phone's
+   region, its pictures, the mapping of a pen point and its pan and zoom are
+   the same arithmetic on a different box. Before 2.6.2 the phone only ever
+   knew the board: with a drawing note open, its pen drew on the board behind
+   it, which is to say not where anybody was looking. `id` tells a stroke
+   whether what it began on is still open. */
+function padHost() {
+  if (typeof sketchOpen === 'function' && sketchOpen()) {
+    const r = $('skStage').getBoundingClientRect();
+    return { kind: 'sketch', id: sk.n.id, r, v: sk.view };
+  }
+  if (ST.img && !$('studio').classList.contains('hidden')) {
+    const r = $('studioStage').getBoundingClientRect();
+    return { kind: 'studio', id: ST.target, r, v: ST.view };
+  }
+  return { kind: 'board', id: state.activeBoard, r: vpRect(), v: state.view };
+}
+// an editor opened or closed: the outline, the phone's view and its picture follow
+function padHostChanged() {
+  if (!padOn()) return;
+  paintPadArea(); sendPadView(); padDirty();
+}
+// in full screen only the full-screen element is drawn, so the outline and the ring live in it
+const padLayer = () => document.fullscreenElement || document.body;
+
 /* ---- the region of this window the phone is ---- */
-// relative to the viewport, in screen pixels
+// relative to what it draws on (the board's viewport, or an editor's stage), in screen pixels
 function padRect() {
-  const r = vpRect(), a = padSize.a;
+  const r = padHost().r, a = padSize.a;
   let w = r.width, h = r.width / a;
   if (h > r.height) { h = r.height; w = h * a; }
   return { x: Math.round((r.width - w) / 2), y: Math.round((r.height - h) / 2), w: Math.round(w), h: Math.round(h) };
@@ -147,8 +175,9 @@ function padRect() {
 function paintPadArea() {
   let el = $('padArea');
   if (!padOn()) { if (el) el.classList.add('hidden'); return; }
-  if (!el) { el = document.createElement('div'); el.id = 'padArea'; el.setAttribute('aria-hidden', 'true'); document.body.appendChild(el); }
-  const r = vpRect(), p = padRect();
+  if (!el) { el = document.createElement('div'); el.id = 'padArea'; el.setAttribute('aria-hidden', 'true'); }
+  if (el.parentNode !== padLayer()) padLayer().appendChild(el);
+  const r = padHost().r, p = padRect();
   el.style.left = r.left + p.x + 'px'; el.style.top = r.top + p.y + 'px';
   el.style.width = p.w + 'px'; el.style.height = p.h + 'px';
   el.classList.remove('hidden');
@@ -168,7 +197,7 @@ async function padPump() {
   padShot.last = performance.now();
   // two frames, so what changed has been painted before main photographs it
   await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
-  const r = vpRect(), p = padRect();
+  const r = padHost().r, p = padRect();
   const n = ++padShot.n;
   let res = null;
   try { res = await PAD.frame({ n, nav: padNav, k: padK, rect: { x: r.left + p.x, y: r.top + p.y, width: p.w, height: p.h } }); } catch (_) {}
@@ -202,7 +231,8 @@ function padCanDraw() { const b = activeBoard(); return !(b && (b.unreadable || 
 function sendPadView() {
   if (!padOn()) return;
   // rw: how many screen pixels wide the phone's region is here, so the phone draws its own line at the width it will land
-  const m = { t: 'view', ro: !padCanDraw(), pal: padPalette(), sel: inkSel.size, rw: padRect().w };
+  const board = padHost().kind === 'board';
+  const m = { t: 'view', ro: board && !padCanDraw(), pal: padPalette(), sel: board ? inkSel.size : 0, rw: padRect().w };
   const key = JSON.stringify(m);
   if (key === padViewSent) return;
   padViewSent = key;
@@ -219,11 +249,19 @@ function onPadMessage(m) {
   else if (m.t === 'leave') hidePadCursor();
   else if (m.t === 'pan') { padPan(m.dx, m.dy); padNav = Math.max(padNav, m.n || 0); }
   else if (m.t === 'zoom') {
-    const r = vpRect(), p = padRect();
-    zoomAt(r.left + p.x + m.x * p.w, r.top + p.y + m.y * p.h, m.f);
+    const h = padHost(), p = padRect();
+    const cx = h.r.left + p.x + m.x * p.w, cy = h.r.top + p.y + m.y * p.h;
+    if (h.kind === 'sketch') skSurface.zoomAt(cx, cy, m.f);
+    else if (h.kind === 'studio') stSurface.zoomAt(cx, cy, m.f);
+    else zoomAt(cx, cy, m.f);
     padNav = Math.max(padNav, m.n || 0);
   }
-  else if (m.t === 'undo') padUndo();
+  else if (m.t === 'undo') {
+    const kind = padHost().kind;
+    if (kind === 'sketch') sketchUndo(true);
+    else if (kind === 'studio') studioUndo(true);
+    else padUndo();
+  }
   else if (m.t === 'sel') padSelection(m);
   else if (m.t === 'size') { padSize = { a: m.a, px: m.px }; paintPadArea(); sendPadView(); padDirty(); }
   else if (m.t === 'got') padGot(m.n);
@@ -232,8 +270,8 @@ function onPadMessage(m) {
 /* A phone point → world. `map` is the phone's region as it was when the
    stroke began: where it sits in the viewport, its size, and the view. */
 function padMap() {
-  const p = padRect(), v = state.view;
-  return { rx: p.x, ry: p.y, rw: p.w, rh: p.h, vx: v.x, vy: v.y, z: v.z, board: state.activeBoard };
+  const h = padHost(), p = padRect(), v = h.v;
+  return { rx: p.x, ry: p.y, rw: p.w, rh: p.h, vx: v.x, vy: v.y, z: v.z, board: state.activeBoard, kind: h.kind, id: h.id };
 }
 function padWorld(map, x, y) { return { x: (map.rx + x * map.rw - map.vx) / map.z, y: (map.ry + y * map.rh - map.vy) / map.z }; }
 // the same point as a pointer event's client coordinates, for ink.js's select gesture
@@ -242,8 +280,9 @@ function padClient(map, x, y) { const r = vpRect(); return { clientX: r.left + m
 
 function beginPadStroke(m) {
   if (padLive.has(m.id)) endPadStroke(m.id);
-  if (!canEditHere()) { sendPadView(); return; }
   const map = padMap();
+  if (map.kind !== 'board') { beginPadEditorStroke(m, map); return; }
+  if (!canEditHere()) { sendPadView(); return; }
   const z = map.z;
   hidePadCursor();
   if (m.tool === 'select') { beginPadPick(m, map); return; }
@@ -277,7 +316,8 @@ function movePadStroke(id, pts) {
   const k = padLive.get(id);
   if (!k) return;
   for (let i = 0; i < pts.length; i += 3) {
-    if (k.pick) { if (inkPick === k.pick) moveInkPick(padClient(k.map, pts[i], pts[i + 1])); }
+    if (k.ed) { if (k.erase) padEditorErase(k, pts[i], pts[i + 1]); else addPadEditorPoint(k, pts[i], pts[i + 1], pts[i + 2]); }
+    else if (k.pick) { if (inkPick === k.pick) moveInkPick(padClient(k.map, pts[i], pts[i + 1])); }
     else if (k.erase) padErase(k, pts[i], pts[i + 1]);
     else addPadPoint(k, pts[i], pts[i + 1], pts[i + 2]);
   }
@@ -294,6 +334,7 @@ function endPadStroke(id) {
   padLive.delete(id);
   if (!k) return;
   padK = Math.max(padK, k.k || 0);
+  if (k.ed) { endPadEditorStroke(k); return; }
   if (k.pick) { if (inkPick === k.pick) endInkPick(); sendPadView(); padDirty(); return; }
   if (k.erase) {
     if (k.pushed) { updateEmpty(); saveSoon(); }
@@ -385,18 +426,112 @@ function padUndo() {
   }
 }
 function padPan(dx, dy) {
-  const p = padRect();
-  state.view.x += dx * p.w;
-  state.view.y += dy * p.h;
+  const h = padHost(), p = padRect();
+  const v = { x: h.v.x + dx * p.w, y: h.v.y + dy * p.h, z: h.v.z };
+  if (h.kind === 'sketch') { setSketchView(v); return; }
+  if (h.kind === 'studio') { setStudioView(v); return; }
+  state.view.x = v.x; state.view.y = v.y;
   applyView(); saveSoon();
+}
+
+/* ---- the phone drawing in an open editor (2.6.2) ----
+   The same messages, landing in the drawing note's strokes or the picture
+   editor's marks through the editors' own steps — so the editor's undo, its
+   eraser rule, and Done / Apply treat a phone line exactly like one from the
+   mouse or a pen on this PC. The phone's tools map across: in a drawing note
+   they are the board pen's own (a stroke is a board-ink stroke); in the
+   picture editor the pen and the brush are its pen (with the pressure, when
+   the phone sends one) and the marker its highlighter. The phone's arrow has
+   nothing to select in either, and draws nothing. */
+const padHostAlive = (map) => { const h = padHost(); return h.kind === map.kind && h.id === map.id; };
+// a phone colour (text, a name, a hex) as the concrete colour the picture editor burns in
+function padColorCss(c) {
+  const probe = document.createElement('i');
+  probe.style.color = inkColorCss(inkColorOk(c) ? c : 'text');
+  padLayer().appendChild(probe);
+  const out = getComputedStyle(probe).color;
+  probe.remove();
+  return out;
+}
+function beginPadEditorStroke(m, map) {
+  hidePadCursor();
+  if (m.tool === 'select') return;
+  if (m.tool === 'eraser') {
+    const k = { ed: true, erase: true, map, k: m.k, E: { r: INK_SIZES.eraser[m.size] / map.z, last: null, hit: 0 } };
+    padLive.set(m.id, k);
+    padEditorErase(k, m.x, m.y);
+    return;
+  }
+  const tool = INK_SIZES[m.tool] ? m.tool : 'pen';
+  const size = Math.round(INK_SIZES[tool][m.size] / map.z * 100) / 100;
+  const k = { ed: true, map, k: m.k, raw: [], frame: 0 };
+  if (map.kind === 'sketch') {
+    if (sk.strokes.length >= SKETCH_MAX) { toast(t('sketch.full')); return; }
+    k.s = { id: uid(), tool, color: inkColorOk(m.color) ? m.color : 'text', size };
+    k.el = document.createElementNS(SVGNS, 'path');
+    k.el.setAttribute('class', 'ink ink-' + tool);
+    const c = inkColorCss(k.s.color);
+    if (tool === 'brush') k.el.style.fill = c; else { k.el.style.stroke = c; k.el.style.strokeWidth = size + 'px'; }
+    $('skWorld').appendChild(k.el);
+  } else {
+    studioStep();
+    k.mark = { type: tool === 'marker' ? 'marker' : 'pen', pts: [], color: padColorCss(m.color), w: tool === 'marker' ? size / 3 : size };
+    ST.marks.push(k.mark);
+  }
+  padLive.set(m.id, k);
+  addPadEditorPoint(k, m.x, m.y, m.p);
+}
+function addPadEditorPoint(k, x, y, p) {
+  if (!padHostAlive(k.map)) return;
+  const w = padWorld(k.map, x, y);
+  const last = k.raw[k.raw.length - 1];
+  if (last && Math.hypot(w.x - last.x, w.y - last.y) * k.map.z < 0.6) return;
+  k.raw.push({ x: w.x, y: w.y, p: p != null && p > 0 ? p : null, t: performance.now() });
+  if (k.mark) {
+    k.mark.pts.push([w.x, w.y]);
+    if (k.mark.type === 'pen' && k.raw.some((q) => q.p != null)) k.mark.ws = brushWidths(k.raw, k.mark.w, k.map.z);
+    drawStudio();
+  } else if (!k.frame) k.frame = requestAnimationFrame(() => {
+    k.frame = 0;
+    const pts = [];
+    k.raw.forEach((q) => pts.push(r1(q.x), r1(q.y)));
+    k.el.setAttribute('d', k.s.tool === 'brush' ? inkBrushPath(pts, brushWidths(k.raw, k.s.size, k.map.z)) : inkLinePath(pts));
+    padDirty();
+  });
+}
+function endPadEditorStroke(k) {
+  padDirty();
+  if (k.erase) return;
+  if (k.mark) {
+    if (!k.mark.pts.length && ST.marks[ST.marks.length - 1] === k.mark) { ST.marks.pop(); ST.undo.pop(); }
+    if (ST.img) { buildStudioChrome(); drawStudio(); }
+    return;
+  }
+  if (k.frame) cancelAnimationFrame(k.frame);
+  k.el.remove();
+  if (!padHostAlive(k.map) || !k.raw.length) return;
+  const pts = [];
+  k.raw.forEach((q) => pts.push(r1(q.x), r1(q.y)));
+  k.s.pts = pts;
+  if (k.s.tool === 'brush') k.s.ws = brushWidths(k.raw, k.s.size, k.map.z);
+  sketchStep();
+  sk.strokes = sk.strokes.concat([k.s]);
+  drawSketchStrokes();
+}
+function padEditorErase(k, x, y) {
+  if (!padHostAlive(k.map)) return;
+  const w = padWorld(k.map, x, y);
+  if (k.map.kind === 'sketch') eraseSketchAt(w, k.E);
+  else studioErase(w, k.E);
 }
 
 /* ---- the ring where the pen would land ---- */
 let padCursorTimer = 0;
 function showPadCursor(x, y) {
   let c = $('padCursor');
-  if (!c) { c = document.createElement('div'); c.id = 'padCursor'; c.setAttribute('aria-hidden', 'true'); document.body.appendChild(c); }
-  const r = vpRect(), p = padRect();
+  if (!c) { c = document.createElement('div'); c.id = 'padCursor'; c.setAttribute('aria-hidden', 'true'); }
+  if (c.parentNode !== padLayer()) padLayer().appendChild(c);
+  const r = padHost().r, p = padRect();
   c.style.transform = `translate(${r.left + p.x + x * p.w}px, ${r.top + p.y + y * p.h}px)`;
   c.classList.remove('hidden');
   clearTimeout(padCursorTimer);
