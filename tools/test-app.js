@@ -16,7 +16,21 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const PORT = 9555 + Math.floor(Math.random() * 300);
+/* A port the operating system has just handed out, so nothing else is on it.
+   These used to be random numbers in a fixed range, and once one of them was
+   already taken: the app could not open it, the test could not attach, and
+   the build stopped on a failure that had nothing to do with the app. There
+   is still a moment between closing this probe and the app opening the port,
+   but a port the OS just picked is not one anything else is about to ask for. */
+function freePort() {
+  return new Promise((res, rej) => {
+    const srv = require('net').createServer();
+    srv.unref();
+    srv.on('error', rej);
+    srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => res(port)); });
+  });
+}
+let PORT = 0;                   // the main suite's DevTools port, picked at launch
 const UDD = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-app-test-'));
 const BOARDS = path.join(UDD, 'My Boards');
 let child = null, ws = null, msgId = 0;
@@ -289,7 +303,9 @@ async function quitApp(name, prepare, within, after, how) {
   fs.mkdirSync(path.join(boards, 'Good', 'files'), { recursive: true });
   fs.writeFileSync(path.join(boards, 'settings.json'), JSON.stringify({ v: 3, settings: {}, boardOrder: ['good1'], activeBoard: 'good1' }));
   fs.writeFileSync(path.join(boards, 'Good', 'board.json'), JSON.stringify({ mbBoard: 2, id: 'good1', name: 'Good', notes: [{ id: 'n1', x: 0, y: 0, w: 260, h: 180, body: '<p>one</p>' }], frames: [], links: [] }));
-  const rport = 9900 + Math.floor(Math.random() * 300), mport = rport + 400;
+  const rport = await freePort();
+  let mport = await freePort();
+  while (mport === rport) mport = await freePort();      // two asks in a row may, rarely, get the same one
   let proc = null, exited = false;
   await test(name, async () => {
     const args = ['.', `--user-data-dir=${udd}`, `--remote-debugging-port=${rport}`, `--inspect=${mport}`];
@@ -356,6 +372,7 @@ async function quitSuite() {
   let code = 1;
   try {
     seed();
+    PORT = await freePort();
     const electron = require('electron');            // the path to the binary, from node
     child = spawn(electron, ['.', `--user-data-dir=${UDD}`, `--remote-debugging-port=${PORT}`], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
     await connect();

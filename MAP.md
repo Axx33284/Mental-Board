@@ -954,7 +954,9 @@ blocks `npm run build` (build-app.js refuses while it runs) until it is killed.
 an edit made just before Quit is on disk and every process is gone; the other
 hangs the page (`for (;;) {}`) and checks every process is still gone. Quit is
 asked for as the tray does — `app.quit()` in main — over the Node inspector
-(`--inspect`). Two traps in that harness: the inspector's `require` exists only
+(`--inspect`). Every port the harness uses comes from the OS (`freePort()`:
+listen on 0, read the port, close) — random numbers in a fixed range once
+landed on a port already in use and failed a build for nothing. Two traps in that harness: the inspector's `require` exists only
 while the expression runs, so capture modules before any timer; and the page's
 DevTools socket must stay open until the app has gone — **detaching DevTools
 from a hung page lets the quit through**, which makes the test pass without
