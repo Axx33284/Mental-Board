@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld('mbWin', {
   // Ctrl+Q: main hears the key, the page saves, then this ends the app (2.5.1)
   quit: () => ipcRenderer.send('win:quit'),
   onQuitKey: (cb) => ipcRenderer.on('win:quit-key', () => cb()),
+  // the page heard Ctrl+Q first: main starts its deadline (2.6.1)
+  quitAsked: () => ipcRenderer.send('win:quit-asked'),
   show: () => ipcRenderer.send('win:show'),
   /* Whether closing the window should hide it to the tray or end the app. The
      renderer owns the setting; this is how main is told. */

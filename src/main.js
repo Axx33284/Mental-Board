@@ -387,7 +387,7 @@ function createWindow() {
        a locked board is re-encrypted first, exactly as for the close button. */
     if (input.control && !input.shift && !input.alt && input.code === 'KeyQ') {
       e.preventDefault();
-      win.webContents.send('win:quit-key');
+      quitFromKey('main');
     }
   });
 
@@ -808,7 +808,38 @@ ipcMain.on('win:toggle-maximize', (e) => {
 });
 ipcMain.on('win:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 // a real quit, the same as the tray's: Ctrl+Q, after the page has saved (closeAndQuit in init.js)
-ipcMain.on('win:quit', (e) => { if (!fromMain(e)) return; quitting = true; app.quit(); });
+ipcMain.on('win:quit', (e) => {
+  if (!fromMain(e)) return;
+  clearTimeout(quitKeyTimer); quitKeyTimer = null;
+  quitting = true; app.quit();
+});
+// the page heard Ctrl+Q itself (a key main never saw): the same deadline starts here
+ipcMain.on('win:quit-asked', (e) => { if (fromMain(e)) quitFromKey('page'); });
+
+/* Ctrl+Q always ends the app (2.6.1). In 2.5.1 it asked the page to leave
+   and waited for the page's answer — and on the user's own machine the answer
+   never came, twice, with nothing written anywhere: the app stayed open and
+   no quit had begun. Why is not known; a simulated Ctrl+Q quit the very same
+   build. So the page is still asked first (its exit re-encrypts a locked
+   board), but not trusted to answer: QUIT_KEY_GRACE_MS later, if it has not,
+   main quits by itself exactly as the tray's Quit does — the page's
+   beforeunload still writes the last edit, and the watchdog still ends a page
+   that cannot. That fallback is written to hangs.log, so the next time the
+   page fails to answer, which step it was is on disk. */
+const QUIT_KEY_GRACE_MS = 2000;
+let quitKeyTimer = null;
+function quitFromKey(from) {
+  if (quitting) return;
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('win:quit-key'); } catch (_) {}
+  if (quitKeyTimer) return;
+  quitKeyTimer = setTimeout(() => {
+    quitKeyTimer = null;
+    if (quitting) return;
+    hangLog(`Ctrl+Q (heard by ${from}): the page did not ask to quit within ${QUIT_KEY_GRACE_MS / 1000} s; quitting from main`);
+    quitting = true;
+    app.quit();
+  }, QUIT_KEY_GRACE_MS);
+}
 ipcMain.on('win:show', () => showMain());
 ipcMain.handle('win:is-maximized', (e) => !!BrowserWindow.fromWebContents(e.sender)?.isMaximized());
 

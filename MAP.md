@@ -228,7 +228,7 @@ never touch individual elements.
 |--------|-----------|
 | `window.mbData` | `load()` `save(payload)` `saveAsync(payload)` `snapshot(id,json,day)` `versionSnapshot(id,json,label)` `paths()` `openDataFolder()` `openBoardFolder(id)` `pickBackupDir()` `backupTo(dir)` `exportBoard(id,name)` `importBoard()` `readExternal(path)` `adoptFiles(beside,urls,toId)` `duplicateFiles(from,to,name,group)` `removeBoardDir(id)` — and JSON Canvas (§4t): `pickCanvasPath(suggested)` `writeCanvas(file,json,id,names,folder)` `importCanvas()` `readCanvas(path)` `resolveCanvas(dir,rels)` — and Samsung Notes (§4w): `pickSamsung()` `readSamsung(path,boardId)` |
 | `window.mbFiles` | `pathOf(file)` `pickImage(purpose)` `pickVideo()` `savePng(dataUrl,name)` `describeEmbed(kind,id)` `playerUrl(kind,id)` `openExternal(url)` `openLocal(url)` `revealLocal(url)` `readImage(url)` — and the files a board carries: `attach(path,boardId,name)` `attachBytes(dataUrl,boardId,name)` `carry(urls,toId)` `listAttachments(boardId)` `unusedFiles(keep)` `removeUnusedFiles(keep)` `filesDir(boardId)` `openFilesDir(boardId)`. See §4n. |
-| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `quit()` `onQuitKey(cb)` (Ctrl+Q, §4k) `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` — and spelling (§4z1): `onSpell(cb)` `learnWord(w)` |
+| `window.mbWin` | `minimize()` `toggleMaximize()` `close()` `quit()` `onQuitKey(cb)` `quitAsked()` (Ctrl+Q, §4k) `show()` `setBackground(on)` `setStrings(table)` `isMaximized()` `onMaximized(cb)` `onCapture(cb)` — and spelling (§4z1): `onSpell(cb)` `learnWord(w)` |
 | `window.mbTheme` | `set(theme)` `isDark()` `onSystemChange(cb)` |
 | `window.mbPad` | `start(address)` `stop()` `send(msg)` `addresses()` `onState(cb)` `onMessage(cb)` — the phone as a tablet (§4x). The renderer never sees the token and cannot pick a port; `send` passes only the `view` message. |
 | `window.mbSys` | `info()` → `{ compositing, software, softwareRender }` — whether Chromium is drawing this window without a GPU. See §4c. |
@@ -985,6 +985,26 @@ real icon sat among identical dead ones whose Quit does nothing.
 
 Launching the app again while it runs hidden already shows the window
 (`second-instance`), so a hidden app is never out of reach.
+
+**Ctrl+Q does not wait on the page (2.6.1).** On the user's machine 2.5.1's
+Ctrl+Q twice did nothing — no quit began, nothing was logged — while a
+simulated Ctrl+Q quit the same build. The cause is not known, so the key no
+longer depends on the page answering:
+
+- main hears it (`before-input-event`) and calls `quitFromKey()`, which asks
+  the page (`win:quit-key`) **and** arms `QUIT_KEY_GRACE_MS` (2 s). If the
+  page has not sent `win:quit` by then, main quits by itself as the tray does
+  — `beforeunload` still writes the last edit, the watchdog still ends a page
+  that cannot — and writes the fallback to `hangs.log`, so the next failure
+  says which step it was;
+- the page also listens for Ctrl+Q, in the **capture** phase on `window` (a
+  note's editor stops its keys bubbling), for the case where main never saw
+  the key: it sends `win:quit-asked`, which arms the same deadline;
+- `closeAndQuit()` sends its quit in a `finally`, so a throw in the last
+  save no longer keeps the window open.
+
+Test: a page whose `closeAndQuit` does nothing, sent Ctrl+Q — it must end,
+with the edit on disk and the line in `hangs.log`.
 
 Tests: two more quits in `tools/test-app.js` — Ctrl+Q in a copy launched with
 `--tray` (where closing would only hide it), and the close button of a test

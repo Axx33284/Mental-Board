@@ -293,7 +293,7 @@ async function quitApp(name, prepare, within, after, how) {
   let proc = null, exited = false;
   await test(name, async () => {
     const args = ['.', `--user-data-dir=${udd}`, `--remote-debugging-port=${rport}`, `--inspect=${mport}`];
-    if (how === 'ctrlq') args.push('--tray');
+    if (how === 'ctrlq' || how === 'ctrlq-silent') args.push('--tray');
     proc = spawn(require('electron'), args, { cwd: ROOT, stdio: 'ignore', windowsHide: true });
     proc.on('exit', () => { exited = true; });
     const pg = await cdpAt(rport, (p) => p.type === 'page' && /index\.html/.test(p.url));
@@ -307,7 +307,7 @@ async function quitApp(name, prepare, within, after, how) {
       main.close();       // the page's socket stays open: detaching DevTools from a hung page lets it go
     } else {
       main.close();
-      if (how === 'ctrlq') {
+      if (how === 'ctrlq' || how === 'ctrlq-silent') {
         const key = { modifiers: 2, key: 'q', code: 'KeyQ', windowsVirtualKeyCode: 81, nativeVirtualKeyCode: 81 };
         pg.send('Input.dispatchKeyEvent', Object.assign({ type: 'rawKeyDown' }, key));
         pg.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, key));
@@ -320,7 +320,7 @@ async function quitApp(name, prepare, within, after, how) {
     await sleep(1500);
     const left = appProcesses(udd);
     ok(!left.length, 'still running after Quit: ' + left.join(', '));
-    if (after) after(fs.readFileSync(path.join(boards, 'Good', 'board.json'), 'utf8'));
+    if (after) after(fs.readFileSync(path.join(boards, 'Good', 'board.json'), 'utf8'), udd);
   });
   if (proc && !exited) { try { process.platform === 'win32' ? spawn('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore' }) : proc.kill(); } catch (_) {} await sleep(1500); }
   try { fs.rmSync(udd, { recursive: true, force: true }); } catch (_) {}
@@ -339,6 +339,15 @@ async function quitSuite() {
   await quitApp('Ctrl+Q writes the last edit and ends every process, tray or no tray', async (pg) => {
     await pg.ev("(() => { state.notes[0].body = '<p>said before Ctrl+Q</p>'; return 1; })()");
   }, 5000, (json) => ok(json.includes('said before Ctrl+Q'), 'the edit made just before Ctrl+Q is not on disk'), 'ctrlq');
+  // 2.6.1: a page that never answers Ctrl+Q — what happened on the user's machine — is quit from main
+  await quitApp('Ctrl+Q still quits when the page never answers it, and says so in hangs.log', async (pg) => {
+    await pg.ev("(() => { state.notes[0].body = '<p>said before a silent Ctrl+Q</p>'; closeAndQuit = async () => {}; return 1; })()");
+  }, 2000 + 5000, (json, dir) => {
+    ok(json.includes('said before a silent Ctrl+Q'), 'the edit made just before Ctrl+Q is not on disk');
+    let log = '';
+    try { log = fs.readFileSync(path.join(dir, 'hangs.log'), 'utf8'); } catch (_) {}
+    ok(log.includes('Ctrl+Q (heard by main): the page did not ask to quit'), 'no fallback line in hangs.log: ' + JSON.stringify(log));
+  }, 'ctrlq-silent');
   // 2.5.1: a test copy has no tray icon to leave behind, so its close button ends it
   await quitApp('a test copy has no tray: closing its window ends it', async () => {}, 5000, null, 'close');
 }

@@ -28,15 +28,23 @@
    shown, attached to a session the user has finished with. The write still
    happens either way, with the last good envelope. */
 async function closeAndQuit(really) {
-  if (sketchOpen()) closeSketch();       // a drawing note open full screen keeps what was drawn
-  if (editing && editNote) editNote.body = bodyHtml(editing);
-  if (state.boards.some((b) => b.enc && unlocked.has(b.id))) {
-    try { await reencryptOpenBoards(); }
-    catch (err) { console.error('re-encryption threw on the way out:', err); }
+  /* Whatever goes wrong on the way, the window is still asked to go — a throw
+     here used to leave the app open with nothing to say why (2.6.1). The
+     beforeunload save still runs after this, as the backstop. */
+  try {
+    if (sketchOpen()) closeSketch();       // a drawing note open full screen keeps what was drawn
+    if (editing && editNote) editNote.body = bodyHtml(editing);
+    if (state.boards.some((b) => b.enc && unlocked.has(b.id))) {
+      try { await reencryptOpenBoards(); }
+      catch (err) { console.error('re-encryption threw on the way out:', err); }
+    }
+    flushSave();
+  } catch (err) {
+    console.error('closing: the last save threw, leaving anyway:', err);
+  } finally {
+    // Ctrl+Q ends the app even with Run in background on; the close button only hides it then
+    if (WIN) { if (really === true && WIN.quit) WIN.quit(); else WIN.close(); }
   }
-  flushSave();
-  // Ctrl+Q ends the app even with Run in background on; the close button only hides it then
-  if (WIN) { if (really === true && WIN.quit) WIN.quit(); else WIN.close(); }
 }
 
 function onPointerDown(e) {
@@ -1189,6 +1197,16 @@ function wireExtras() {
   });
   $('capture').addEventListener('pointerdown', (e) => { if (e.target === $('capture')) closeCapture(); });
   if (WIN && WIN.onQuitKey) WIN.onQuitKey(() => closeAndQuit(true));
+  /* Ctrl+Q heard by the page too, in the capture phase so nothing on the page
+     (a note's editor stops its keys from bubbling) can keep it from here. When
+     main has heard it first it was cancelled there and never arrives; when it
+     arrives, main never saw it, and is told to start its deadline. */
+  window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyQ')) return;
+    e.preventDefault(); e.stopPropagation();
+    if (WIN && WIN.quitAsked) WIN.quitAsked();
+    closeAndQuit(true);
+  }, true);
   if (WIN && WIN.onCapture) WIN.onCapture(() => { if (state.settings.capture) openCapture(); });
 
   // reminders
