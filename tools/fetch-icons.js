@@ -52,7 +52,10 @@ const UI = [
      view, per chart and per property type — and the table of contents */
   'view_kanban', 'view_timeline', 'dynamic_feed', 'bar_chart', 'align_horizontal_left',
   'show_chart', 'donut_large', 'check_box', 'radio_button_checked', 'arrow_drop_down_circle',
-  'list', 'location_on', 'notes', 'toc', 'chevron_left'
+  'list', 'location_on', 'notes', 'toc', 'chevron_left',
+  /* 2.9: the block handle (js/blocks.js) — its grip, Turn into, text and
+     background colours — and the toggle blocks' row in the slash menu */
+  'drag_indicator', 'autorenew', 'format_color_text', 'format_color_fill', 'arrow_right'
 ];
 
 /* Icons the user can stamp on a note or a workflow, or drop into note text with

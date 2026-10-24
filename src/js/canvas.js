@@ -120,6 +120,14 @@ function noteToMarkdown(html, ref) {
       // a database goes out as a Markdown table of its rows; a contents block is painted, so nothing (database.js, editor.js)
       if (tag === 'DIV' && node.classList.contains('mb-db')) { const md = dbMarkdown(node.getAttribute('data-db')); if (md) blocks.push(md); continue; }
       if (tag === 'DIV' && node.classList.contains('mb-toc')) continue;
+      // a toggle goes out as its title — a heading at its level, or a line — with its inside under it (blocks.js)
+      if (tag === 'DIV' && node.classList.contains('mb-toggle')) {
+        const head = node.querySelector(':scope > .mb-tg-head'), lvl = /mb-tg-h([1-3])/.exec(node.className);
+        if (head) blocks.push((lvl ? '#'.repeat(+lvl[1]) + ' ' : '- ') + mdInline(head, ref).trim());
+        const inside = node.querySelector(':scope > .mb-tg-body');
+        if (inside) walk(inside);
+        continue;
+      }
       if (tag === 'DIV' && node.classList.contains('mb-embed')) {
         const a = node.querySelector('a');
         const href = (a && a.getAttribute('href')) || '';

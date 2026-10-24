@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-five scripts or nine sheets holds the thing you are after, so you never
+twenty-six scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-five ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + twenty-six ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -137,6 +137,9 @@ The things that make it more than a note wall:
 | **The slash menu in Notion's sections, with a picture of each block beside it** | js/toolbars.js + css/mental.css §75 §4z6 |
 | **Databases in a note: table, board, gallery, list, calendar, timeline, feed, dashboard, map, five charts, a form, a full-page one and linked views** | js/database.js + css/mental.css §76 §4z6 |
 | **A table of contents; a web bookmark from the slash menu** | js/editor.js + js/embeds.js §4z6 |
+| **Notion's block handle: Turn into, colour, duplicate, move (drag, Ctrl+Shift+↑/↓), delete** | js/blocks.js + css/mental.css §80 §4z7 |
+| **Text and background colours, on a block or on words** | js/blocks.js + css/mental.css §78 §4z7 |
+| **Toggle lists and toggle headings** | js/blocks.js + css/mental.css §79 §4z7 |
 
 ---
 
@@ -150,7 +153,7 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           25 plain scripts, one global scope, no bundler   (§4)
+  js/           26 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png; vendored: katex/
   main.js       Electron main
@@ -175,7 +178,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
 | `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | ~19300 | All app logic, in 25 plain scripts sharing one global scope. See §4. |
+| `src/js/*.js` | ~19900 | All app logic, in 26 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
@@ -221,7 +224,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-five scripts that follow. Between them they hold one mutable `state`,
+twenty-six scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -624,10 +627,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-five files
+## 4. `src/js/` — the app, in twenty-six files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) and 2.8 one (`database.js`, after `embeds.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) 2.8 one (`database.js`, after `embeds.js`) and 2.9 one (`blocks.js`, after `toolbars.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -646,6 +649,7 @@ no bundler and no build step — the only thing joining them is the order
 | `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
 | `embeds.js` | ~350 | Bookmark cards, click-to-play video, `/video` and `/bookmark` (one window, `embedMode`), and the paste-as menu. See §4e. |
 | `database.js` | ~1500 | **A database inside a note** (2.8): the model and its healing (`adoptDb` `okDbCell` `newDbData`), where a block's data is (`dbCtx` `dbLocate` — a linked view reads another block's), the one door for a change (`dbEdit`), painting (`paintDatabases` `paintDb` → a `db*Html` per layout: table, board, gallery, list, calendar, timeline, feed, dashboard, map, chart, form), the menus (`openDbPop` and the builders on it), cells (`dbEditCell` `dbInlineInput` `openOptPicker` `openDatePicker`), a row as a page (`openDbRow` `paintDbRow`), drag (`onDbPointerDown` → `onDbPointerUp`), the Backspace guard (`dbGuardKey`), and `dbMarkdown`/`dbPlain` for export and search. See §4z6. |
+| `blocks.js` | ~560 | **Notion's block editing** (2.9): what a block is (`blockOf` `blockKind`), Turn into (`turnBlockInto` `buildBlock` `placeOutOfList` `mergeLists`), colour (`setBlockColor` `colorSelection` `buildColorPop`), toggles (`toggleArrowAt` `flipToggle` `toggleKey` `repairToggles` `setToggleLevel`), moving (`moveBlockTo` `moveBlockBy` `blockMoveKey`), `duplicateBlock` `deleteBlock`, and the handle (`onBhMove` `showBlockHandle` `openBlockMenu` and the grip's drag). See §4z7. |
 | `toolbars.js` | ~800 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu — Notion's sections (`BLOCK_SECTIONS`), keywords (`kw`), ranked by `blockRank` when something is typed — and the picture beside it (`peekSlash` `blockPeek`, §4z6): the chrome that sits over the editor. |
 | `media.js` | ~900 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — zoomable, with a pen's pressure, highlighter, eraser and its own undo since 2.6, §4z3: `ST.view` `setStudioView` `studioStep`/`studioUndo` `markNear` `onStudioKey` `wireStudioSurface` — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
 | `sketch.js` | ~470 | **The zoomable surface** both drawing editors use (`zoomPanSurface`, §4z3), and **a drawing note** (2.5; no page since 2.6): `okSketch` (healing), `sketchBounds` `fitSketchNote`, `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
@@ -2741,7 +2745,64 @@ does not draw databases.
 ### Not here, on purpose
 
 Notion's Custom view (code with access to Notion data), formulas, relations and
-rollups, filters (sorting and hiding are), real map tiles, and toggle blocks.
+rollups, filters (sorting and hiding are), and real map tiles. (Toggle blocks
+came in 2.9, §4z7.)
+
+## 4z7. Notion's block editing (2.9) — `js/blocks.js`
+
+**What a block is** (`blockOf`): a direct child of the note body, of a column
+(`.mb-col`) or of a toggle's inside (`.mb-tg-body`) — or one list item; a whole
+list is not a block. A database, a table or a picture is a block for moving,
+duplicating and deleting; only text-like blocks (`blockKind` ≠ '') can be
+turned into something else or coloured.
+
+**Turn into** (`turnBlockInto`) works by hand, not with `execCommand`:
+`formatBlock` on an `<li>` wraps the whole list (§7) and on a toggle's title it
+would turn the title's `<div>` into the heading. The words are lifted out
+(`blockInner`), a block of the new kind is built round them (`buildBlock`), and
+what hangs under the old one (a toggle's inside, an item's sub-list) is carried
+along (`blockExtras`); colour, alignment and `dir` go with it. A list item
+leaving its list splits the list round it (`placeOutOfList`), and two lists of
+the same kind side by side are merged (`mergeLists`). The slash menu's toggles
+use the same path on the caret's line (`turnCaretBlock`).
+
+**Colour** is a class, never a colour value: `mb-tc-<c>` (text) and `mb-bc-<c>`
+(background) with the app's nine `COLORS`, on the block (`setBlockColor`) or on
+a span round selected words (`colorSelection`, which finds its runs the way the
+size buttons do). The colours are `--tc-*` variables per mode (mental.css §78),
+so a coloured word stays readable when the theme turns dark, and `mb-` classes
+survive a paste. Three ways in: the block menu, the selection bar's "A"
+(`#colorPop`, `buildColorPop`), and `/red`, `/blue background` in the slash menu
+(`slashColors` in toolbars.js — offered only once something is typed).
+
+**Toggles** are `div.mb-toggle` > `div.mb-tg-head` + `div.mb-tg-body`, with
+`mb-open` when open (kept, as Notion keeps it) and `mb-tg-h1..3` for a toggle
+heading. The arrow is the title's CSS `::before` (§79), not an element —
+nothing to paint, store or lift, nothing the caret can get inside — and a press
+on it is found by where it lands (`toggleArrowAt`), in an open note or a closed
+one (`onPointerDown` lets it through). `toggleKey` (from `onEditorKey`): Enter
+in the title opens a line inside (or under a closed toggle), taking the words
+after the caret; Enter on an empty last line inside steps out; Backspace at the
+start of the title turns it back into text. `repairToggles` (from
+`normalizeBody`) mends a half-made one. Markdown shortcuts are off in a title
+(`mdShortcuts`), and a heading chosen there — slash menu or selection bar —
+sets the toggle's level instead (`slashInToggleHead`, `setToggleLevel`). Toggle
+headings are in the table of contents, which opens closed toggles to show one.
+
+**The handle** (`#blockHandle`, outside every note, at screen size): placed
+beside the block under the pointer of the note being edited (`onBhMove` →
+`blockAtPoint`, which also reads across from the left margin); hidden while
+typing (`onEditorKey`), on the wheel, and when editing ends. **+** adds a block
+below and opens the slash menu; **⋮⋮** opens the block menu on a click
+(`openBlockMenu`, on the generic `#dbPop` popover — read the grip's rect
+*before* hiding the handle, or the menu opens at the corner) and moves the
+block on a drag (`onGripDown` → `onGripMove`, with `#blockDrop` as the line,
+→ `moveBlockTo`). Ctrl+Shift+↑/↓ moves the caret's block (`blockMoveKey`).
+After any of these, `finishBlockEdit` repairs and saves; `healAfterMove` leaves
+no empty list, column or toggle behind; a duplicated database gets a new id.
+
+**Not tested by the suite yet**: these were checked by hand in the sandbox with
+real keys and the mouse (2.9), not in tools/test-app-features.js.
 
 ## 4o. Lining a note up with its neighbours
 
@@ -3258,7 +3319,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents. Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line. Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section

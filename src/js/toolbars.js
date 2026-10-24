@@ -13,7 +13,7 @@
    pinned in place until the user makes a fresh selection. */
 let selBarPinned = false;
 
-function hideSelBar() { $('selBar').classList.add('hidden'); $('hilitePop').classList.remove('open'); selBarPinned = false; }
+function hideSelBar() { $('selBar').classList.add('hidden'); $('hilitePop').classList.remove('open'); $('colorPop').classList.remove('open'); selBarPinned = false; }
 function unpinSelBar() { selBarPinned = false; }
 
 function showSelBar() {
@@ -241,6 +241,13 @@ function wireSelBar() {
     runFormat(() => document.execCommand(b.dataset.cmd))));
   // headings toggle: clicking H1 on an existing H1 goes back to plain text
   bar.querySelectorAll('[data-block]').forEach((b) => b.addEventListener('click', () => runFormat(() => {
+    // a toggle's title takes the heading as its level; formatBlock would turn its <div> into the heading (blocks.js)
+    const head = caretClosest('.mb-tg-head');
+    if (head) {
+      const tg = head.parentElement, lvl = 'toggleH' + b.dataset.block.slice(1);
+      setToggleLevel(tg, blockKind(tg) === lvl ? 'toggle' : lvl);
+      return;
+    }
     const blk = caretBlock(editing);
     const already = blk && blk.tagName.toLowerCase() === b.dataset.block;
     escapeList();
@@ -272,7 +279,14 @@ function wireSelBar() {
 
   bar.querySelector('[data-act="code"]').addEventListener('click', () => runFormat(toggleInlineCode));
   bar.querySelector('[data-act="hilite"]').addEventListener('click', (e) => {
-    e.stopPropagation(); selBarPinned = true; $('hilitePop').classList.toggle('open');
+    e.stopPropagation(); selBarPinned = true; $('colorPop').classList.remove('open'); $('hilitePop').classList.toggle('open');
+  });
+  // Notion's "A": the selected words' text or background colour (blocks.js, buildColorPop)
+  bar.querySelector('[data-act="color"]').addEventListener('click', (e) => {
+    e.stopPropagation(); selBarPinned = true;
+    colorRange = savedRange;
+    $('hilitePop').classList.remove('open');
+    $('colorPop').classList.toggle('open');
   });
   bar.querySelector('[data-act="link"]').addEventListener('click', () => openLinkDialog());
   // the selected words become the formula's LaTeX; nothing selected opens it empty
@@ -331,6 +345,8 @@ const BLOCKS = [
   { k: 'letters', sec: 'basic', ic: 'format_list_numbered',  kw: 'lettered list alphabet abc',  run: () => insertStyledList('la') },
   { k: 'roman',   sec: 'basic', ic: 'format_list_numbered_rtl', kw: 'roman numerals list',      run: () => insertStyledList('ur') },
   { k: 'todo',    sec: 'basic', ic: 'checklist',             kw: 'to-do todo checkbox task',    run: insertTodo },
+  // 2.9: toggles (blocks.js) — the line the caret is on becomes one
+  { k: 'toggle',  sec: 'basic', ic: 'arrow_right',           kw: 'toggle list collapse expand fold details', fresh: true, run: () => turnCaretBlock('toggle') },
   { k: 'callout', sec: 'basic', ic: 'lightbulb',             kw: 'callout tip note box',        run: insertCallout },
   { k: 'quote',   sec: 'basic', ic: 'format_quote',          kw: 'quote blockquote citation',   run: () => document.execCommand('formatBlock', false, 'blockquote') },
   { k: 'table',   sec: 'basic', ic: 'table',                 kw: 'simple table grid',           run: () => insertTable(3, 3) },
@@ -360,6 +376,9 @@ const BLOCKS = [
   { k: 'dbPage',      sec: 'database', ic: 'description',    kw: 'database full page',         fresh: true, run: insertDatabasePage },
   { k: 'dbLinked',    sec: 'database', ic: 'north_east',     kw: 'linked view data source existing', fresh: true, run: pickLinkedDatabase },
   { k: 'toc',      sec: 'advanced', ic: 'toc',               kw: 'table of contents toc outline', fresh: true, run: insertToc },
+  { k: 'toggleH1', sec: 'advanced', ic: 'arrow_right',       kw: 'toggle heading 1 h1 th1 collapse', fresh: true, run: () => turnCaretBlock('toggleH1') },
+  { k: 'toggleH2', sec: 'advanced', ic: 'arrow_right',       kw: 'toggle heading 2 h2 th2 collapse', fresh: true, run: () => turnCaretBlock('toggleH2') },
+  { k: 'toggleH3', sec: 'advanced', ic: 'arrow_right',       kw: 'toggle heading 3 h3 th3 collapse', fresh: true, run: () => turnCaretBlock('toggleH3') },
   { k: 'equation', sec: 'advanced', ic: 'functions',         kw: 'block equation math latex formula $$', run: () => openMathDialog(null, { block: true }) },
   { k: 'columns',  sec: 'advanced', ic: 'view_column',       kw: 'columns col layout 2 3 4 5',  run: (n) => insertColumns(n || 2) },
   // 2.3: a formula in the line, and chemistry (mhchem)
@@ -613,11 +632,31 @@ function slashItems(q) {
     : BLOCK_SECTIONS.flatMap((s) => BLOCKS.filter((b) => b.sec === s).map(asItem));
   return [
     ...blocks,
+    ...slashColors(q),
     ...userTemplates().filter((x) => templateMatches(x, q)).map((x) => ({
       kind: 'tpl', ic: x.icon || 'sticky_note_2', name: templateName(x),
       desc: noteHeadline(x.body), run: x
     }))
   ];
+}
+
+/* "/red", "/blue background" — Notion's way of colouring the block the caret
+   is in (2.9). Only offered once something is typed, and only for a colour
+   whose name (in the interface's language, or English) starts what was typed. */
+function slashColors(q) {
+  if (!q) return [];
+  const out = [];
+  COLORS.forEach((c) => {
+    const names = [foldSearch(t('colour.' + c)), foldSearch(FALLBACK['colour.' + c] || '')];
+    const name = t('colour.' + c);
+    const word = q.split(/\s+/)[0];
+    if (!names.some((s) => s && (s.startsWith(word) || word.startsWith(s)))) return;
+    const bg = /\b(bg|back|backg|background|خلفية)/.test(q);
+    const text = { kind: 'color', part: 'tc', color: c, ic: 'format_color_text', name: t('tc.text', { name }), desc: t('tc.textD') };
+    const back = { kind: 'color', part: 'bc', color: c, ic: 'format_color_fill', name: t('tc.bg', { name }), desc: t('tc.bgD') };
+    out.push(...(bg ? [back, text] : [text, back]));
+  });
+  return out;
 }
 
 function renderSlash() {
@@ -684,7 +723,9 @@ function peekSlash() {
   const it = slash.open && slash.items[slash.sel];
   const peek = $('slashPeek');
   if (!it) { peek.classList.add('hidden'); return; }
-  $('slashPeekPic').innerHTML = it.kind === 'tpl' ? blockPeek('tpl') : blockPeek(it.run.k);
+  $('slashPeekPic').innerHTML = it.kind === 'tpl' ? blockPeek('tpl')
+    : it.kind === 'color' ? `<div class="pk-page pk-big"><p><span class="mb-${it.part}-${esc(it.color)}">${te('pk.text')}</span></p></div>`
+      : blockPeek(it.run.k);
   $('slashPeekCap').textContent = it.desc || '';
   peek.classList.remove('hidden');
   const m = $('slashMenu').getBoundingClientRect();
@@ -734,6 +775,11 @@ function blockPeek(k) {
     case 'letters': return `<div class="pk-page pk-big"><ol class="pk-la">${lis}</ol></div>`;
     case 'roman': return `<div class="pk-page pk-big"><ol class="pk-ur">${lis}</ol></div>`;
     case 'todo': return `<div class="pk-page pk-big"><div class="pk-todo done"><i>${icon('check')}</i><s>${te('pk.todo1')}</s></div><div class="pk-todo"><i></i><span>${te('pk.todo2')}</span></div><div class="pk-todo"><i></i><span>${te('pk.todo3')}</span></div></div>`;
+    case 'toggle': case 'toggleH1': case 'toggleH2': case 'toggleH3': {
+      const lvl = k === 'toggle' ? 0 : +k.slice(-1);
+      return `<div class="pk-page${lvl ? '' : ' pk-big'}"><div class="pk-tg open lvl${lvl}"><b>${te(lvl ? 'pk.h' + lvl : 'pk.li2')}</b><span>${te('pk.text')}</span></div>` +
+        `<div class="pk-tg lvl${lvl}"><b>${te(lvl ? 'pk.tasks' : 'pk.li3')}</b></div></div>`;
+    }
     case 'callout': return `<div class="pk-page"><div class="pk-callout">${icon('lightbulb')}<span>${te('pk.callout')}</span></div></div>`;
     case 'quote': return `<div class="pk-page pk-big"><blockquote>${te('pk.quote')}</blockquote></div>`;
     case 'table': return `<div class="pk-page"><table class="pk-tbl"><tr><th>${te('pk.item')}</th><th>${te('pk.qty')}</th></tr>` +
@@ -838,7 +884,16 @@ function runSlash(i) {
   } catch (_) {}
   body.focus();
   if (item.kind === 'tpl') { applyTemplate(item.run.id); return; }
+  // a colour is the block's, the way Notion's "/red" is (blocks.js)
+  if (item.kind === 'color') {
+    const blk = blockOf(getSelection().anchorNode, body);
+    if (blk && blockKind(blk)) setBlockColor(blk, item.part, item.color);
+    persistEdit();
+    return;
+  }
   const b = item.run;
+  // on a toggle's title a heading is the toggle's level, and anything else goes inside it (blocks.js)
+  if (slashInToggleHead(b.k)) { persistEdit(); return; }
   // these replace the whole line, so lift it out of any list it sits in first
   if (['text', 'h1', 'h2', 'h3', 'quote', 'divider'].includes(b.k)) escapeList();
   /* A number anywhere in what was typed is passed to the block. `/columns 4`

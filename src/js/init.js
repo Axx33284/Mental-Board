@@ -52,6 +52,7 @@ function onPointerDown(e) {
   // clicking away from the paste menu means "plain text, thanks"
   if (pasteCtx && !e.target.closest('#pasteMenu')) applyPasteAs('text');
   if ($('hilitePop')) $('hilitePop').classList.remove('open');
+  if ($('colorPop')) $('colorPop').classList.remove('open');
   if (e.button === 2) return;                        // handled by contextmenu
 
   // Buttons inside a note handle themselves. They must bail out BEFORE any
@@ -63,6 +64,8 @@ function onPointerDown(e) {
      them must not start moving the note (database.js, editor.js). The rest of
      a database is the note, and drags it. */
   if (e.button === 0 && e.target.closest('.db-face [data-act], .db-face :is(input, select, textarea, label), .toc-face [data-act]')) return;
+  // and a toggle's arrow, which opens and closes it in a closed note too (blocks.js)
+  if (e.button === 0 && toggleArrowAt(e)) return;
 
   /* A link in note text is a button too, and it was losing its click to exactly
      the same capture. Pressing on a note that is not being edited went straight
@@ -1075,6 +1078,7 @@ function init() {
   wireTableBar();
   wireColsBar();
   wireDatabases();
+  wireBlocks();
   wireSounds();
   wireKeySounds();
   wirePad();
@@ -1590,6 +1594,9 @@ const STATIC_ICONS = [
   ['h3:has([data-t="set.templates"]) .sec-ic', 'bookmarks'],
   ['#tplCancel', 'close'],
   ['#dbRdClose', 'close'],
+  ['#bhAdd', 'add'],
+  ['#bhGrip', 'drag_indicator'],
+  ['#selBar [data-act="color"]', 'format_color_text'],
   ['#tplOk .b-ic', 'check']
 ];
 function paintStaticIcons() {

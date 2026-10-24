@@ -38,6 +38,9 @@ function wireNoteBody(body, n, el) {
     // a line of the table of contents scrolls the note to its heading, open or closed
     const ti = e.target.closest('.toc-i');
     if (ti) { e.preventDefault(); jumpToHeading(body, +ti.dataset.i); return; }
+    // a toggle's arrow opens and closes it, in an open note or a closed one (blocks.js)
+    const tgh = toggleArrowAt(e);
+    if (tgh) { e.preventDefault(); flipToggle(tgh, body, n); return; }
     // checkbox hit area
     const li = e.target.closest('ul.mb-todo > li');
     if (li && e.offsetX < 24 && e.target === li) {
@@ -150,7 +153,7 @@ function enterEdit(n) {
 }
 
 function exitEdit() {
-  closeSlash(); hideSelBar(); clearImageSel(); hideTableBar(); hideColsBar();
+  closeSlash(); hideSelBar(); clearImageSel(); hideTableBar(); hideColsBar(); hideBlockHandle();
   if (!editing) return;
   const body = editing, n = editNote;
   editing = null; editNote = null;
@@ -179,6 +182,7 @@ function exitEdit() {
 /* --- keyboard inside a note ------------------------------------------- */
 function onEditorKey(e, body, n) {
   e.stopPropagation();     // canvas shortcuts must not fire while typing
+  hideBlockHandle();       // typing puts the block handle away, as Notion's does (blocks.js)
 
   /* First, because the paste menu is modal over the caret: it opened *because*
      of a keystroke and the next one is an answer to it, not text. */
@@ -204,6 +208,8 @@ function onEditorKey(e, body, n) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); exitEdit(); return; }
   if (columnEdgeKey(e)) return;
   if (dbGuardKey(e, body)) return;      // a database is not deleted by a stray Backspace (database.js)
+  if (blockMoveKey(e, body)) return;    // Ctrl+Shift+↑/↓ moves the block (blocks.js)
+  if (toggleKey(e, body)) return;       // Enter and Backspace in a toggle (blocks.js)
 
   const pre = caretPre();
   if (pre) {
@@ -400,6 +406,7 @@ function normalizeBody(body) {
   // and a code span inside a code span draws two borders
   body.querySelectorAll('code code').forEach((c) => c.replaceWith(...c.childNodes));
   repairColumns(body);
+  repairToggles(body);           // a toggle always has its title and its inside (blocks.js)
   // collapse redundant size wrappers
   body.querySelectorAll('span.mb-fs > span.mb-fs:only-child').forEach((inner) => {
     const outer = inner.parentElement;
@@ -423,6 +430,9 @@ function normalizeBody(body) {
 // consumed the keystroke.
 function mdShortcuts(e, body, n) {
   if (e.key !== ' ' && e.key !== 'Enter') return false;
+  /* None in a toggle's title: formatBlock there would turn the title's <div>
+     into the heading and the toggle would lose its head (blocks.js). */
+  if (caretClosest('.mb-tg-head')) return false;
   const sel = getSelection();
   if (!sel.rangeCount || !sel.isCollapsed) return false;
   const tn = sel.anchorNode;
@@ -569,14 +579,17 @@ function insertToc() {
   insertHTML('<div class="mb-toc" contenteditable="false"></div><p><br></p>');
   if (editing) { paintTocs(editing); normalizeBody(editing); }
 }
-const tocHeadings = (body) => [...body.querySelectorAll('h1, h2, h3')].filter((h) => !h.closest('.mb-toc, .mb-db'));
+// the note's headings — a toggle heading's title counts as its level (2.9, blocks.js)
+const TOC_SEL = 'h1, h2, h3, .mb-tg-h1 > .mb-tg-head, .mb-tg-h2 > .mb-tg-head, .mb-tg-h3 > .mb-tg-head';
+const tocHeadings = (body) => [...body.querySelectorAll(TOC_SEL)].filter((h) => !h.closest('.mb-toc, .mb-db'));
+const tocLevel = (h) => (/^H[1-3]$/.test(h.tagName) ? h.tagName.toLowerCase() : 'h' + /mb-tg-h([1-3])/.exec(h.parentElement.className)[1]);
 function paintTocs(root) {
   if (!root) return;
   const tocs = root.querySelectorAll('.mb-toc');
   if (!tocs.length) return;
   const heads = tocHeadings(root);
   const html = heads.length
-    ? heads.map((h, i) => `<button class="toc-i toc-${h.tagName.toLowerCase()}" data-act="toc" data-i="${i}" dir="auto">${esc(h.textContent.trim() || '…')}</button>`).join('')
+    ? heads.map((h, i) => `<button class="toc-i toc-${tocLevel(h)}" data-act="toc" data-i="${i}" dir="auto">${esc(h.textContent.trim() || '…')}</button>`).join('')
     : `<span class="toc-none">${te('toc.empty')}</span>`;
   tocs.forEach((el) => {
     let face = el.querySelector(':scope > .toc-face');
@@ -595,6 +608,11 @@ function paintTocs(root) {
 function jumpToHeading(body, i) {
   const h = tocHeadings(body)[i];
   if (!h) return;
+  // a heading folded away inside a closed toggle is unfolded to be shown
+  for (let tg = h.parentElement.closest('.mb-toggle'); tg && body.contains(tg); tg = tg.parentElement.closest('.mb-toggle')) {
+    if (h.parentElement === tg) continue;
+    tg.classList.add('mb-open');
+  }
   const z = state.view.z || 1;
   const top = body.scrollTop + (h.getBoundingClientRect().top - body.getBoundingClientRect().top) / z - 8;
   body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
@@ -742,7 +760,7 @@ function ensureTail(body) {
   while (last && last.nodeType === 3 && !last.textContent.replace(/​/g, '').trim()) last = last.previousSibling;
   if (!last || last.nodeType !== 1) return null;
   const needs = last.tagName === 'TABLE' || last.tagName === 'PRE' ||
-    (last.tagName === 'DIV' && /\b(mb-cols|mb-math-block|mb-embed|mb-file|mb-db|mb-toc)\b/.test(last.className));
+    (last.tagName === 'DIV' && /\b(mb-cols|mb-math-block|mb-embed|mb-file|mb-db|mb-toc|mb-toggle)\b/.test(last.className));
   if (!needs) return null;
   const p = document.createElement('p');
   p.innerHTML = '<br>';

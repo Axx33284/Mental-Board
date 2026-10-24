@@ -2035,3 +2035,87 @@ html[data-mode="dark"] :is(.db-face, #dbPop, .db-sheet) { color-scheme: dark; }
 .toc-h2 { padding-inline-start: 24px; }
 .toc-h3 { padding-inline-start: 38px; }
 .toc-none { padding: 4px 10px; color: var(--dimmer); font-size: .9em; }
+
+/* ─────────────── 78. text and background colours (2.9, js/blocks.js) ───────────────
+   The app's nine COLORS as classes — `mb-tc-*` text, `mb-bc-*` background —
+   on a block or on a span of words. The colours are variables per mode, so a
+   red word stays readable when the theme turns dark: nothing in a note ever
+   holds a colour value of its own. */
+:root {
+  --tc-red: #c4443e; --tc-orange: #c8640f; --tc-amber: #9a7314; --tc-green: #3a7a54;
+  --tc-teal: #1b7d73; --tc-blue: #2d6ca0; --tc-violet: #7a52a3; --tc-pink: #ad4479;
+}
+html[data-mode="dark"] {
+  --tc-red: #ff7a70; --tc-orange: #ffa54d; --tc-amber: #f2c94c; --tc-green: #63c792;
+  --tc-teal: #4fcfc2; --tc-blue: #64aee8; --tc-violet: #b590f0; --tc-pink: #f17fbd;
+}
+.mb-tc-red { color: var(--tc-red); } .mb-tc-orange { color: var(--tc-orange); } .mb-tc-amber { color: var(--tc-amber); }
+.mb-tc-green { color: var(--tc-green); } .mb-tc-teal { color: var(--tc-teal); } .mb-tc-blue { color: var(--tc-blue); }
+.mb-tc-violet { color: var(--tc-violet); } .mb-tc-pink { color: var(--tc-pink); }
+.mb-bc-red { background-color: color-mix(in srgb, var(--tc-red) 18%, transparent); }
+.mb-bc-orange { background-color: color-mix(in srgb, var(--tc-orange) 18%, transparent); }
+.mb-bc-amber { background-color: color-mix(in srgb, var(--tc-amber) 20%, transparent); }
+.mb-bc-green { background-color: color-mix(in srgb, var(--tc-green) 18%, transparent); }
+.mb-bc-teal { background-color: color-mix(in srgb, var(--tc-teal) 18%, transparent); }
+.mb-bc-blue { background-color: color-mix(in srgb, var(--tc-blue) 18%, transparent); }
+.mb-bc-violet { background-color: color-mix(in srgb, var(--tc-violet) 18%, transparent); }
+.mb-bc-pink { background-color: color-mix(in srgb, var(--tc-pink) 18%, transparent); }
+/* a coloured block is a band, with a little room round its words */
+.note-body :is(p, h1, h2, h3, blockquote, li, .mb-callout, .mb-toggle)[class*="mb-bc-"] { border-radius: 3px; padding-inline: 4px; }
+.note-body span[class*="mb-bc-"] { border-radius: 2px; padding: 0 1px; }
+/* the colour panel under the selection bar's "A", and the swatches in the block menu */
+#colorPop { flex-direction: column; gap: 6px; padding: 8px; }
+.tcp-row { display: flex; align-items: center; gap: 4px; }
+.tcp-k { width: 74px; flex: none; color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcp-sw { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border-radius: 3px; border: 1px solid var(--line-2); }
+#colorPop .tcp-sw { min-width: 22px; }
+.tcp-sw .mi { width: 15px; height: 15px; }
+.tcp-sw[class*="mb-bc-"] .mi, .tcp-sw.mb-bc-default .mi { opacity: .45; color: var(--text); }
+.tcp-sw:hover { box-shadow: 0 0 0 1px var(--text); }
+.dp-item .tcp-sw { width: 20px; height: 20px; }
+
+/* ─────────────── 79. toggle lists and toggle headings (2.9, js/blocks.js) ───────────────
+   The arrow is the title's ::before — no element to paint or store — and a
+   press on it is found by where it lands (toggleArrowAt). A chevron rather
+   than a triangle, so it can point the other way in a right-to-left line. */
+.note-body .mb-toggle { margin: 2px 0; }
+.note-body .mb-tg-head { position: relative; min-height: 1.55em; padding-inline-start: 24px; }
+.note-body .mb-tg-head::before {
+  content: ""; position: absolute; inset-inline-start: 7px; top: .5em; width: 6px; height: 6px;
+  border-right: 2px solid var(--dim); border-bottom: 2px solid var(--dim);
+  transform: rotate(-45deg); transition: transform .14s ease; cursor: pointer;
+}
+.note-body .mb-tg-head:dir(rtl)::before { transform: rotate(135deg); }
+.note-body .mb-toggle.mb-open > .mb-tg-head::before { transform: rotate(45deg); }
+.note-body .mb-tg-head:hover::before { border-color: var(--text); }
+.note-body .mb-toggle:not(.mb-open) > .mb-tg-body { display: none; }
+.note-body .mb-tg-body { padding-inline-start: 24px; }
+.note-body .mb-tg-body > :first-child { margin-top: 0; }
+.note-body .mb-tg-h1 > .mb-tg-head, .note-body .mb-tg-h2 > .mb-tg-head, .note-body .mb-tg-h3 > .mb-tg-head { margin-top: .55em; line-height: 1.25; font-weight: 700; }
+.note-body .mb-tg-h1 > .mb-tg-head { font-size: 1.62em; letter-spacing: -.012em; }
+.note-body .mb-tg-h2 > .mb-tg-head { font-size: 1.32em; letter-spacing: -.008em; }
+.note-body .mb-tg-h3 > .mb-tg-head { font-size: 1.12em; }
+.note-body .mb-tg-h1 > .mb-tg-head::before, .note-body .mb-tg-h2 > .mb-tg-head::before, .note-body .mb-tg-h3 > .mb-tg-head::before { top: .42em; }
+body.small-text .note-body .mb-tg-h1 > .mb-tg-head { font-size: 1.5em; }
+
+/* ─────────────── 80. the block handle (2.9, js/blocks.js) ───────────────
+   + and ⋮⋮ beside the block under the pointer, at screen size; a line where a
+   dragged block will land. */
+#blockHandle { position: fixed; z-index: 60; display: flex; align-items: center; }
+#blockHandle button { display: grid; place-items: center; width: 20px; height: 24px; padding: 0; border-radius: 3px; color: var(--dimmer); }
+#blockHandle button:hover { background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--dim); }
+#blockHandle .mi { width: 18px; height: 18px; }
+#bhGrip { cursor: grab; }
+body.bh-dragging, body.bh-dragging * { cursor: grabbing !important; }
+body.bh-dragging #blockHandle { pointer-events: none; opacity: .4; }
+#blockDrop { position: fixed; z-index: 61; height: 3px; border-radius: 2px; background: #4c8ce0; pointer-events: none; }
+.note-body .mb-dragging { opacity: .35; }
+
+/* the toggles' pictures beside the slash menu (toolbars.js blockPeek) */
+.pk-tg { position: relative; padding-inline-start: 20px; margin: 2px 0 6px; }
+.pk-tg::before { content: ""; position: absolute; inset-inline-start: 4px; top: .45em; width: 6px; height: 6px; border-right: 2px solid var(--dim); border-bottom: 2px solid var(--dim); transform: rotate(-45deg); }
+.pk-tg.open::before { transform: rotate(45deg); }
+.pk-tg b { display: block; white-space: nowrap; }
+.pk-tg span { display: block; margin-top: 3px; color: var(--dim); font-size: 12px; }
+.pk-tg.lvl1 b { font-size: 22px; } .pk-tg.lvl2 b { font-size: 18px; } .pk-tg.lvl3 b { font-size: 15px; }
+.pk-tg.lvl0 b { font-weight: 500; }

@@ -223,6 +223,11 @@
     <button data-act="hilite" data-t-title="fmt.highlight"></button>
     <div class="sb-pop" id="hilitePop"></div>
   </div>
+  <!-- text and background colour, Notion's "A" (blocks.js) -->
+  <div class="sb-pop-wrap">
+    <button data-act="color" data-t-title="fmt.color"></button>
+    <div class="sb-pop" id="colorPop"></div>
+  </div>
   <button data-act="link" data-t-title="fmt.link"></button>
   <button data-act="clear" data-t-title="fmt.clear"></button>
 </div>
@@ -266,7 +271,10 @@
 </div>
 <!-- the picture beside the slash menu of the block under the cursor: Notion's tooltip photo (toolbars.js) -->
 <div id="slashPeek" class="hidden" aria-hidden="true"><div class="spk-pic" id="slashPeekPic"></div><div class="spk-cap" id="slashPeekCap"></div></div>
-<!-- every menu inside a database (database.js) -->
+<!-- the handle beside the block under the pointer, and where a dragged block will land (blocks.js) -->
+<div id="blockHandle" class="hidden"><button type="button" id="bhAdd" data-t-title="bh.add"></button><button type="button" id="bhGrip" data-t-title="bh.grip"></button></div>
+<div id="blockDrop" class="hidden"></div>
+<!-- every menu inside a database (database.js), and the block menu (blocks.js) -->
 <div id="dbPop" class="hidden" role="menu" tabindex="-1"></div>
 
 <!-- ───────────────────────── right-click menu ───────────────────────── -->
@@ -1201,6 +1209,7 @@
 <script src="js/embeds.js"></script>
 <script src="js/database.js"></script>
 <script src="js/toolbars.js"></script>
+<script src="js/blocks.js"></script>
 <script src="js/media.js"></script>
 <script src="js/pictures.js"></script>
 <script src="js/shapes.js"></script>
