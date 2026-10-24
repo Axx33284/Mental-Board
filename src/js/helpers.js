@@ -83,6 +83,8 @@ const BLOCK_SEL = 'p,div,li,h1,h2,h3,h4,h5,h6,tr,td,th,pre,blockquote,br,hr';
 function stripHtml(html) {
   const d = document.createElement('div');
   d.innerHTML = html || '';
+  // a database is data in an attribute: its words are what search should find (database.js)
+  d.querySelectorAll('.mb-db').forEach((el) => { el.textContent = dbPlain(el.getAttribute('data-db')); });
   d.querySelectorAll(BLOCK_SEL).forEach((el) => {
     try { el.insertAdjacentText('afterend', ' '); } catch (_) {}
   });

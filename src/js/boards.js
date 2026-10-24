@@ -815,6 +815,8 @@ function restoreHistory(i) {
     body.innerHTML = n.body;
     paintCodeBlocks(body);
     paintEmbeds(body);
+    paintDatabases(body);
+    paintTocs(body);
   }
   repaintMarks(n.id);
   save();

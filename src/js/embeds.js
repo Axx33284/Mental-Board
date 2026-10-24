@@ -263,8 +263,19 @@ function applyPasteAs(act) {
    caret range the way the link dialog does — opening any overlay collapses the
    selection, so the range has to be put back before anything is inserted. */
 let embedRange = null;
-function openEmbedDialog() {
+/* 2.8: `/bookmark` (Notion's "Web bookmark") is the same window asking for any
+   page, which becomes the card the paste menu's Bookmark makes. The window
+   says which it is, so neither one quietly does the other's job. */
+let embedMode = 'video';
+function openEmbedDialog(mode) {
   if (!editing) return;
+  embedMode = mode === 'bookmark' ? 'bookmark' : 'video';
+  const mark = embedMode === 'bookmark';
+  const dlg = $('embedDlg');
+  dlg.classList.toggle('bookmark', mark);
+  dlg.querySelector('.sheet-head h2').textContent = t(mark ? 'embed.bookmarkTitle' : 'embed.title');
+  dlg.querySelector('.set-note').textContent = t(mark ? 'embed.bookmarkHint' : 'embed.hint');
+  $('embedUrl').placeholder = mark ? 'https://' : 'https://youtube.com/watch?v=…';
   const s = getSelection();
   embedRange = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;
   $('embedUrl').value = '';
@@ -295,7 +306,20 @@ function submitEmbed() {
   const raw = $('embedUrl').value.trim();
   if (!raw) { closeEmbedDialog(); return; }
   const url = /^https?:\/\//i.test(raw) ? raw : 'https://' + raw;
-  const vid = videoOf(url);
+  const vid = embedMode === 'bookmark' ? null : videoOf(url);
+  if (embedMode === 'bookmark') {
+    const body = editing, n = editNote, range = embedRange;
+    closeEmbedDialog();
+    if (!body || !n) return;
+    body.focus();
+    if (range) { const s = getSelection(); s.removeAllRanges(); s.addRange(range); }
+    insertHTML(embedHtml(url, null));
+    normalizeBody(body);
+    paintEmbeds(body);
+    n.body = bodyHtml(body);
+    saveSoon();
+    return;
+  }
   /* Say which links work rather than silently inserting a bookmark card for a
      page that is not a video — the menu item said "video", and quietly doing
      something else is how a feature gets a reputation for being broken. */

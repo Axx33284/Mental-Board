@@ -16,6 +16,9 @@ function wireNoteBody(body, n, el) {
     if (columnsBroken(body)) repairColumns(body);    // a typed merge across a column edge
     ensureTail(body);                                  // somewhere to write under a table
     if (body.querySelector('.mb-math:not(:has(> .mx-face))')) paintMath(body);
+    // a database or a contents block that came back without its face (an undo, a drop)
+    if (body.querySelector('.mb-db:not(:has(> .db-face))')) paintDatabases(body);
+    if (body.querySelector('.mb-toc')) paintTocs(body);
     n.body = bodyHtml(body);
     editDirty = true;
     saveSoon();
@@ -32,6 +35,9 @@ function wireNoteBody(body, n, el) {
     // a formula is one object too: clicking it while writing opens it to edit
     const mx = e.target.closest('.mb-math');
     if (mx && el.classList.contains('editing')) { e.preventDefault(); openMathDialog(mx); return; }
+    // a line of the table of contents scrolls the note to its heading, open or closed
+    const ti = e.target.closest('.toc-i');
+    if (ti) { e.preventDefault(); jumpToHeading(body, +ti.dataset.i); return; }
     // checkbox hit area
     const li = e.target.closest('ul.mb-todo > li');
     if (li && e.offsetX < 24 && e.target === li) {
@@ -105,7 +111,7 @@ function bodyHtml(body) {
      board opens — and a board file that carries a remote URL the app promised
      only to load on a click. Lift them out for the read and put them straight
      back, the same trick `img-sel` uses below. */
-  const lifted = [...body.querySelectorAll('.emb-face, .mb-embed iframe, .mb-cant, .mb-math > .mx-face')]
+  const lifted = [...body.querySelectorAll('.emb-face, .mb-embed iframe, .mb-cant, .mb-math > .mx-face, .mb-db > .db-face, .mb-toc > .toc-face')]
     .map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
   lifted.forEach((m) => m.el.remove());
   const marked = body.querySelector('img.img-sel');
@@ -197,6 +203,7 @@ function onEditorKey(e, body, n) {
   if (e.code === 'Equal' && e.altKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openMathDialog(null); return; }
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); exitEdit(); return; }
   if (columnEdgeKey(e)) return;
+  if (dbGuardKey(e, body)) return;      // a database is not deleted by a stray Backspace (database.js)
 
   const pre = caretPre();
   if (pre) {
@@ -552,6 +559,48 @@ function inlineIcon(name) {
 
 function insertCallout() { escapeList(); insertHTML(`<div class="mb-callout">${inlineIcon('lightbulb')}&nbsp;</div><p><br></p>`); }
 
+/* --- a table of contents (2.8) -------------------------------------------
+   Notion's: the note's headings, each one a jump to it. `div.mb-toc` stores
+   nothing at all — its list is `.toc-face`, painted from the headings on every
+   keystroke (cheap: one query) and lifted out by bodyHtml(), so it can never
+   go stale in the saved note. */
+function insertToc() {
+  escapeList();
+  insertHTML('<div class="mb-toc" contenteditable="false"></div><p><br></p>');
+  if (editing) { paintTocs(editing); normalizeBody(editing); }
+}
+const tocHeadings = (body) => [...body.querySelectorAll('h1, h2, h3')].filter((h) => !h.closest('.mb-toc, .mb-db'));
+function paintTocs(root) {
+  if (!root) return;
+  const tocs = root.querySelectorAll('.mb-toc');
+  if (!tocs.length) return;
+  const heads = tocHeadings(root);
+  const html = heads.length
+    ? heads.map((h, i) => `<button class="toc-i toc-${h.tagName.toLowerCase()}" data-act="toc" data-i="${i}" dir="auto">${esc(h.textContent.trim() || '…')}</button>`).join('')
+    : `<span class="toc-none">${te('toc.empty')}</span>`;
+  tocs.forEach((el) => {
+    let face = el.querySelector(':scope > .toc-face');
+    if (!face) {
+      el.textContent = '';
+      face = document.createElement('div');
+      face.className = 'toc-face';
+      el.appendChild(face);
+      el.setAttribute('contenteditable', 'false');
+    }
+    if (face.innerHTML !== html) face.innerHTML = html;
+  });
+}
+/* By hand, not scrollIntoView(): that scrolls every ancestor it can, and the
+   viewport is one — the board would jump under the note. */
+function jumpToHeading(body, i) {
+  const h = tocHeadings(body)[i];
+  if (!h) return;
+  const z = state.view.z || 1;
+  const top = body.scrollTop + (h.getBoundingClientRect().top - body.getBoundingClientRect().top) / z - 8;
+  body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  h.animate([{ backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)' }, { backgroundColor: 'transparent' }], { duration: 1100, easing: 'ease-out' });
+}
+
 /* --- maths and chemistry (2.3) -------------------------------------------
    A formula is `span.mb-math` (inline) or `div.mb-math.mb-math-block` (on its
    own line, centred) carrying its LaTeX in `data-tex` and nothing else. What
@@ -693,7 +742,7 @@ function ensureTail(body) {
   while (last && last.nodeType === 3 && !last.textContent.replace(/​/g, '').trim()) last = last.previousSibling;
   if (!last || last.nodeType !== 1) return null;
   const needs = last.tagName === 'TABLE' || last.tagName === 'PRE' ||
-    (last.tagName === 'DIV' && /\b(mb-cols|mb-math-block|mb-embed|mb-file)\b/.test(last.className));
+    (last.tagName === 'DIV' && /\b(mb-cols|mb-math-block|mb-embed|mb-file|mb-db|mb-toc)\b/.test(last.className));
   if (!needs) return null;
   const p = document.createElement('p');
   p.innerHTML = '<br>';
@@ -1586,6 +1635,8 @@ function onEditorPaste(e, body, n) {
 }
 function finishPaste(body, n) {
   paintMath(body);
+  paintDatabases(body);
+  paintTocs(body);
   normalizeBody(body);
   ensureTail(body);
   n.body = bodyHtml(body); saveSoon();
@@ -1689,6 +1740,9 @@ function sanitize(html) {
                    (el.tagName === 'IMG' && a.name === 'src') ||
                    // a formula keeps its LaTeX; its drawing is repainted by paintMath()
                    ((el.tagName === 'SPAN' || el.tagName === 'DIV') && a.name === 'data-tex' && /\bmb-math\b/.test(el.className)) ||
+                   /* A database keeps its data, which is re-healed below —
+                      what survives is rows and properties, never markup. */
+                   (el.tagName === 'DIV' && /\bmb-db\b/.test(el.className) && (a.name === 'data-db' || a.name === 'data-dbid' || a.name === 'data-src')) ||
                    /* A video or a sound copied from one note to another keeps
                       playing. `controls` and `preload` are ours and are put
                       back below; the only thing that survives from the paste
@@ -1716,6 +1770,21 @@ function sanitize(html) {
     if (el.tagName === 'A' && !/^(https?:|mailto:|file:|mbf:)/i.test(el.getAttribute('href') || '')) el.removeAttribute('href');
     // a pasted table has to carry our class or it renders as unstyled rows
     if (el.tagName === 'TABLE') el.className = 'mb-table';
+    /* A database copied out of a note arrives with its face as plain markup:
+       that goes, and the data is put back through adoptDb() — a paste can
+       only ever name rows and properties, which are drawn as text. */
+    if (el.tagName === 'DIV' && el.classList.contains('mb-db')) {
+      const db = adoptDb(el.getAttribute('data-db'));
+      if (!db) { el.remove(); return; }
+      el.textContent = '';
+      el.className = 'mb-db';
+      el.setAttribute('data-db', dbJson(db));
+      el.setAttribute('data-dbid', db.id);
+      if (db.src) el.setAttribute('data-src', db.src); else el.removeAttribute('data-src');
+      el.setAttribute('contenteditable', 'false');
+      return;
+    }
+    if (el.tagName === 'DIV' && el.classList.contains('mb-toc')) { el.textContent = ''; el.setAttribute('contenteditable', 'false'); return; }
     /* A remote image is dropped, not kept. The CSP in index.html is
        `img-src 'self' data: blob: file:` — it has no http(s) — so an <img>
        pasted from a web page could never load: it left a permanent broken-image

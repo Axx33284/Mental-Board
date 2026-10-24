@@ -109,6 +109,8 @@ function lazyImages(root) {
   });
   watchVideos(root);          // every body that is drawn passes through here
   paintMath(root);            // and so does every formula in it (editor.js)
+  paintDatabases(root);       // every database (database.js)
+  paintTocs(root);            // and every table of contents (editor.js)
 }
 
 /* Redraw a note's text from `n.body` without rebuilding the whole element —

@@ -260,9 +260,14 @@
 
 <!-- ───────────────────────── slash / block menu ───────────────────────── -->
 <div id="slashMenu" class="hidden" role="listbox">
-  <div class="sm-head" data-t="blocks.title"></div>
+  <div class="sm-head" id="slashHead" data-t="blocks.title"></div>
   <div class="sm-list" id="slashList"></div>
+  <button class="sm-foot" id="slashClose" type="button"><span data-t="blocks.close"></span><kbd>esc</kbd></button>
 </div>
+<!-- the picture beside the slash menu of the block under the cursor: Notion's tooltip photo (toolbars.js) -->
+<div id="slashPeek" class="hidden" aria-hidden="true"><div class="spk-pic" id="slashPeekPic"></div><div class="spk-cap" id="slashPeekCap"></div></div>
+<!-- every menu inside a database (database.js) -->
+<div id="dbPop" class="hidden" role="menu" tabindex="-1"></div>
 
 <!-- ───────────────────────── right-click menu ───────────────────────── -->
 <div id="ctxMenu" class="hidden" role="menu"></div>
@@ -1075,6 +1080,14 @@
   </div>
 </div>
 
+<!-- ───────────────────────── a database row, as a page (database.js) ───────────────────────── -->
+<div id="dbRowDlg" class="overlay hidden">
+  <div class="sheet db-sheet" role="dialog" data-t-aria="db.rowTitle">
+    <header class="sheet-head"><span class="db-rd-crumb" id="dbRdCrumb"></span><button class="sheet-x" id="dbRdClose" data-t-aria="tb.close"></button></header>
+    <div class="sheet-body" id="dbRdBody"></div>
+  </div>
+</div>
+
 <!-- ───────────────────────── confirm dialog ───────────────────────── -->
 <div id="confirmDlg" class="overlay hidden">
   <div class="sheet small" role="dialog" data-t-aria="confirm.title">
@@ -1186,6 +1199,7 @@
 <script src="js/ink.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/embeds.js"></script>
+<script src="js/database.js"></script>
 <script src="js/toolbars.js"></script>
 <script src="js/media.js"></script>
 <script src="js/pictures.js"></script>

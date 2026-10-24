@@ -1467,5 +1467,176 @@ module.exports = [
       ok(r.dropped === 1 && r.refused, 'a dropped picture goes in, a document is named as refused');
       ok(!r.penClick.inkMode && r.penClick.selected && r.penClick.drew === 0, 'a click on a note with the pen out selects it: ' + JSON.stringify(r.penClick));
     });
+  },
+
+  /* ---- 2.8, MAP.md §4z6: Notion's slash menu, and databases in a note ---- */
+  async ({ page, test, ok, BOARDS, fs, path }) => {
+    await page(async () => {
+      confirmDlg = async () => true;
+      const b = makeBoard('Twenty-eight');
+      b.notes.push({ id: 'da', x: 0, y: 0, w: 300, h: 200, z: 1, color: 'default', body: '<p>start</p>' },
+        { id: 'db', x: 900, y: 0, w: 300, h: 200, z: 2, color: 'default', body: '<p><br></p>' });
+      state.boards.push(b);
+      await switchBoard(b.id);
+      flyTo({ x: 300, y: 100 }, 1, 1);
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const onDisk = () => {
+      const dir = fs.readdirSync(BOARDS).find((d) => d.startsWith('Twenty-eight'));
+      return JSON.parse(fs.readFileSync(path.join(BOARDS, dir, 'board.json'), 'utf8'));
+    };
+
+    await test('2.8 the slash menu: Notion\'s sections in order, a picture beside the row, and typing still ranks', async () => {
+      const r = await page(async () => {
+        const n = state.notes.find((x) => x.id === 'da');
+        enterEdit(n);
+        document.execCommand('insertText', false, '/');
+        openSlash(editing);
+        const heads = [...$('slashList').querySelectorAll('.sm-head')].map((h) => h.textContent);
+        const want = ['basic', 'media', 'database', 'advanced', 'inline'].map((s) => t('blocks.sec.' + s));
+        slash.sel = slash.items.findIndex((it) => it.run && it.run.k === 'dbBoard');
+        markSlashSel();
+        const peek = { shown: !$('slashPeek').classList.contains('hidden'), board: !!$('slashPeekPic').querySelector('.pk-board'), cap: $('slashPeekCap').textContent === t('block.dbBoard.d') };
+        const firstFor = (q) => { slash.query = q; renderSlash(); return slash.items[0] && slash.items[0].run.k; };
+        const ranks = { table: firstFor('table'), link: firstFor('link'), kanban: firstFor('kanban'), hr: firstFor('hr') };
+        closeSlash();
+        const peekGone = $('slashPeek').classList.contains('hidden');
+        exitEdit();
+        return { heads: heads.join('|'), want: want.join('|'), peek, ranks, peekGone };
+      });
+      ok(r.heads === r.want, 'the sections, in Notion\'s order: ' + r.heads);
+      ok(r.peek.shown && r.peek.board && r.peek.cap, 'the row under the cursor has its picture and its description beside the menu: ' + JSON.stringify(r.peek));
+      ok(r.ranks.table === 'table' && r.ranks.link === 'link', '/table is still the plain table and /link still the link: ' + JSON.stringify(r.ranks));
+      ok(r.ranks.kanban === 'dbBoard' && r.ranks.hr === 'divider', 'Notion\'s keywords find a block: ' + JSON.stringify(r.ranks));
+      ok(r.peekGone, 'the picture goes with the menu');
+    });
+
+    await test('2.8 a database: inserted, edited in a closed note, kept on disk, undone, and its data is all it stores', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const n = state.notes.find((x) => x.id === 'da');
+        enterEdit(n);
+        insertDatabase('board');
+        exitEdit();
+        const live = () => state.notes.find((x) => x.id === 'da');
+        out.grown = [live().w >= 680, live().h >= 420];
+        const el = els.get('da').querySelector('.mb-db');
+        out.cols = el.querySelectorAll('.db-col').length;
+        out.stored = !live().body.includes('db-face') && live().body.includes('data-db=');
+        let ctx = dbCtx(el);
+        const title = ctx.data.props[0].id, status = ctx.data.props.find((p) => p.type === 'status');
+        // a press on a card in a closed note is the card's, not the start of a move
+        const card = el.querySelector('.db-card');
+        const cr = card.getBoundingClientRect();
+        const at = { clientX: cr.left + 10, clientY: cr.top + 10, bubbles: true, cancelable: true, button: 0, buttons: 1, pointerId: 81, pointerType: 'mouse' };
+        const x0 = live().x;
+        card.dispatchEvent(new PointerEvent('pointerdown', at));
+        window.dispatchEvent(new PointerEvent('pointerup', at));
+        card.click();
+        out.pageOpen = !$('dbRowDlg').classList.contains('hidden');
+        out.noteStayed = live().x === x0;
+        $('dbRdTitle').value = 'Ship it';
+        $('dbRdText').value = 'Everything on the list.';
+        closeDbRow();
+        ctx = dbCtx(els.get('da').querySelector('.mb-db'));
+        out.row = [dbTitle(ctx.data, ctx.data.rows[0]), ctx.data.rows[0].t];
+        // a cell, a new option, a new property, a new view
+        const blk = els.get('da').querySelector('.mb-db');
+        const opt = dbAddOpt(blk, status.id, 'Blocked');
+        dbSetCell(blk, ctx.data.rows[1].id, status.id, opt.id);
+        dbEdit(blk, (c) => { c.data.props.push({ id: 'phrs', name: 'Hours', type: 'number' }); });
+        dbSetCell(blk, ctx.data.rows[1].id, 'phrs', 7.5);
+        dbEdit(blk, (c) => { c.own.views.push({ id: 'vt', type: 'table', name: '' }); c.own.cur = 'vt'; }, 'view');
+        out.tableCells = els.get('da').querySelectorAll('.db-td[data-act="cell"]').length;
+        // undo takes the last change back, in a note nobody is typing in
+        undo();
+        const back = adoptDb(new DOMParser().parseFromString(live().body, 'text/html').querySelector('.mb-db').getAttribute('data-db'));
+        out.undone = back.views.length === 1 && back.props.some((p) => p.id === 'phrs');
+        redo();
+        await saveNow();
+        return out;
+      });
+      ok(r.grown[0] && r.grown[1], 'the note grew to hold a board');
+      ok(r.cols === 3, 'a new board has a column per status: ' + r.cols);
+      ok(r.stored, 'the note stores the data, not the drawing');
+      ok(r.pageOpen && r.noteStayed, 'a card opens as a page, and pressing it did not move the note: ' + JSON.stringify(r));
+      ok(r.row[0] === 'Ship it' && r.row[1] === 'Everything on the list.', 'the page\'s title and text are kept: ' + JSON.stringify(r.row));
+      ok(r.tableCells === 3 * 4, 'a second view, a table, draws every row and property: ' + r.tableCells);
+      ok(r.undone, 'one undo takes back one change');
+      const disk = onDisk().notes.find((x) => x.id === 'da');
+      const raw = /data-db="([^"]*)"/.exec(disk.body);
+      const db = raw && JSON.parse(raw[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+      ok(db && db.views.length === 2 && db.rows[1].c.phrs === 7.5 && db.props.find((p) => p.type === 'status').opts.some((o) => o.name === 'Blocked'), 'on disk: two views, the number and the new option');
+    });
+
+    await test('2.8 a database survives a paste and a crafted one carries no markup; Backspace does not delete it; search and Markdown see it', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const n = state.notes.find((x) => x.id === 'da');
+        const blk = els.get('da').querySelector('.mb-db');
+        const d = document.createElement('div');
+        d.innerHTML = sanitize(blk.outerHTML);
+        const pb = d.querySelector('.mb-db');
+        out.paste = !!pb && !pb.querySelector('.db-face') && adoptDb(pb.getAttribute('data-db')).rows.length === 3;
+        const evil = document.createElement('div');
+        evil.innerHTML = sanitize(`<div class="mb-db" data-db='{"props":[{"id":"a","name":"<img src=x onerror=alert(1)>","type":"title"}],"rows":[{"id":"r","c":{"a":"<b>x</b>"}}]}'></div>`);
+        paintDatabases(evil);
+        out.evil = evil.querySelectorAll('img, b').length;
+        enterEdit(n);
+        const tail = editing.lastElementChild;
+        tail.innerHTML = 'after';
+        placeCaret(tail.firstChild, 0);
+        const ev = new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true });
+        editing.dispatchEvent(ev);
+        out.guarded = ev.defaultPrevented && !!editing.querySelector('.mb-db');
+        tail.innerHTML = '<br>';
+        exitEdit();
+        out.search = stripHtml(n.body).includes('Ship it');
+        out.md = noteToMarkdown(n.body, () => '').includes('| Ship it |');
+        // a cell saying "a > b" leaves no bare ">" in the stored attribute, which the far-zoom ghost reads by regex
+        const b2 = els.get('da').querySelector('.mb-db'), c2 = dbCtx(b2);
+        dbSetCell(b2, c2.data.rows[1].id, c2.data.props[0].id, 'a > b <c>');
+        const body = state.notes.find((x) => x.id === 'da').body;
+        out.noBareAngle = !/data-db="[^"]*[<>]/.test(body) && dbTitle(dbCtx(els.get('da').querySelector('.mb-db')).data, dbCtx(els.get('da').querySelector('.mb-db')).data.rows[1]) === 'a > b <c>';
+        out.ghost = ghostBlocks(body).every((g) => !/[{}]/.test(String(g.n)));
+        return out;
+      });
+      ok(r.noBareAngle, 'angle brackets in a cell are kept, and never bare in the stored attribute');
+      ok(r.paste, 'a pasted database keeps its rows and drops its drawing');
+      ok(r.evil === 0, 'a crafted database paste draws its text as text');
+      ok(r.guarded, 'Backspace under a database does not delete it');
+      ok(r.search && r.md, 'search and Markdown see a database\'s rows: ' + JSON.stringify(r));
+    });
+
+    await test('2.8 a linked view reads and writes another note\'s rows; every layout draws', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const src = dbCtx(els.get('da').querySelector('.mb-db'));
+        const n = state.notes.find((x) => x.id === 'db');
+        enterEdit(n);
+        const view = { id: 'vl', type: 'list', name: '' };
+        insertHTML(dbBlockHtml({ v: 1, id: 'dlink', src: src.own.id, views: [view], cur: 'vl' }) + '<p><br></p>');
+        afterDbInsert('list');
+        exitEdit();
+        const lb = els.get('db').querySelector('.mb-db');
+        out.rows = lb.querySelectorAll('.db-li').length;
+        const lctx = dbCtx(lb);
+        dbSetCell(lb, lctx.data.rows[2].id, lctx.data.props[0].id, 'From the linked view');
+        const srcBody = state.notes.find((x) => x.id === 'da').body, linkBody = state.notes.find((x) => x.id === 'db').body;
+        out.wrote = srcBody.includes('From the linked view') && !linkBody.includes('From the linked view');
+        // a map needs a place: added through the linked view, it lands in the source
+        dbEdit(lb, (c) => { c.data.props.push({ id: 'pplace', name: 'Place', type: 'place' }); c.data.rows[0].c.pplace = '48.8566, 2.3522'; });
+        out.layouts = [];
+        for (const [type, chart] of DB_LAYOUTS) {
+          dbSetView(lb, (v) => { v.type = type; if (chart) v.chart = chart; else delete v.chart; });
+          const face = lb.querySelector('.db-face');
+          out.layouts.push(type + (chart ? '/' + chart : '') + ':' + (face.querySelector('.db-body').children.length > 0 && !face.querySelector('.db-hint')));
+        }
+        return out;
+      });
+      ok(r.rows === 3, 'the linked view shows the source\'s rows: ' + r.rows);
+      ok(r.wrote, 'a change in the linked view is written to the source note');
+      ok(r.layouts.every((x) => x.endsWith(':true')), 'all fifteen layouts draw from the data: ' + r.layouts.join(' '));
+    });
   }
 ];

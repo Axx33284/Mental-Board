@@ -58,6 +58,11 @@ function onPointerDown(e) {
   // gesture starts: beginMove() takes pointer capture on the viewport, which
   // retargets the following click away from the button and swallows it.
   if (e.target.closest('.ft-icon')) return;
+  /* So do a database's buttons, cells, cards and fields, and the lines of a
+     table of contents — in a closed note as well, which is the point: pressing
+     them must not start moving the note (database.js, editor.js). The rest of
+     a database is the note, and drags it. */
+  if (e.button === 0 && e.target.closest('.db-face [data-act], .db-face :is(input, select, textarea, label), .toc-face [data-act]')) return;
 
   /* A link in note text is a button too, and it was losing its click to exactly
      the same capture. Pressing on a note that is not being edited went straight
@@ -156,6 +161,8 @@ function onDblClick(e) {
     if (fe) renameFrame(fe.dataset.id);
     return;
   }
+  // two quick presses on a database's cell or card are two presses, not "open the note"
+  if (hit.closest('.db-face [data-act], .db-face :is(input, select, textarea, label)')) return;
   const noteEl = hit.closest('.note');
   // a drawing note's title renames where it is; the rest of it opens the drawing
   if (noteEl && hit.closest('.sk-title') && noteEl.classList.contains('sketch')) { renameSketch(noteEl.dataset.id); return; }
@@ -207,6 +214,8 @@ function onKeyDown(e) {
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
 
   if (e.key === 'Escape') {
+    if (dbPopS) { closeDbPop(); return; }                  // a database's menu, then its row (database.js)
+    if (dbRd) { closeDbRow(); return; }
     if (pasteGhost) { cancelPasteGhost(); return; }
     if (inkMode && !e.target.closest('.overlay')) {
       if (inkSel.size) { inkSel.clear(); paintInkSelection(); return; }   // let go of the strokes first
@@ -1065,6 +1074,7 @@ function init() {
   wirePadStudio();
   wireTableBar();
   wireColsBar();
+  wireDatabases();
   wireSounds();
   wireKeySounds();
   wirePad();
@@ -1184,6 +1194,8 @@ function wireExtras() {
 
   // save a note as a template
   $('tplCancel').addEventListener('click', closeTemplateDialog);
+  // the slash menu's last row, as Notion's: "Close menu  esc" — pressed without taking the caret
+  $('slashClose').addEventListener('mousedown', (e) => { e.preventDefault(); closeSlash(); });
   $('tplOk').addEventListener('click', submitTemplate);
   $('tplDlg').addEventListener('pointerdown', (e) => { if (e.target === $('tplDlg')) closeTemplateDialog(); });
   $('tplName').addEventListener('keydown', (e) => {
@@ -1577,6 +1589,7 @@ const STATIC_ICONS = [
   /* templates */
   ['h3:has([data-t="set.templates"]) .sec-ic', 'bookmarks'],
   ['#tplCancel', 'close'],
+  ['#dbRdClose', 'close'],
   ['#tplOk .b-ic', 'check']
 ];
 function paintStaticIcons() {

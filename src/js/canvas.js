@@ -117,6 +117,9 @@ function noteToMarkdown(html, ref) {
       }
       if (tag === 'IMG') { const src = node.getAttribute('src') || ''; blocks.push(`![](${mdPath(ref(src) || src)})`); continue; }
       if (tag === 'DIV' && (node.classList.contains('mb-cols') || node.classList.contains('mb-col'))) { walk(node); continue; }
+      // a database goes out as a Markdown table of its rows; a contents block is painted, so nothing (database.js, editor.js)
+      if (tag === 'DIV' && node.classList.contains('mb-db')) { const md = dbMarkdown(node.getAttribute('data-db')); if (md) blocks.push(md); continue; }
+      if (tag === 'DIV' && node.classList.contains('mb-toc')) continue;
       if (tag === 'DIV' && node.classList.contains('mb-embed')) {
         const a = node.querySelector('a');
         const href = (a && a.getAttribute('href')) || '';

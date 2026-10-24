@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-four scripts or nine sheets holds the thing you are after, so you never
+twenty-five scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-four ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + twenty-five ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -134,6 +134,9 @@ The things that make it more than a note wall:
 | **Zoom and a pen in the drawing note and the picture editor; a drawing keeps only what was drawn** | js/sketch.js + js/media.js §4z3 |
 | **Draw over a picture, a photo or a PDF: pages under the ink of a drawing note** | js/sketch.js + assets/pdfjs §4z4 |
 | **A drawing note saves as it is drawn; select, move, resize, delete in it; drops; rename on the board; a 5-minute autosave** | js/sketch.js + js/state.js §4z5 |
+| **The slash menu in Notion's sections, with a picture of each block beside it** | js/toolbars.js + css/mental.css §75 §4z6 |
+| **Databases in a note: table, board, gallery, list, calendar, timeline, feed, dashboard, map, five charts, a form, a full-page one and linked views** | js/database.js + css/mental.css §76 §4z6 |
+| **A table of contents; a web bookmark from the slash menu** | js/editor.js + js/embeds.js §4z6 |
 
 ---
 
@@ -147,7 +150,7 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           24 plain scripts, one global scope, no bundler   (§4)
+  js/           25 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png; vendored: katex/
   main.js       Electron main
@@ -172,7 +175,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
 | `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | ~17700 | All app logic, in 24 plain scripts sharing one global scope. See §4. |
+| `src/js/*.js` | ~19300 | All app logic, in 25 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
@@ -193,7 +196,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/fake-pdf.js` | ~30 | A two-page PDF built byte by byte (text in a standard font, a filled box per page) for the 2.7 test. No real PDF is checked in. |
 | `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~345 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last page test fails on any that is not expected. Then two quits, each in a fresh app driven over `--inspect` (§4k): the last edit lands and every process goes, and every process goes even when the page never answers. `npm run test:app`. |
-| `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
+| `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds; and **2.8** (§4z6): the slash menu's sections, picture and ranking; a database inserted, pressed in a closed note, opened as a page, kept on disk and undone; a paste of one, a crafted one, the Backspace guard, search and Markdown; a linked view writing to its source, and all fifteen layouts. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
 | `admin/` | — | Six `.cmd` launchers: run, sandbox, check, back up (a dated copy of My Boards beside the project), open My Boards, and **Build App**, which is how the app gets updated. |
 | `.gitattributes` | — | Line endings. `*.cmd` is pinned to CRLF — a batch file checked out with LF fails in ways that look like anything but that. |
@@ -218,7 +221,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-four scripts that follow. Between them they hold one mutable `state`,
+twenty-five scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -621,10 +624,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-four files
+## 4. `src/js/` — the app, in twenty-five files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`) and 2.5 one (`sketch.js`, after `shapes.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) and 2.8 one (`database.js`, after `embeds.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -641,8 +644,9 @@ no bundler and no build step — the only thing joining them is the order
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
 | `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
 | `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
-| `embeds.js` | 318 | Bookmark cards, click-to-play video, `/video`, and the paste-as menu. See §4e. |
-| `toolbars.js` | ~650 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu (ranked by `blockRank`) — the chrome that sits over the editor. |
+| `embeds.js` | ~350 | Bookmark cards, click-to-play video, `/video` and `/bookmark` (one window, `embedMode`), and the paste-as menu. See §4e. |
+| `database.js` | ~1500 | **A database inside a note** (2.8): the model and its healing (`adoptDb` `okDbCell` `newDbData`), where a block's data is (`dbCtx` `dbLocate` — a linked view reads another block's), the one door for a change (`dbEdit`), painting (`paintDatabases` `paintDb` → a `db*Html` per layout: table, board, gallery, list, calendar, timeline, feed, dashboard, map, chart, form), the menus (`openDbPop` and the builders on it), cells (`dbEditCell` `dbInlineInput` `openOptPicker` `openDatePicker`), a row as a page (`openDbRow` `paintDbRow`), drag (`onDbPointerDown` → `onDbPointerUp`), the Backspace guard (`dbGuardKey`), and `dbMarkdown`/`dbPlain` for export and search. See §4z6. |
+| `toolbars.js` | ~800 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu — Notion's sections (`BLOCK_SECTIONS`), keywords (`kw`), ranked by `blockRank` when something is typed — and the picture beside it (`peekSlash` `blockPeek`, §4z6): the chrome that sits over the editor. |
 | `media.js` | ~900 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — zoomable, with a pen's pressure, highlighter, eraser and its own undo since 2.6, §4z3: `ST.view` `setStudioView` `studioStep`/`studioUndo` `markNear` `onStudioKey` `wireStudioSurface` — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
 | `sketch.js` | ~470 | **The zoomable surface** both drawing editors use (`zoomPanSurface`, §4z3), and **a drawing note** (2.5; no page since 2.6): `okSketch` (healing), `sketchBounds` `fitSketchNote`, `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
@@ -2590,6 +2594,142 @@ count — `sendPadView` now sends the drawing's (`sketchSelChanged()` tells it).
 
 Test: **2.7.1** in `tools/test-app-features.js`.
 
+## 4z6. Notion's slash menu and its databases (2.8) — `js/database.js`, `js/toolbars.js`
+
+### What was read out of Notion, and where
+
+The Notion desktop app (7.40, Microsoft Store) was inspected with REA. Its
+`app.asar` is only the shell — tabs, windows, a SQLite cache; the editor is
+notion.so's web bundle, which the app keeps in its service worker's
+CacheStorage (`%APPDATA%\Notion\Partitions\notion\Service Worker\CacheStorage`).
+The slash menu is in those cached chunks, and three things in it decided how
+this was built:
+
+- **Every menu item carries a `tooltipPhoto`**, and the item wraps itself in a
+  tooltip with `placement: "right"`, `delayThreshold: 0`, forced visible while
+  the row has keyboard focus; the tooltip is a 140×100 image with the item's
+  description as its caption. That is the picture beside the menu when you
+  hover or arrow through it.
+- **The sections** are `action.section.*`: Basic blocks, Media, Database,
+  Advanced blocks, Inline, Embeds (and Actions, Import, AI ones that have
+  nothing to stand for here). Each item has `fuzzySearchKeywords` — "board view
+  kanban", "Horizontal Rule Divider line hr" — searched alongside its name.
+- **Every Database item is one block type, `collection_view`, with a
+  `viewType`**: table, board, gallery, list, calendar, timeline, feed,
+  dashboard, map, chart (five kinds), form; "Database – Full page" is a
+  `collection_view_page`; a linked view is a view of an existing data source.
+  So a database is one data source drawn many ways — which is the model here.
+
+Notion's pictures are its own screenshots and are not copied: `blockPeek()`
+draws each one from the theme's colours, so they follow every theme and both
+modes and add no files. Notion's wording is not copied either.
+
+### The slash menu — `toolbars.js`
+
+`BLOCKS` rows carry `sec` (the section), `kw` (keywords, English, like the key)
+and `fresh` (the "New" badge). With nothing typed the menu is the sections in
+`BLOCK_SECTIONS` order, each under its heading (`blocks.sec.*`); once something
+is typed it is one list ranked by `blockRank` — the name itself, then a name
+that starts with it, then a keyword, then anywhere — so `/table` is still the
+plain table and `/link` still the link. The last row is "Close menu  esc"
+(`#slashClose`). `markSlashSel()` → `peekSlash()` places `#slashPeek` beside
+the menu, on the side the text runs towards, centred on the row.
+
+New rows besides the database ones: **Web bookmark** (`openEmbedDialog('bookmark')`
+— the video window in a second mode, `embedMode`, inserting the paste menu's
+bookmark card) and **Table of contents** (`insertToc`, editor.js: `div.mb-toc`
+stores nothing; `.toc-face` is painted from the note's h1–h3 by `paintTocs` on
+every input and lifted by `bodyHtml`; a line scrolls the note, by hand —
+`scrollIntoView` would scroll the viewport too).
+
+### A database is a block that stores data — `database.js`
+
+`div.mb-db`, `contenteditable=false`, `data-dbid`, and `data-db`: the JSON of
+`{ v, id, name, props, rows, views, cur }`, or for a linked view
+`{ v, id, src, views, cur }`, written by `dbJson()` with `<`/`>` as `<`/`>`
+— a stored body is also read by regex (`GHOST_TAG`), and Chromium leaves a bare
+`>` in an attribute. Its face (`.db-face`) is painted by `paintDb()`
+and lifted out by `bodyHtml()` exactly like a formula's `.mx-face`, so the
+note stores rows, never markup. Everything that moves a note's body — copy,
+duplicate, templates, the trash, history, the board's undo, JSON export —
+carries a database with no code of its own.
+
+- **Properties**: `title` (exactly one, always first), `text`, `number`,
+  `select`, `status`, `multi`, `date` (`YYYY-MM-DD` or a range `a/b`), `check`,
+  `url`, `place` ("lat, lng" or a name). Options use the app's nine `COLORS`.
+  Empties are not stored. `adoptDb()` heals all of it on every read.
+- **A row** is `{ id, c: {prop: value}, t }`; `t` is what is written on it as a
+  page (the row sheet, `#dbRowDlg`).
+- **A view** is `{ id, type, name, chart, by, val, sort, hide }`. `by` is the
+  property it is built on (group, date or place); with none, or a deleted one,
+  `dbPropFor()` falls back to the first that fits. Calendar month and timeline
+  window are not stored (`dbUiState`).
+- **A linked view** (`/linked view of database`) reads the rows of another
+  block on the same board through `dbLocate()` — in the DOM if that note is
+  mounted, else parsed out of its stored body — and writes them back there.
+  Its own views are its own. A source on another board shows "not on this
+  board"; duplicated notes repeat a source id and a linked view takes the first.
+
+**`dbEdit(el, fn, part)` is the one door for a change**: it resolves the data,
+pushes a step of the board's undo unless the note is being typed in, lets `fn`
+mutate, writes the attribute(s) and the note's body (`dbWriteEl`/`dbWriteLoc`),
+repaints every block showing that data (`dbRepaintId`) and calls `saveSoon()`.
+`part` is `'view'` (this block's views only), `'ui'` (the tab showing — no undo
+step) or the data.
+
+### Pressing things in a database
+
+All delegated from the document (`wireDatabases`); the face is rebuilt on every
+change, so nothing is bound inside it. Three seams with the rest of the app:
+
+- **`onPointerDown` (init.js) lets anything with `data-act` in a `.db-face`
+  through** before a gesture can start — that is what makes a closed note's
+  database usable; the rest of the face still drags the note. `onDblClick`
+  ignores the same targets.
+- **`shieldDbFace()` stops keys and input in a field from reaching the
+  note's editor** — otherwise `/` in a cell opened the slash menu and Enter split
+  the paragraph round the block. The document `mousedown` keeps a button press
+  from taking the caret out of the note being written.
+- **`dbGuardKey()` (from `onEditorKey`)**: Backspace at the start of the line
+  under a database (Delete at the end of the line above) flashes it instead of
+  deleting it; an empty line between just goes. Deleting a database is "Delete
+  database" in its menu, which asks when it has rows.
+
+A table cell is typed in an `<input>` laid over it (`dbInlineInput`; Enter,
+Tab, Escape); only one is open, and it is written before any other press in a
+database is acted on (`dbInline`, re-finding the pressed element in the new
+drawing). Options, dates, the view and property menus are one popover,
+`#dbPop` (`openDbPop(anchor, build)` — `build(query)` returns `{ title, input,
+html, wire, items }`, and an item's `more` stacks another menu). Board cards,
+calendar chips and timeline bars drag (`data-drag`); a drag suppresses the
+click that follows it.
+
+### What is drawn where
+
+| Layout | Built on | Notes |
+|---|---|---|
+| table | every shown property | a row is a CSS grid on `--db-cols` (plain px, so `normalizeBody`'s `var(` scrub leaves it) — **not** a `<table>`, which the note's own table bar answers to |
+| board | status / select / multi | a "No …" column only while something is in it; multi puts a card in each |
+| gallery, list, feed | — | cover / text from the row's page |
+| calendar | a date | Sunday first; ranges on every day they cover |
+| timeline | a date | six weeks, `DB_TL_W` px a day, always LTR; short bars name themselves beside |
+| chart | `by` + `val` | `dbChartGroups`: options, ticked or not, months, or plain values; counted or summed |
+| dashboard | status-ish + date + number | the count, a sum, a ring, months, the newest rows |
+| map | a place | the continents are a hand-made coarse polygon set (`DB_WORLD`); no tiles — the page has no network. A place opens in OpenStreetMap in the browser |
+| form | every shown property | Submit adds a row |
+
+### Out of the app
+
+`dbMarkdown()` is a database as a Markdown table, for JSON Canvas
+(`noteToMarkdown`, canvas.js). `stripHtml()` (helpers.js) swaps a database for
+`dbPlain()`, so search and a note's title see its words. The board picture
+does not draw databases.
+
+### Not here, on purpose
+
+Notion's Custom view (code with access to Notion data), formulas, relations and
+rollups, filters (sorting and hiding are), real map tiles, and toggle blocks.
+
 ## 4o. Lining a note up with its neighbours
 
 `guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
@@ -2864,9 +3004,10 @@ Four things that are load-bearing:
 - **`TABLE` is in `BLOCK_CHILD_RE`**, so `normalizeBody` unwraps the
   `<p><table></table></p>` that `execCommand` will eventually produce.
 
-Deliberately absent: cell merging, column types, sorting, formulas. That is
-Notion's *database*, a different feature with its own storage. Half of it would
-be worse than none.
+Deliberately absent: cell merging, column types, formulas. That is Notion's
+*database*, a different feature — and since 2.8 it is one here too, as its own
+block (`/table view` and the rest of the Database section, §4z6), not as more
+features bolted onto this table. `/table` stays the plain grid it always was.
 
 ### Icons in text
 
@@ -3104,7 +3245,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list. Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents. Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section

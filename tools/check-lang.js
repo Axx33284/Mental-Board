@@ -44,7 +44,10 @@ for (const m of src.matchAll(/data-t(?:-title|-ph|-aria)?="([a-zA-Z0-9_.]+)"/g))
    the prefixes here is the price of not having a compiler. */
 const PREFIXES = ['block.', 'icons.', 'colour.', 'accent.', 'theme.', 'hilite.',
                   'studio.hint.', 'count.', 'key.', 'kb.', 'msg.', 'status.',
-                  'set.grid.', 'pos.', 'page.fit.'];
+                  'set.grid.', 'pos.', 'page.fit.',
+                  /* 2.8: the slash menu's sections, and a database's layouts,
+                     charts and property types (toolbars.js, database.js) */
+                  'blocks.sec.', 'db.view.', 'db.chart.', 'db.type.'];
 console.log(`checking ${used.size} literal keys across ${SOURCE.scriptFiles().length} script(s) + ` +
             `${SOURCE.mainFiles().length} main-process file(s) + index.html`);
 for (const k of [...used].sort()) {

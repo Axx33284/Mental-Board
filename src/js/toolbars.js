@@ -315,39 +315,67 @@ function commitFontPx(keepFocus) {
 /* `ic` is a Material Symbols name from assets/icons.js, not a literal glyph —
    the emoji this used to carry rendered in the system emoji font, so the menu
    was the one place in the app that ignored the theme's colours. */
+/* 2.8: in Notion's sections and Notion's order — Basic blocks, Media,
+   Database, Advanced blocks, Inline — read out of the Notion desktop app's
+   own slash menu (MAP.md §4z6). `sec` is the section; `kw` is the extra words
+   a block answers to, Notion's fuzzy-search keywords, so `/kanban` finds the
+   board and `/hr` the divider. They are search terms, not interface text, so
+   they stay English like the key itself. `fresh` puts a "New" badge on it. */
 const BLOCKS = [
-  { k: 'text',    ic: 'format_paragraph',      run: () => document.execCommand('formatBlock', false, 'p') },
-  { k: 'h1',      ic: 'format_h1',             run: () => document.execCommand('formatBlock', false, 'h1') },
-  { k: 'h2',      ic: 'format_h2',             run: () => document.execCommand('formatBlock', false, 'h2') },
-  { k: 'h3',      ic: 'format_h3',             run: () => document.execCommand('formatBlock', false, 'h3') },
-  { k: 'todo',    ic: 'checklist',             run: insertTodo },
-  { k: 'bullet',  ic: 'format_list_bulleted',  run: () => document.execCommand('insertUnorderedList') },
-  { k: 'number',  ic: 'format_list_numbered',  run: () => document.execCommand('insertOrderedList') },
-  { k: 'letters', ic: 'format_list_numbered',  run: () => insertStyledList('la') },
-  { k: 'roman',   ic: 'format_list_numbered_rtl', run: () => insertStyledList('ur') },
-  { k: 'code',    ic: 'code',                  run: insertCodeBlock },
-  { k: 'quote',   ic: 'format_quote',          run: () => document.execCommand('formatBlock', false, 'blockquote') },
-  { k: 'callout', ic: 'lightbulb',             run: insertCallout },
-  // 2.3: a formula in the line, one on its own line, and chemistry (mhchem)
-  { k: 'math',    ic: 'functions',             run: () => openMathDialog(null, { block: false }) },
-  { k: 'equation', ic: 'functions',            run: () => openMathDialog(null, { block: true }) },
-  { k: 'chem',    ic: 'science',               run: () => openMathDialog(null, { block: false, tex: '\\ce{H2O}' }) },
-  { k: 'divider', ic: 'horizontal_rule',       run: () => insertHTML('<hr><p><br></p>') },
-  { k: 'table',   ic: 'table',                 run: () => insertTable(3, 3) },
-  { k: 'columns', ic: 'view_column',           run: (n) => insertColumns(n || 2) },
-  { k: 'image',   ic: 'image',                 run: pickAndInsertImage },
-  { k: 'icon',    ic: 'mood',                  run: pickInlineIcon },
-  { k: 'board',   ic: 'space_dashboard',       run: pickBoardLink },
-  { k: 'link',    ic: 'add_link',              run: () => openLinkDialog() },
-  { k: 'video',   ic: 'play_circle',           run: () => openEmbedDialog() }
+  { k: 'text',    sec: 'basic', ic: 'format_paragraph',      kw: 'paragraph plain p',           run: () => document.execCommand('formatBlock', false, 'p') },
+  { k: 'h1',      sec: 'basic', ic: 'format_h1',             kw: 'heading 1 h1 title big',      run: () => document.execCommand('formatBlock', false, 'h1') },
+  { k: 'h2',      sec: 'basic', ic: 'format_h2',             kw: 'heading 2 h2 subheading',     run: () => document.execCommand('formatBlock', false, 'h2') },
+  { k: 'h3',      sec: 'basic', ic: 'format_h3',             kw: 'heading 3 h3 small',          run: () => document.execCommand('formatBlock', false, 'h3') },
+  { k: 'bullet',  sec: 'basic', ic: 'format_list_bulleted',  kw: 'bulleted list unordered ul',  run: () => document.execCommand('insertUnorderedList') },
+  { k: 'number',  sec: 'basic', ic: 'format_list_numbered',  kw: 'numbered list ordered ol',    run: () => document.execCommand('insertOrderedList') },
+  { k: 'letters', sec: 'basic', ic: 'format_list_numbered',  kw: 'lettered list alphabet abc',  run: () => insertStyledList('la') },
+  { k: 'roman',   sec: 'basic', ic: 'format_list_numbered_rtl', kw: 'roman numerals list',      run: () => insertStyledList('ur') },
+  { k: 'todo',    sec: 'basic', ic: 'checklist',             kw: 'to-do todo checkbox task',    run: insertTodo },
+  { k: 'callout', sec: 'basic', ic: 'lightbulb',             kw: 'callout tip note box',        run: insertCallout },
+  { k: 'quote',   sec: 'basic', ic: 'format_quote',          kw: 'quote blockquote citation',   run: () => document.execCommand('formatBlock', false, 'blockquote') },
+  { k: 'table',   sec: 'basic', ic: 'table',                 kw: 'simple table grid',           run: () => insertTable(3, 3) },
+  { k: 'divider', sec: 'basic', ic: 'horizontal_rule',       kw: 'divider horizontal rule hr line separator', run: () => insertHTML('<hr><p><br></p>') },
+  { k: 'link',    sec: 'basic', ic: 'add_link',              kw: 'link to page note url ltp',   run: () => openLinkDialog() },
+  { k: 'image',   sec: 'media', ic: 'image',                 kw: 'image picture photo img gif', run: pickAndInsertImage },
+  { k: 'video',   sec: 'media', ic: 'play_circle',           kw: 'video youtube vimeo embed',   run: () => openEmbedDialog() },
+  { k: 'code',    sec: 'media', ic: 'code',                  kw: 'code snippet program',        run: insertCodeBlock },
+  { k: 'bookmark', sec: 'media', ic: 'bookmark',             kw: 'web bookmark link card url',  run: () => openEmbedDialog('bookmark') },
+  // 2.8: Notion's Database section, in its order (database.js)
+  { k: 'dbTable',     sec: 'database', ic: 'table',          kw: 'table view database grid spreadsheet', fresh: true, run: () => insertDatabase('table') },
+  { k: 'dbBoard',     sec: 'database', ic: 'view_kanban',    kw: 'board view kanban columns',  fresh: true, run: () => insertDatabase('board') },
+  { k: 'dbGallery',   sec: 'database', ic: 'grid_view',      kw: 'gallery view cards grid',    fresh: true, run: () => insertDatabase('gallery') },
+  { k: 'dbList',      sec: 'database', ic: 'view_list',      kw: 'list view database',         fresh: true, run: () => insertDatabase('list') },
+  { k: 'dbCalendar',  sec: 'database', ic: 'calendar_month', kw: 'calendar view month dates',  fresh: true, run: () => insertDatabase('calendar') },
+  { k: 'dbTimeline',  sec: 'database', ic: 'view_timeline',  kw: 'timeline view gantt roadmap', fresh: true, run: () => insertDatabase('timeline') },
+  { k: 'dbFeed',      sec: 'database', ic: 'dynamic_feed',   kw: 'feed view posts stream',     fresh: true, run: () => insertDatabase('feed') },
+  { k: 'dbDashboard', sec: 'database', ic: 'dashboard',      kw: 'dashboard view widgets',     fresh: true, run: () => insertDatabase('dashboard') },
+  { k: 'dbMap',       sec: 'database', ic: 'map',            kw: 'map view places location',   fresh: true, run: () => insertDatabase('map') },
+  { k: 'dbBar',       sec: 'database', ic: 'bar_chart',      kw: 'vertical bar chart graph column', fresh: true, run: () => insertDatabase('chart', 'bar') },
+  { k: 'dbHbar',      sec: 'database', ic: 'align_horizontal_left', kw: 'horizontal bar chart graph', fresh: true, run: () => insertDatabase('chart', 'hbar') },
+  { k: 'dbLine',      sec: 'database', ic: 'show_chart',     kw: 'line chart graph trend',     fresh: true, run: () => insertDatabase('chart', 'line') },
+  { k: 'dbDonut',     sec: 'database', ic: 'donut_large',    kw: 'donut pie chart ring',       fresh: true, run: () => insertDatabase('chart', 'donut') },
+  { k: 'dbNumber',    sec: 'database', ic: 'numbers',        kw: 'number chart kpi metric total', fresh: true, run: () => insertDatabase('chart', 'number') },
+  { k: 'dbInline',    sec: 'database', ic: 'database',       kw: 'database inline new',        fresh: true, run: () => insertDatabase('table') },
+  { k: 'dbForm',      sec: 'database', ic: 'assignment',     kw: 'form survey questions',      fresh: true, run: () => insertDatabase('form') },
+  { k: 'dbPage',      sec: 'database', ic: 'description',    kw: 'database full page',         fresh: true, run: insertDatabasePage },
+  { k: 'dbLinked',    sec: 'database', ic: 'north_east',     kw: 'linked view data source existing', fresh: true, run: pickLinkedDatabase },
+  { k: 'toc',      sec: 'advanced', ic: 'toc',               kw: 'table of contents toc outline', fresh: true, run: insertToc },
+  { k: 'equation', sec: 'advanced', ic: 'functions',         kw: 'block equation math latex formula $$', run: () => openMathDialog(null, { block: true }) },
+  { k: 'columns',  sec: 'advanced', ic: 'view_column',       kw: 'columns col layout 2 3 4 5',  run: (n) => insertColumns(n || 2) },
+  // 2.3: a formula in the line, and chemistry (mhchem)
+  { k: 'math',    sec: 'inline', ic: 'functions',            kw: 'inline equation math latex formula $', run: () => openMathDialog(null, { block: false }) },
+  { k: 'chem',    sec: 'inline', ic: 'science',              kw: 'chemistry mhchem molecule',   run: () => openMathDialog(null, { block: false, tex: '\\ce{H2O}' }) },
+  { k: 'icon',    sec: 'inline', ic: 'mood',                 kw: 'icon emoji symbol',           run: pickInlineIcon },
+  { k: 'board',   sec: 'inline', ic: 'space_dashboard',      kw: 'board link mention',          run: pickBoardLink }
 ];
+const BLOCK_SECTIONS = ['basic', 'media', 'database', 'advanced', 'inline'];
 const blockLabel = (b) => t('block.' + b.k);
 const blockDesc = (b) => t('block.' + b.k + '.d');
 /* Typing "/h1" has to work whatever the interface language is, so the English
-   name and the key stay searchable alongside the translated one. */
+   name, the key and Notion's keywords stay searchable beside the translated one. */
 function blockMatches(b, q) {
   if (!q) return true;
-  const hay = [blockLabel(b), FALLBACK['block.' + b.k] || '', b.k];
+  const hay = [blockLabel(b), FALLBACK['block.' + b.k] || '', b.k, b.kw || ''];
   return hay.some((s) => foldSearch(s).includes(q));
 }
 
@@ -535,6 +563,7 @@ function closeSlash() {
   if (!slash.open) return;
   slash.open = false;
   $('slashMenu').classList.add('hidden');
+  $('slashPeek').classList.add('hidden');
 }
 function updateSlash() {
   const s = getSelection();
@@ -567,17 +596,23 @@ function blockRank(b, q) {
   const names = [b.k, foldSearch(blockLabel(b)), foldSearch(FALLBACK['block.' + b.k] || '')];
   if (names.some((s) => s === q)) return 0;
   if (names.some((s) => s && s.startsWith(q))) return 1;
-  return 2;
+  // a keyword it answers to: below its own name, above a match in the middle of one
+  if (foldSearch(b.kw || '').split(/\s+/).some((w) => w && w.startsWith(q))) return 2;
+  return 3;
 }
+/* With nothing typed the menu is Notion's: every section in order under its
+   heading. Typing turns it into one list ranked by how well each name answers,
+   the way it always was — a heading over three results is noise. */
 function slashItems(q) {
-  return [
-    ...BLOCKS.filter((b) => blockMatches(b, q))
+  const asItem = (b) => ({ kind: 'block', sec: b.sec, ic: b.ic, name: blockLabel(b), desc: blockDesc(b), fresh: b.fresh, run: b });
+  const blocks = q
+    ? BLOCKS.filter((b) => blockMatches(b, q))
       .map((b, i) => ({ b, i, r: blockRank(b, q) }))
       .sort((x, y) => x.r - y.r || x.i - y.i)
-      .map(({ b }) => b)
-      .map((b) => ({
-      kind: 'block', ic: b.ic, name: blockLabel(b), desc: blockDesc(b), run: b
-    })),
+      .map(({ b }) => asItem(b))
+    : BLOCK_SECTIONS.flatMap((s) => BLOCKS.filter((b) => b.sec === s).map(asItem));
+  return [
+    ...blocks,
     ...userTemplates().filter((x) => templateMatches(x, q)).map((x) => ({
       kind: 'tpl', ic: x.icon || 'sticky_note_2', name: templateName(x),
       desc: noteHeadline(x.body), run: x
@@ -589,36 +624,131 @@ function renderSlash() {
   const q = foldSearch(slash.query.trim());
   slash.items = slashItems(q);
   const list = $('slashList');
+  $('slashHead').classList.toggle('hidden', !q);
   if (!slash.items.length) {
     list.innerHTML = `<div class="sm-empty">${te('blocks.none')}</div>`;
   } else {
-    let lastKind = '';
+    let lastKind = '', lastSec = '';
     list.innerHTML = slash.items.map((it, i) => {
       // a heading the first time the kind changes, so the two halves read apart
-      const head = it.kind !== lastKind && it.kind === 'tpl'
+      let head = it.kind !== lastKind && it.kind === 'tpl'
         ? `<div class="sm-head sm-head-mid">${te('blocks.templates')}</div>` : '';
+      // and, with nothing typed, one over each of Notion's sections
+      if (!q && it.kind === 'block' && it.sec !== lastSec) {
+        head = `<div class="sm-head${i ? ' sm-head-mid' : ''}">${te('blocks.sec.' + it.sec)}</div>`;
+        lastSec = it.sec;
+      }
       lastKind = it.kind;
       return head +
         `<button class="sm-item${i === slash.sel ? ' sel' : ''}" data-i="${i}">
            <span class="sm-ic">${icon(it.ic)}</span>
-           <span class="sm-tx"><b>${esc(it.name)}</b><span>${esc(it.desc)}</span></span>
+           <span class="sm-tx"><b>${esc(it.name)}${it.fresh ? `<em class="sm-new">${te('blocks.new')}</em>` : ''}</b><span>${esc(it.desc)}</span></span>
          </button>`;
     }).join('');
     list.querySelectorAll('.sm-item').forEach((el) => {
       el.addEventListener('mousedown', (e) => { e.preventDefault(); runSlash(+el.dataset.i); });
-      el.addEventListener('mouseenter', () => { slash.sel = +el.dataset.i; markSlashSel(); });
+      el.addEventListener('mouseenter', () => { slash.sel = +el.dataset.i; markSlashSel(false); });
     });
   }
   $('slashMenu').classList.remove('hidden');
+  list.scrollTop = 0;
+  markSlashSel(false);
 }
-function markSlashSel() {
+function markSlashSel(scroll = true) {
   $('slashList').querySelectorAll('.sm-item').forEach((el, i) => {
     const on = i === slash.sel;
     el.classList.toggle('sel', on);
     // the list scrolls; without this the highlight walks off the bottom and
     // Enter picks something you cannot see
-    if (on) el.scrollIntoView({ block: 'nearest' });
+    if (on && scroll) el.scrollIntoView({ block: 'nearest' });
   });
+  peekSlash();
+}
+
+/* --- the picture beside the menu (2.8) -----------------------------------
+   Notion's slash menu shows, for the row under the cursor or the arrow keys, a
+   card to the side: a picture of the block and its description. It reads that
+   off each block's `tooltipPhoto` and opens it with no delay, on the right —
+   MAP.md §4z6. Its pictures are screenshots; these are drawn, from the theme's
+   own colours, so they are right in every theme and both modes and add no
+   files. `blockPeek()` is the picture; the description is the menu's own. */
+function peekSlash() {
+  const it = slash.open && slash.items[slash.sel];
+  const peek = $('slashPeek');
+  if (!it) { peek.classList.add('hidden'); return; }
+  $('slashPeekPic').innerHTML = it.kind === 'tpl' ? blockPeek('tpl') : blockPeek(it.run.k);
+  $('slashPeekCap').textContent = it.desc || '';
+  peek.classList.remove('hidden');
+  const m = $('slashMenu').getBoundingClientRect();
+  const row = $('slashList').querySelector('.sm-item.sel');
+  const r = row ? row.getBoundingClientRect() : m;
+  const w = peek.offsetWidth, h = peek.offsetHeight;
+  // beside the menu on the side the text runs towards, and the other side when that one is full
+  let left = RTL ? m.left - w - 8 : m.right + 8;
+  if (!RTL && left + w > innerWidth - 8) left = m.left - w - 8;
+  if (RTL && left < 8) left = m.right + 8;
+  const top = clamp(r.top + r.height / 2 - h / 2, 8, innerHeight - h - 8);
+  peek.style.left = clamp(left, 8, innerWidth - w - 8) + 'px';
+  peek.style.top = top + 'px';
+}
+// a line of text, as a bar: the pictures carry no words, so they need no translating
+const pkLine = (w, cls) => `<i class="pk-ln${cls ? ' ' + cls : ''}" style="width:${w}%"></i>`;
+const pkLines = (...ws) => ws.map((w) => pkLine(w)).join('');
+function pkTable(rows, pills) {
+  let h = '<div class="pk-tbl"><div class="pk-tr pk-th">' + pkLine(70) + pkLine(60) + pkLine(50) + '</div>';
+  for (let i = 0; i < rows; i++) h += `<div class="pk-tr">${pkLine(60 + ((i * 13) % 30), 'pk-dark')}${pills ? `<i class="pk-pill pk-c${i % 3}"></i>` : pkLine(50)}${pkLine(40 + ((i * 17) % 40))}</div>`;
+  return h + '</div>';
+}
+function pkMath(tex, block) {
+  const f = document.createElement('div');
+  renderTex(tex, f, block);
+  return `<div class="pk-math">${f.innerHTML}</div>`;
+}
+function blockPeek(k) {
+  switch (k) {
+    case 'text': return `<div class="pk-doc">${pkLines(92, 100, 86, 64)}</div>`;
+    case 'h1': return `<div class="pk-doc"><i class="pk-h pk-h1"></i>${pkLines(96, 88, 60)}</div>`;
+    case 'h2': return `<div class="pk-doc"><i class="pk-h pk-h2"></i>${pkLines(96, 88, 70, 50)}</div>`;
+    case 'h3': return `<div class="pk-doc"><i class="pk-h pk-h3"></i>${pkLines(96, 90, 80, 66, 40)}</div>`;
+    case 'bullet': case 'number': case 'letters': case 'roman': case 'todo': {
+      const marks = { bullet: ['', '', ''], number: ['1.', '2.', '3.'], letters: ['a.', 'b.', 'c.'], roman: ['I.', 'II.', 'III.'], todo: ['', '', ''] }[k];
+      return `<div class="pk-doc">${marks.map((m, i) => `<div class="pk-li pk-${k}${k === 'todo' && i === 0 ? ' done' : ''}"><b>${m}</b>${pkLine([78, 62, 70][i])}</div>`).join('')}</div>`;
+    }
+    case 'callout': return `<div class="pk-doc"><div class="pk-callout">${icon('lightbulb')}<span>${pkLines(90, 70)}</span></div>${pkLines(80)}</div>`;
+    case 'quote': return `<div class="pk-doc"><div class="pk-quote">${pkLines(92, 84, 58)}</div>${pkLines(70)}</div>`;
+    case 'table': return `<div class="pk-doc"><div class="pk-grid">${'<i></i>'.repeat(9)}</div></div>`;
+    case 'divider': return `<div class="pk-doc">${pkLines(90, 70)}<i class="pk-hr"></i>${pkLines(84, 60)}</div>`;
+    case 'link': return `<div class="pk-doc">${pkLines(70)}<div class="pk-linkrow">${icon('description')}<i class="pk-ln pk-link" style="width:46%"></i></div>${pkLines(86)}</div>`;
+    case 'image': return `<div class="pk-media">${icon('image')}</div>`;
+    case 'video': return `<div class="pk-media pk-video">${icon('play_circle')}</div>`;
+    case 'bookmark': return `<div class="pk-doc"><div class="pk-bm"><span>${pkLines(80, 96, 50)}</span><i class="pk-bmimg"></i></div></div>`;
+    case 'code': return `<div class="pk-code">${['<i class="c1" style="width:34%"></i><i class="c2" style="width:40%"></i>', '<i class="c3" style="width:20%;margin-inline-start:12%"></i><i class="c1" style="width:44%"></i>', '<i class="c2" style="width:52%;margin-inline-start:12%"></i>', '<i class="c1" style="width:12%"></i>'].map((l) => `<div>${l}</div>`).join('')}</div>`;
+    case 'dbTable': case 'dbInline': return `<div class="pk-db">${k === 'dbInline' ? '<i class="pk-h pk-h3"></i>' : ''}${pkTable(4, true)}</div>`;
+    case 'dbLinked': return `<div class="pk-db"><div class="pk-linked">${icon('north_east')}${pkLine(40, 'pk-dark')}</div>${pkTable(3, true)}</div>`;
+    case 'dbPage': return `<div class="pk-db pk-pagewrap"><div class="pk-page">${icon('description')}<span>${pkLines(60)}${pkTable(2, true)}</span></div></div>`;
+    case 'dbBoard': return `<div class="pk-db pk-board">${[2, 3, 1].map((n, c) => `<div class="pk-bcol"><i class="pk-pill pk-c${c}"></i>${[[80, 50], [70, 40], [60]].slice(0, n).map((ws) => `<div class="pk-card">${pkLines(...ws)}</div>`).join('')}</div>`).join('')}</div>`;
+    case 'dbGallery': return `<div class="pk-db pk-gal">${[0, 1, 2, 3].map((i) => `<div class="pk-gcard"><i class="pk-gcover pk-c${i % 3}"></i>${pkLines(70)}</div>`).join('')}</div>`;
+    case 'dbList': return `<div class="pk-db">${[0, 1, 2, 3].map((i) => `<div class="pk-lrow">${icon('description')}${pkLine(40 + i * 9, 'pk-dark')}<i class="pk-pill pk-c${i % 3}"></i></div>`).join('')}</div>`;
+    case 'dbCalendar': return `<div class="pk-db pk-cal">${[...Array(28)].map((_, i) => `<i class="pk-day${i === 9 ? ' today' : ''}">${[3, 9, 10, 17, 22].includes(i) ? `<b class="pk-c${i % 3}"></b>` : ''}</i>`).join('')}</div>`;
+    case 'dbTimeline': return `<div class="pk-db pk-tl">${[[4, 40], [26, 34], [14, 52], [50, 36]].map(([x, w], i) => `<div class="pk-lane"><i class="pk-c${i % 3}" style="margin-inline-start:${x}%;width:${w}%"></i></div>`).join('')}</div>`;
+    case 'dbFeed': return `<div class="pk-db pk-feed">${[0, 1].map((i) => `<div class="pk-post"><i class="pk-h pk-h3"></i>${pkLines(96, 82 - i * 20)}</div>`).join('')}</div>`;
+    case 'dbDashboard': return `<div class="pk-db pk-dash"><div class="pk-w"><b>24</b></div><div class="pk-w pk-ring"><svg viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" class="pk-c0" stroke-dasharray="45 55" stroke-dashoffset="25"/><circle cx="21" cy="21" r="15.9" class="pk-c1" stroke-dasharray="30 70" stroke-dashoffset="80"/><circle cx="21" cy="21" r="15.9" class="pk-c2" stroke-dasharray="25 75" stroke-dashoffset="50"/></svg></div><div class="pk-w pk-wide pk-vbars">${[50, 80, 35, 65, 90].map((h, i) => `<i class="pk-c${i % 3}" style="height:${h}%"></i>`).join('')}</div></div>`;
+    case 'dbMap': return `<div class="pk-db pk-map">${dbWorldSvg('<circle cx="106" cy="50" r="5" class="pk-pin"/><circle cx="182" cy="40" r="5" class="pk-pin"/><circle cx="321" cy="124" r="5" class="pk-pin"/>')}</div>`;
+    case 'dbBar': return `<div class="pk-db pk-vbars">${[40, 75, 55, 90, 30].map((h, i) => `<i class="pk-c${i % 3}" style="height:${h}%"></i>`).join('')}</div>`;
+    case 'dbHbar': return `<div class="pk-db pk-hbars">${[70, 95, 45, 60].map((w, i) => `<i class="pk-c${i % 3}" style="width:${w}%"></i>`).join('')}</div>`;
+    case 'dbLine': return `<div class="pk-db pk-linec"><svg viewBox="0 0 100 60" preserveAspectRatio="none"><polyline points="4,48 22,34 40,40 58,18 76,26 96,8"/></svg></div>`;
+    case 'dbDonut': return `<div class="pk-db pk-ring pk-big"><svg viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" class="pk-c0" stroke-dasharray="50 50" stroke-dashoffset="25"/><circle cx="21" cy="21" r="15.9" class="pk-c1" stroke-dasharray="30 70" stroke-dashoffset="75"/><circle cx="21" cy="21" r="15.9" class="pk-c2" stroke-dasharray="20 80" stroke-dashoffset="45"/></svg></div>`;
+    case 'dbNumber': return `<div class="pk-db pk-num"><b>${esc(num(128))}</b>${pkLine(40)}</div>`;
+    case 'dbForm': return `<div class="pk-db pk-form">${[0, 1].map(() => `${pkLine(30)}<i class="pk-input"></i>`).join('')}<i class="pk-btn"></i></div>`;
+    case 'toc': return `<div class="pk-doc pk-toc">${[[60, 0], [48, 1], [52, 1], [44, 0], [56, 1]].map(([w, d]) => `<i class="pk-ln pk-link" style="width:${w}%;margin-inline-start:${d * 12}%"></i>`).join('')}</div>`;
+    case 'equation': return `<div class="pk-doc">${pkLines(70)}${pkMath('\\int_0^1 x^2\\,dx = \\tfrac13', true)}${pkLines(60)}</div>`;
+    case 'math': return `<div class="pk-doc pk-inl">${pkLine(30)}${pkMath('E=mc^2', false)}${pkLine(26)}</div>`;
+    case 'chem': return `<div class="pk-doc pk-inl">${pkLine(26)}${pkMath('\\ce{2H2 + O2 -> 2H2O}', false)}</div>`;
+    case 'columns': return `<div class="pk-doc pk-cols"><span>${pkLines(90, 70, 84)}</span><span>${pkLines(80, 94, 60)}</span></div>`;
+    case 'icon': return `<div class="pk-doc pk-icons">${icon('mood')}${icon('lightbulb')}${icon('functions')}${icon('science')}</div>`;
+    case 'board': return `<div class="pk-doc pk-inl">${pkLine(30)}<span class="pk-chip">${icon('space_dashboard')}${pkLine(60)}</span></div>`;
+    default: return `<div class="pk-doc pk-note">${pkLines(60, 96, 80, 50)}</div>`;
+  }
 }
 function positionSlash() {
   const s = getSelection();

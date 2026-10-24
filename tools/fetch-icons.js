@@ -47,7 +47,12 @@ const UI = [
   'library_add', 'ink_pen', 'ink_highlighter', 'ink_eraser', 'flip_to_front', 'flip_to_back',
   'delete_sweep', 'volume_up', 'arrow_selector_tool',
   /* 2.3: maths and chemistry in a note */
-  'superscript', 'subscript', 'functions', 'science', 'format_list_numbered_rtl'
+  'superscript', 'subscript', 'functions', 'science', 'format_list_numbered_rtl',
+  /* 2.8: the slash menu's Database section (js/database.js) — a glyph per
+     view, per chart and per property type — and the table of contents */
+  'view_kanban', 'view_timeline', 'dynamic_feed', 'bar_chart', 'align_horizontal_left',
+  'show_chart', 'donut_large', 'check_box', 'radio_button_checked', 'arrow_drop_down_circle',
+  'list', 'location_on', 'notes', 'toc', 'chevron_left'
 ];
 
 /* Icons the user can stamp on a note or a workflow, or drop into note text with
