@@ -1497,13 +1497,21 @@ module.exports = [
         slash.sel = slash.items.findIndex((it) => it.run && it.run.k === 'dbBoard');
         markSlashSel();
         const peek = { shown: !$('slashPeek').classList.contains('hidden'), board: !!$('slashPeekPic').querySelector('.pk-board'), cap: $('slashPeekCap').textContent === t('block.dbBoard.d') };
+        // 2.8.1: the list scrolling under a resting pointer does not take the selection; a real move does
+        const rows = $('slashList').querySelectorAll('.sm-item');
+        slash.sel = 12; markSlashSel();
+        rows[3].dispatchEvent(new MouseEvent('mousemove', { bubbles: true, movementX: 0, movementY: 0 }));
+        const keptByKeys = slash.sel === 12;
+        rows[3].dispatchEvent(new MouseEvent('mousemove', { bubbles: true, movementX: 2, movementY: 1 }));
+        const takenByMouse = slash.sel === 3;
         const firstFor = (q) => { slash.query = q; renderSlash(); return slash.items[0] && slash.items[0].run.k; };
         const ranks = { table: firstFor('table'), link: firstFor('link'), kanban: firstFor('kanban'), hr: firstFor('hr') };
         closeSlash();
         const peekGone = $('slashPeek').classList.contains('hidden');
         exitEdit();
-        return { heads: heads.join('|'), want: want.join('|'), peek, ranks, peekGone };
+        return { heads: heads.join('|'), want: want.join('|'), peek, ranks, peekGone, keptByKeys, takenByMouse };
       });
+      ok(r.keptByKeys && r.takenByMouse, 'a scroll under a resting pointer keeps the arrow keys\' row; moving the mouse picks one: ' + JSON.stringify([r.keptByKeys, r.takenByMouse]));
       ok(r.heads === r.want, 'the sections, in Notion\'s order: ' + r.heads);
       ok(r.peek.shown && r.peek.board && r.peek.cap, 'the row under the cursor has its picture and its description beside the menu: ' + JSON.stringify(r.peek));
       ok(r.ranks.table === 'table' && r.ranks.link === 'link', '/table is still the plain table and /link still the link: ' + JSON.stringify(r.ranks));

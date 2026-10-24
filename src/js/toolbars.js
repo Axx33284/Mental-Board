@@ -647,7 +647,15 @@ function renderSlash() {
     }).join('');
     list.querySelectorAll('.sm-item').forEach((el) => {
       el.addEventListener('mousedown', (e) => { e.preventDefault(); runSlash(+el.dataset.i); });
-      el.addEventListener('mouseenter', () => { slash.sel = +el.dataset.i; markSlashSel(false); });
+      /* The pointer picks a row only when it moves. The arrow keys scroll the
+         list under a pointer left resting on it, and the row that slid under
+         it fired mouseenter — and took the selection back, so ArrowDown
+         stopped a few rows down and went no further (2.8.1). Chromium sends a
+         mousemove after a scroll too, but one that has not moved: ignored. */
+      el.addEventListener('mousemove', (e) => {
+        if (!e.movementX && !e.movementY) return;
+        if (slash.sel !== +el.dataset.i) { slash.sel = +el.dataset.i; markSlashSel(false); }
+      });
     });
   }
   $('slashMenu').classList.remove('hidden');
@@ -691,64 +699,110 @@ function peekSlash() {
   peek.style.left = clamp(left, 8, innerWidth - w - 8) + 'px';
   peek.style.top = top + 'px';
 }
-// a line of text, as a bar: the pictures carry no words, so they need no translating
-const pkLine = (w, cls) => `<i class="pk-ln${cls ? ' ' + cls : ''}" style="width:${w}%"></i>`;
-const pkLines = (...ws) => ws.map((w) => pkLine(w)).join('');
-function pkTable(rows, pills) {
-  let h = '<div class="pk-tbl"><div class="pk-tr pk-th">' + pkLine(70) + pkLine(60) + pkLine(50) + '</div>';
-  for (let i = 0; i < rows; i++) h += `<div class="pk-tr">${pkLine(60 + ((i * 13) % 30), 'pk-dark')}${pills ? `<i class="pk-pill pk-c${i % 3}"></i>` : pkLine(50)}${pkLine(40 + ((i * 17) % 40))}</div>`;
-  return h + '</div>';
-}
+/* The pictures are Notion's kind (2.8.1): a close-up of the block with
+   something real in it — a heading that says something, a to-do that is
+   ticked, a table with things in it, cards with names and statuses, a month
+   with its days, charts with their numbers — in large type and cropped at the
+   edge, as if the page had been zoomed into. The words are the catalogue's
+   (`pk.*`), so a picture is in the interface's language; the colours are the
+   theme's, and the status pills are the database's own (`db-pill`). */
+const pkPill = (key, color) => `<span class="db-pill db-st db-c-${color}">${te(key)}</span>`;
+const PK_ST = [['db.st.done', 'green'], ['db.st.doing', 'blue'], ['db.st.todo', 'default'], ['db.st.doing', 'blue']];
 function pkMath(tex, block) {
-  const f = document.createElement('div');
+  const f = document.createElement('span');
   renderTex(tex, f, block);
-  return `<div class="pk-math">${f.innerHTML}</div>`;
+  return `<span class="pk-math${block ? ' pk-mblock' : ''}">${f.innerHTML}</span>`;
+}
+// a landscape — sky, sun, two hills — for the image and the video
+const pkScene = (dark) => `<svg class="pk-scene${dark ? ' dark' : ''}" viewBox="0 0 200 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <rect width="200" height="130" class="sky"/><circle cx="150" cy="38" r="15" class="sun"/>
+  <path d="M0 130 L0 92 L46 52 L88 90 L118 66 L200 118 L200 130 Z" class="hill2"/><path d="M0 130 L0 108 L60 78 L130 112 L200 96 L200 130 Z" class="hill1"/></svg>`;
+function pkTable(n, withIcon) {
+  const titles = ['pk.t1', 'pk.t2', 'pk.t3', 'pk.t4'];
+  return `<div class="pk-dbt"><div class="pk-r pk-hd"><span>${icon('title')}${te('db.prop.name')}</span><span>${icon('radio_button_checked')}${te('db.prop.status')}</span></div>` +
+    titles.slice(0, n).map((k, i) => `<div class="pk-r"><span class="pk-name">${withIcon ? icon('description') : ''}${te(k)}</span><span>${pkPill(PK_ST[i][0], PK_ST[i][1])}</span></div>`).join('') + '</div>';
 }
 function blockPeek(k) {
+  const lis = `<li>${te('pk.li1')}</li><li>${te('pk.li2')}</li><li>${te('pk.li3')}</li>`;
   switch (k) {
-    case 'text': return `<div class="pk-doc">${pkLines(92, 100, 86, 64)}</div>`;
-    case 'h1': return `<div class="pk-doc"><i class="pk-h pk-h1"></i>${pkLines(96, 88, 60)}</div>`;
-    case 'h2': return `<div class="pk-doc"><i class="pk-h pk-h2"></i>${pkLines(96, 88, 70, 50)}</div>`;
-    case 'h3': return `<div class="pk-doc"><i class="pk-h pk-h3"></i>${pkLines(96, 90, 80, 66, 40)}</div>`;
-    case 'bullet': case 'number': case 'letters': case 'roman': case 'todo': {
-      const marks = { bullet: ['', '', ''], number: ['1.', '2.', '3.'], letters: ['a.', 'b.', 'c.'], roman: ['I.', 'II.', 'III.'], todo: ['', '', ''] }[k];
-      return `<div class="pk-doc">${marks.map((m, i) => `<div class="pk-li pk-${k}${k === 'todo' && i === 0 ? ' done' : ''}"><b>${m}</b>${pkLine([78, 62, 70][i])}</div>`).join('')}</div>`;
+    case 'text': return `<div class="pk-page pk-big"><p>${te('pk.text')}</p></div>`;
+    case 'h1': return `<div class="pk-page"><h1>${te('pk.h1')}</h1><p>${te('pk.text')}</p></div>`;
+    case 'h2': return `<div class="pk-page"><h2>${te('pk.h2')}</h2><p>${te('pk.text')}</p></div>`;
+    case 'h3': return `<div class="pk-page"><h3>${te('pk.h3')}</h3><p>${te('pk.text')}</p></div>`;
+    case 'bullet': return `<div class="pk-page pk-big"><ul>${lis}</ul></div>`;
+    case 'number': return `<div class="pk-page pk-big"><ol>${lis}</ol></div>`;
+    case 'letters': return `<div class="pk-page pk-big"><ol class="pk-la">${lis}</ol></div>`;
+    case 'roman': return `<div class="pk-page pk-big"><ol class="pk-ur">${lis}</ol></div>`;
+    case 'todo': return `<div class="pk-page pk-big"><div class="pk-todo done"><i>${icon('check')}</i><s>${te('pk.todo1')}</s></div><div class="pk-todo"><i></i><span>${te('pk.todo2')}</span></div><div class="pk-todo"><i></i><span>${te('pk.todo3')}</span></div></div>`;
+    case 'callout': return `<div class="pk-page"><div class="pk-callout">${icon('lightbulb')}<span>${te('pk.callout')}</span></div></div>`;
+    case 'quote': return `<div class="pk-page pk-big"><blockquote>${te('pk.quote')}</blockquote></div>`;
+    case 'table': return `<div class="pk-page"><table class="pk-tbl"><tr><th>${te('pk.item')}</th><th>${te('pk.qty')}</th></tr>` +
+      [['pk.apples', 6], ['pk.bread', 1], ['pk.milk', 2]].map(([w, q]) => `<tr><td>${te(w)}</td><td>${esc(num(q))}</td></tr>`).join('') + '</table></div>';
+    case 'divider': return `<div class="pk-page pk-big"><p>${te('pk.li1')}</p><hr><p>${te('pk.li2')}</p></div>`;
+    case 'link': return `<div class="pk-page pk-big pk-center"><span class="pk-link">${icon('description')}<u>${te('pk.link')}</u></span></div>`;
+    case 'image': return `<div class="pk-media">${pkScene(false)}</div>`;
+    case 'video': return `<div class="pk-media">${pkScene(true)}<span class="pk-play">${icon('play_circle')}</span></div>`;
+    case 'bookmark': return `<div class="pk-page"><div class="pk-bm"><span><b>${te('pk.bmTitle')}</b><em>${te('pk.bmText')}</em><small>${icon('link')}example.com</small></span>${pkScene(false)}</div></div>`;
+    case 'code': return `<div class="pk-codeb"><code><b>const</b> plan = <i>'ship it'</i>;<br><b>if</b> (plan) {<br>&nbsp;&nbsp;start(<i>'today'</i>);<br>}</code></div>`;
+    case 'dbTable': return `<div class="pk-page pk-db">${pkTable(4, true)}</div>`;
+    case 'dbInline': return `<div class="pk-page pk-db"><h3>${te('pk.tasks')}</h3>${pkTable(3, true)}</div>`;
+    case 'dbLinked': return `<div class="pk-page pk-db"><h3 class="pk-linked">${icon('north_east')}<u>${te('pk.tasks')}</u></h3>${pkTable(3, true)}</div>`;
+    case 'dbPage': return `<div class="pk-page pk-center"><span class="pk-link pk-pagelink">${icon('description')}<u>${te('pk.tasks')}</u></span><div class="pk-mini">${pkTable(2, false)}</div></div>`;
+    case 'dbBoard': return `<div class="pk-page pk-db pk-board">` + [[2, 'db.st.todo', 'default', ['pk.t3', 'pk.t4']], [1, 'db.st.doing', 'blue', ['pk.t2']], [1, 'db.st.done', 'green', ['pk.t1']]]
+      .map(([, st, c, cards]) => `<div class="pk-bcol">${pkPill(st, c)}${cards.map((ck) => `<div class="pk-card">${te(ck)}</div>`).join('')}</div>`).join('') + '</div>';
+    case 'dbGallery': return `<div class="pk-page pk-db pk-gal">` + [['pk.t1', 'blue'], ['pk.t2', 'green'], ['pk.t3', 'amber'], ['pk.t4', 'violet']]
+      .map(([tk, c]) => `<div class="pk-gcard"><i class="db-c-${c}"></i><span>${te(tk)}</span></div>`).join('') + '</div>';
+    case 'dbList': return `<div class="pk-page pk-db">` + ['pk.t1', 'pk.t2', 'pk.t3', 'pk.t4']
+      .map((tk, i) => `<div class="pk-lrow">${icon('description')}<span>${te(tk)}</span>${pkPill(PK_ST[i][0], PK_ST[i][1])}</div>`).join('') + '</div>';
+    case 'dbCalendar': {
+      const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const chips = { 2: ['pk.t1', 'blue'], 3: ['pk.t3', 'amber'], 9: ['pk.t2', 'green'], 11: ['pk.t4', 'violet'] };
+      let days = '';
+      for (let d = 1; d <= 14; d++) days += `<span class="pk-day${d === 4 ? ' today' : ''}"><b>${esc(num(d))}</b>${chips[d] ? `<i class="db-c-${chips[d][1]}">${te(chips[d][0])}</i>` : ''}</span>`;
+      return `<div class="pk-page pk-db"><h3>${esc(fmtDate(todayKey(first), { month: 'long', year: 'numeric' }))}</h3><div class="pk-cal">${days}</div></div>`;
     }
-    case 'callout': return `<div class="pk-doc"><div class="pk-callout">${icon('lightbulb')}<span>${pkLines(90, 70)}</span></div>${pkLines(80)}</div>`;
-    case 'quote': return `<div class="pk-doc"><div class="pk-quote">${pkLines(92, 84, 58)}</div>${pkLines(70)}</div>`;
-    case 'table': return `<div class="pk-doc"><div class="pk-grid">${'<i></i>'.repeat(9)}</div></div>`;
-    case 'divider': return `<div class="pk-doc">${pkLines(90, 70)}<i class="pk-hr"></i>${pkLines(84, 60)}</div>`;
-    case 'link': return `<div class="pk-doc">${pkLines(70)}<div class="pk-linkrow">${icon('description')}<i class="pk-ln pk-link" style="width:46%"></i></div>${pkLines(86)}</div>`;
-    case 'image': return `<div class="pk-media">${icon('image')}</div>`;
-    case 'video': return `<div class="pk-media pk-video">${icon('play_circle')}</div>`;
-    case 'bookmark': return `<div class="pk-doc"><div class="pk-bm"><span>${pkLines(80, 96, 50)}</span><i class="pk-bmimg"></i></div></div>`;
-    case 'code': return `<div class="pk-code">${['<i class="c1" style="width:34%"></i><i class="c2" style="width:40%"></i>', '<i class="c3" style="width:20%;margin-inline-start:12%"></i><i class="c1" style="width:44%"></i>', '<i class="c2" style="width:52%;margin-inline-start:12%"></i>', '<i class="c1" style="width:12%"></i>'].map((l) => `<div>${l}</div>`).join('')}</div>`;
-    case 'dbTable': case 'dbInline': return `<div class="pk-db">${k === 'dbInline' ? '<i class="pk-h pk-h3"></i>' : ''}${pkTable(4, true)}</div>`;
-    case 'dbLinked': return `<div class="pk-db"><div class="pk-linked">${icon('north_east')}${pkLine(40, 'pk-dark')}</div>${pkTable(3, true)}</div>`;
-    case 'dbPage': return `<div class="pk-db pk-pagewrap"><div class="pk-page">${icon('description')}<span>${pkLines(60)}${pkTable(2, true)}</span></div></div>`;
-    case 'dbBoard': return `<div class="pk-db pk-board">${[2, 3, 1].map((n, c) => `<div class="pk-bcol"><i class="pk-pill pk-c${c}"></i>${[[80, 50], [70, 40], [60]].slice(0, n).map((ws) => `<div class="pk-card">${pkLines(...ws)}</div>`).join('')}</div>`).join('')}</div>`;
-    case 'dbGallery': return `<div class="pk-db pk-gal">${[0, 1, 2, 3].map((i) => `<div class="pk-gcard"><i class="pk-gcover pk-c${i % 3}"></i>${pkLines(70)}</div>`).join('')}</div>`;
-    case 'dbList': return `<div class="pk-db">${[0, 1, 2, 3].map((i) => `<div class="pk-lrow">${icon('description')}${pkLine(40 + i * 9, 'pk-dark')}<i class="pk-pill pk-c${i % 3}"></i></div>`).join('')}</div>`;
-    case 'dbCalendar': return `<div class="pk-db pk-cal">${[...Array(28)].map((_, i) => `<i class="pk-day${i === 9 ? ' today' : ''}">${[3, 9, 10, 17, 22].includes(i) ? `<b class="pk-c${i % 3}"></b>` : ''}</i>`).join('')}</div>`;
-    case 'dbTimeline': return `<div class="pk-db pk-tl">${[[4, 40], [26, 34], [14, 52], [50, 36]].map(([x, w], i) => `<div class="pk-lane"><i class="pk-c${i % 3}" style="margin-inline-start:${x}%;width:${w}%"></i></div>`).join('')}</div>`;
-    case 'dbFeed': return `<div class="pk-db pk-feed">${[0, 1].map((i) => `<div class="pk-post"><i class="pk-h pk-h3"></i>${pkLines(96, 82 - i * 20)}</div>`).join('')}</div>`;
-    case 'dbDashboard': return `<div class="pk-db pk-dash"><div class="pk-w"><b>24</b></div><div class="pk-w pk-ring"><svg viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" class="pk-c0" stroke-dasharray="45 55" stroke-dashoffset="25"/><circle cx="21" cy="21" r="15.9" class="pk-c1" stroke-dasharray="30 70" stroke-dashoffset="80"/><circle cx="21" cy="21" r="15.9" class="pk-c2" stroke-dasharray="25 75" stroke-dashoffset="50"/></svg></div><div class="pk-w pk-wide pk-vbars">${[50, 80, 35, 65, 90].map((h, i) => `<i class="pk-c${i % 3}" style="height:${h}%"></i>`).join('')}</div></div>`;
-    case 'dbMap': return `<div class="pk-db pk-map">${dbWorldSvg('<circle cx="106" cy="50" r="5" class="pk-pin"/><circle cx="182" cy="40" r="5" class="pk-pin"/><circle cx="321" cy="124" r="5" class="pk-pin"/>')}</div>`;
-    case 'dbBar': return `<div class="pk-db pk-vbars">${[40, 75, 55, 90, 30].map((h, i) => `<i class="pk-c${i % 3}" style="height:${h}%"></i>`).join('')}</div>`;
-    case 'dbHbar': return `<div class="pk-db pk-hbars">${[70, 95, 45, 60].map((w, i) => `<i class="pk-c${i % 3}" style="width:${w}%"></i>`).join('')}</div>`;
-    case 'dbLine': return `<div class="pk-db pk-linec"><svg viewBox="0 0 100 60" preserveAspectRatio="none"><polyline points="4,48 22,34 40,40 58,18 76,26 96,8"/></svg></div>`;
-    case 'dbDonut': return `<div class="pk-db pk-ring pk-big"><svg viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" class="pk-c0" stroke-dasharray="50 50" stroke-dashoffset="25"/><circle cx="21" cy="21" r="15.9" class="pk-c1" stroke-dasharray="30 70" stroke-dashoffset="75"/><circle cx="21" cy="21" r="15.9" class="pk-c2" stroke-dasharray="20 80" stroke-dashoffset="45"/></svg></div>`;
-    case 'dbNumber': return `<div class="pk-db pk-num"><b>${esc(num(128))}</b>${pkLine(40)}</div>`;
-    case 'dbForm': return `<div class="pk-db pk-form">${[0, 1].map(() => `${pkLine(30)}<i class="pk-input"></i>`).join('')}<i class="pk-btn"></i></div>`;
-    case 'toc': return `<div class="pk-doc pk-toc">${[[60, 0], [48, 1], [52, 1], [44, 0], [56, 1]].map(([w, d]) => `<i class="pk-ln pk-link" style="width:${w}%;margin-inline-start:${d * 12}%"></i>`).join('')}</div>`;
-    case 'equation': return `<div class="pk-doc">${pkLines(70)}${pkMath('\\int_0^1 x^2\\,dx = \\tfrac13', true)}${pkLines(60)}</div>`;
-    case 'math': return `<div class="pk-doc pk-inl">${pkLine(30)}${pkMath('E=mc^2', false)}${pkLine(26)}</div>`;
-    case 'chem': return `<div class="pk-doc pk-inl">${pkLine(26)}${pkMath('\\ce{2H2 + O2 -> 2H2O}', false)}</div>`;
-    case 'columns': return `<div class="pk-doc pk-cols"><span>${pkLines(90, 70, 84)}</span><span>${pkLines(80, 94, 60)}</span></div>`;
-    case 'icon': return `<div class="pk-doc pk-icons">${icon('mood')}${icon('lightbulb')}${icon('functions')}${icon('science')}</div>`;
-    case 'board': return `<div class="pk-doc pk-inl">${pkLine(30)}<span class="pk-chip">${icon('space_dashboard')}${pkLine(60)}</span></div>`;
-    default: return `<div class="pk-doc pk-note">${pkLines(60, 96, 80, 50)}</div>`;
+    case 'dbTimeline': {
+      let head = '';
+      for (let d = 1; d <= 10; d++) head += `<span${d === 4 ? ' class="today"' : ''}>${esc(num(d))}</span>`;
+      return `<div class="pk-page pk-db pk-tl"><div class="pk-tlh">${head}</div>` +
+        [['pk.t1', 'blue', 0, 4], ['pk.t2', 'green', 3, 4], ['pk.t3', 'amber', 5, 5]]
+          .map(([tk, c, x, w]) => `<div class="pk-lane"><i class="db-c-${c}" style="margin-inline-start:${x * 10}%;width:${w * 10}%">${te(tk)}</i></div>`).join('') + '</div>';
+    }
+    case 'dbFeed': return `<div class="pk-page pk-db"><div class="pk-post"><b>${te('pk.post')}</b><span>${te('pk.postText')}</span></div><div class="pk-post"><b>${te('pk.t2')}</b><span>${te('pk.text')}</span></div></div>`;
+    case 'dbDashboard': return `<div class="pk-page pk-db pk-dash"><div class="pk-w"><em>${te('db.total')}</em><b>${esc(num(24))}</b></div>
+      <div class="pk-w">${pkRing(56, true)}</div><div class="pk-w pk-wide">${pkBars([4, 7, 3, 6, 8], false)}</div></div>`;
+    case 'dbMap': return `<div class="pk-media pk-map">${dbWorldSvg('<circle cx="106" cy="50" r="5" class="pk-pin"/><circle cx="182" cy="40" r="5" class="pk-pin"/><circle cx="321" cy="124" r="5" class="pk-pin"/>')}</div>`;
+    case 'dbBar': return `<div class="pk-page pk-db">${pkBars([8, 11, 7, 8, 14], true)}</div>`;
+    case 'dbHbar': return `<div class="pk-page pk-db pk-hb">` + [['db.st.done', 'green', 10], ['db.st.doing', 'blue', 7], ['db.st.todo', 'default', 4]]
+      .map(([st, c, v]) => `<div class="pk-hrow"><span>${te(st)}</span><i class="db-c-${c}" style="width:${v * 9}%"></i><b>${esc(num(v))}</b></div>`).join('') + '</div>';
+    case 'dbLine': return `<div class="pk-page pk-db pk-line"><span class="pk-axis"><b>${esc(num(50))}</b><b>${esc(num(25))}</b><b>${esc(num(0))}</b></span>
+      <svg viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><polyline class="a" points="0,44 16,30 32,36 48,16 64,24 80,10 100,18"/><polyline class="b" points="0,52 16,48 32,40 48,44 64,34 80,38 100,28"/></svg></div>`;
+    case 'dbDonut': return `<div class="pk-page pk-db pk-center">${pkRing(56, false)}</div>`;
+    case 'dbNumber': return `<div class="pk-page pk-db pk-numc"><b>${esc(num(12149))}</b><em>${te('db.countRows')}</em></div>`;
+    case 'dbForm': return `<div class="pk-form"><i class="pk-band"></i><b>${te('pk.form')}</b><span class="pk-input">${te('pk.formPh')}</span><span class="pk-submit">${te('db.submit')}</span></div>`;
+    case 'toc': return `<div class="pk-page pk-big pk-toc"><u>${te('pk.h1')}</u><u class="i1">${te('pk.h2')}</u><u class="i1">${te('pk.h3')}</u><u>${te('pk.tasks')}</u></div>`;
+    case 'equation': return `<div class="pk-page pk-center">${pkMath('\\int_0^1 x^2\\,dx = \\tfrac13', true)}</div>`;
+    case 'math': return `<div class="pk-page pk-big pk-center"><p>${te('pk.for')} ${pkMath('x \\ge 0', false)}</p></div>`;
+    case 'chem': return `<div class="pk-page pk-big pk-center">${pkMath('\\ce{2H2 + O2 -> 2H2O}', false)}</div>`;
+    case 'columns': return `<div class="pk-page pk-cols"><div><h3>${te('pk.h2')}</h3><p>${te('pk.li1')}</p></div><div><h3>${te('pk.h3')}</h3><p>${te('pk.li2')}</p></div></div>`;
+    case 'icon': return `<div class="pk-page pk-big pk-center"><p class="pk-icons">${te('pk.li1')} ${icon('lightbulb')} ${icon('mood')} ${icon('science')}</p></div>`;
+    case 'board': return `<div class="pk-page pk-big pk-center"><span class="pk-chip">${icon('space_dashboard')}${te('pk.board')}</span></div>`;
+    default: return `<div class="pk-page"><h3>${icon('sticky_note_2')}</h3><p>${te('pk.text')}</p></div>`;
   }
+}
+// a donut of three statuses with its total in the middle, and its legend when there is room
+function pkRing(total, small) {
+  const arcs = [[50, 'green', 25], [30, 'blue', 75], [20, 'default', 45]]
+    .map(([share, c, off]) => `<circle cx="21" cy="21" r="15.9" class="db-c-${c}" stroke-dasharray="${share} ${100 - share}" stroke-dashoffset="${off}"/>`).join('');
+  return `<span class="pk-ring${small ? ' small' : ''}"><svg viewBox="0 0 42 42" aria-hidden="true">${arcs}</svg><b>${esc(num(total))}</b></span>` +
+    (small ? '' : `<span class="pk-legend">${pkPill('db.st.done', 'green')}${pkPill('db.st.doing', 'blue')}${pkPill('db.st.todo', 'default')}</span>`);
+}
+// bars with their numbers over them, and months under them when asked
+function pkBars(vals, labelled) {
+  const max = Math.max(...vals);
+  const months = labelled ? vals.map((_, i) => `<span>${esc(fmtDate(todayKey(new Date(2026, i, 1)), { month: 'short' }))}</span>`).join('') : '';
+  return `<div class="pk-bars">${vals.map((v, i) => `<span><em>${esc(num(v))}</em><i class="db-c-${['blue', 'green', 'amber'][i % 3]}" style="height:${(v / max) * 100}%"></i></span>`).join('')}</div>` +
+    (labelled ? `<div class="pk-months">${months}</div>` : '');
 }
 function positionSlash() {
   const s = getSelection();

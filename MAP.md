@@ -2620,9 +2620,16 @@ this was built:
   `collection_view_page`; a linked view is a view of an existing data source.
   So a database is one data source drawn many ways — which is the model here.
 
-Notion's pictures are its own screenshots and are not copied: `blockPeek()`
-draws each one from the theme's colours, so they follow every theme and both
-modes and add no files. Notion's wording is not copied either.
+Notion's pictures are its own screenshots and are not copied. What they are
+was read too (2.8.1): the PNGs sit in Notion's HTTP cache
+(`Partitions\notion\Cache\Cache_Data`, 280×200, shown at 140×100), and every
+one is **a close-up of a real page** — a heading that says something, a ticked
+to-do, a table with things in it, cards with names and status pills, a month
+with its days, a chart with its numbers — in large type, cropped at the edge.
+2.8's pictures were grey bars, which showed nothing of what a block does.
+`blockPeek()` now draws that kind of close-up in HTML: the words are the
+catalogue's (`pk.*`, so Arabic gets its own), the colours the theme's, the
+pills the database's own `db-pill`. No files, and Notion's wording is not used.
 
 ### The slash menu — `toolbars.js`
 
@@ -2634,6 +2641,12 @@ that starts with it, then a keyword, then anywhere — so `/table` is still the
 plain table and `/link` still the link. The last row is "Close menu  esc"
 (`#slashClose`). `markSlashSel()` → `peekSlash()` places `#slashPeek` beside
 the menu, on the side the text runs towards, centred on the row.
+
+**The pointer picks a row on `mousemove`, never `mouseenter`, and only when it
+has moved** (`movementX/Y`). With `mouseenter`, the arrow keys scrolled the
+list under a pointer resting on it, the row that slid under the pointer took
+the selection back, and ArrowDown stopped a few rows down (2.8.1). Chromium
+sends a mousemove after a scroll too, but with no movement, so it is ignored.
 
 New rows besides the database ones: **Web bookmark** (`openEmbedDialog('bookmark')`
 — the video window in a second mode, `embedMode`, inserting the paste menu's
