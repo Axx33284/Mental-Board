@@ -2801,8 +2801,13 @@ block on a drag (`onGripDown` → `onGripMove`, with `#blockDrop` as the line,
 After any of these, `finishBlockEdit` repairs and saves; `healAfterMove` leaves
 no empty list, column or toggle behind; a duplicated database gets a new id.
 
-**Not tested by the suite yet**: these were checked by hand in the sandbox with
-real keys and the mouse (2.9), not in tools/test-app-features.js.
+Tests: **2.9** in `tools/test-app-features.js` — Turn into every kind and back,
+a list split and joined, a toggle's inside carried; colours on a block and on
+words, `/red`, on disk and through a paste; a toggle's Enter, step-out,
+Backspace, its level, the table of contents, Markdown, and the arrow pressed on
+a closed note; the handle shown by a hover, its menu, a drag, Ctrl+Shift+↑, a
+duplicated database, deleting every block. The handle test hovers by screen
+position, so the suite first closes any dialog an earlier suite left open.
 
 ## 4o. Lining a note up with its neighbours
 

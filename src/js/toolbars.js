@@ -624,15 +624,19 @@ function blockRank(b, q) {
    the way it always was — a heading over three results is noise. */
 function slashItems(q) {
   const asItem = (b) => ({ kind: 'block', sec: b.sec, ic: b.ic, name: blockLabel(b), desc: blockDesc(b), fresh: b.fresh, run: b });
-  const blocks = q
+  const ranked = q
     ? BLOCKS.filter((b) => blockMatches(b, q))
       .map((b, i) => ({ b, i, r: blockRank(b, q) }))
       .sort((x, y) => x.r - y.r || x.i - y.i)
-      .map(({ b }) => asItem(b))
+    : [];
+  /* A colour named by what was typed comes after the blocks whose own name
+     starts with it and before the looser matches: "/red" is Red, not
+     Numbered list (whose keywords hold "o-red-ered"). */
+  const blocks = q
+    ? [...ranked.filter((x) => x.r <= 1).map(({ b }) => asItem(b)), ...slashColors(q), ...ranked.filter((x) => x.r > 1).map(({ b }) => asItem(b))]
     : BLOCK_SECTIONS.flatMap((s) => BLOCKS.filter((b) => b.sec === s).map(asItem));
   return [
     ...blocks,
-    ...slashColors(q),
     ...userTemplates().filter((x) => templateMatches(x, q)).map((x) => ({
       kind: 'tpl', ic: x.icon || 'sticky_note_2', name: templateName(x),
       desc: noteHeadline(x.body), run: x

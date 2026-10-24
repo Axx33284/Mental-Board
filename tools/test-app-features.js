@@ -1646,5 +1646,204 @@ module.exports = [
       ok(r.wrote, 'a change in the linked view is written to the source note');
       ok(r.layouts.every((x) => x.endsWith(':true')), 'all fifteen layouts draw from the data: ' + r.layouts.join(' '));
     });
+  },
+
+  /* ---- 2.9, MAP.md §4z7: the block handle, Turn into, colours, toggles ---- */
+  async ({ page, test, ok, BOARDS, fs, path }) => {
+    await page(async () => {
+      confirmDlg = async () => true;
+      /* A dialog an earlier suite left open would sit over the note, and the
+         handle test hovers by screen position (elementFromPoint). */
+      document.querySelectorAll('.overlay:not(.hidden)').forEach((o) => { console.info('2.9 suite closed a leftover', o.id); o.classList.add('hidden'); });
+      const b = makeBoard('Twenty-nine');
+      b.notes.push({ id: 'ba', x: 0, y: 0, w: 460, h: 520, z: 1, color: 'default', body: '<p><br></p>' });
+      state.boards.push(b);
+      await switchBoard(b.id);
+      flyTo({ x: 230, y: 260 }, 1, 1);
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const onDisk = () => {
+      const dir = fs.readdirSync(BOARDS).find((d) => d.startsWith('Twenty-nine'));
+      return JSON.parse(fs.readFileSync(path.join(BOARDS, dir, 'board.json'), 'utf8'));
+    };
+    // the note open, with this in it
+    const fill = (html) => page(async (h) => {
+      const n = state.notes.find((x) => x.id === 'ba');
+      exitEdit();
+      n.body = h;
+      repaintNoteBody(els.get('ba'), n);
+      enterEdit(n);
+      await new Promise((r) => setTimeout(r, 30));
+    }, html);
+
+    await test('2.9 Turn into keeps the words, splits a list round an item and joins it back, and carries what hangs under', async () => {
+      await fill('<p>Words here</p><ul><li>one</li><li>two</li><li>three</li></ul><div class="mb-toggle mb-open"><div class="mb-tg-head">Fold</div><div class="mb-tg-body"><p>kept inside</p></div></div><p><br></p>');
+      const r = await page(() => {
+        const out = {};
+        let blk = editing.querySelector('p');
+        out.kinds = TURN_KINDS.filter((k) => k !== 'text').concat('text').map((k) => {
+          blk = turnBlockInto(blk, k); finishBlockEdit();
+          return blockKind(blk) === k && blk.textContent.includes('Words here');
+        });
+        const two = [...editing.querySelectorAll('li')].find((x) => x.textContent === 'two');
+        const h = turnBlockInto(two, 'h2'); finishBlockEdit();
+        out.split = !!h && h.previousElementSibling.tagName === 'UL' && h.nextElementSibling.tagName === 'UL';
+        turnBlockInto(h, 'bullet'); finishBlockEdit();
+        out.joined = editing.querySelectorAll('ul').length === 1 && editing.querySelector('ul').children.length === 3;
+        const tg = editing.querySelector('.mb-toggle');
+        const p = turnBlockInto(tg, 'text'); finishBlockEdit();
+        out.carried = p.textContent === 'Fold' && p.nextElementSibling.textContent === 'kept inside';
+        return out;
+      });
+      ok(r.kinds.every(Boolean), 'every kind there and back keeps the words: ' + JSON.stringify(r.kinds));
+      ok(r.split && r.joined, 'an item turned into a heading splits its list, and turned back joins it: ' + JSON.stringify(r));
+      ok(r.carried, 'a toggle turned into text leaves its inside under it');
+    });
+
+    await test('2.9 colours: a block, selected words, /red from the slash menu, kept on disk and through a paste', async () => {
+      await fill('<p>Colour these words</p><p>Second line</p><p><br></p>');
+      const r = await page(async () => {
+        const out = {};
+        const [a, b] = editing.querySelectorAll('p');
+        setBlockColor(a, 'tc', 'red'); setBlockColor(a, 'bc', 'amber');
+        out.block = a.className;
+        setBlockColor(a, 'bc', 'default');
+        out.reset = a.className;
+        const range = document.createRange(); range.setStart(b.firstChild, 0); range.setEnd(b.firstChild, 6);
+        getSelection().removeAllRanges(); getSelection().addRange(range);
+        colorSelection('bc', 'blue');
+        out.words = b.innerHTML;
+        // "/red" offers the text colour first; picking it colours the caret's block
+        placeCaret(b.lastChild, b.lastChild.length);
+        document.execCommand('insertText', false, '/');
+        openSlash(editing);
+        document.execCommand('insertText', false, 'red');          // the input event narrows the menu, as typing does
+        const first = slash.items[0];
+        out.offered = first && first.kind === 'color' && first.part === 'tc' && first.color === 'red';
+        runSlash(0);
+        out.slashed = b.classList.contains('mb-tc-red') && !b.textContent.includes('/red');
+        const d = document.createElement('div'); d.innerHTML = sanitize(editing.innerHTML);
+        out.paste = !!d.querySelector('p.mb-tc-red') && !!d.querySelector('span.mb-bc-blue');
+        exitEdit();
+        await saveNow();
+        return out;
+      });
+      ok(r.block === 'mb-tc-red mb-bc-amber' && r.reset === 'mb-tc-red', 'a block takes a text and a background colour, and Default takes one off: ' + JSON.stringify(r));
+      ok(r.words === '<span class="mb-bc-blue">Second</span> line', 'selected words are coloured, the rest left alone: ' + r.words);
+      ok(r.offered && r.slashed, '/red colours the block the caret is in');
+      ok(r.paste, 'colours survive a paste');
+      const disk = onDisk().notes.find((x) => x.id === 'ba');
+      ok(/mb-tc-red/.test(disk.body) && /mb-bc-blue/.test(disk.body), 'and are on disk');
+    });
+
+    await test('2.9 toggles: Enter in the title, Enter out of the inside, Backspace back to text, the arrow on a closed note', async () => {
+      await fill('<div class="mb-toggle mb-open mb-tg-h2"><div class="mb-tg-head">Title words</div><div class="mb-tg-body"><p>inside</p><p><br></p></div></div><p>after</p>');
+      const r = await page(async () => {
+        const out = {};
+        const key = (k) => { const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }); editing.dispatchEvent(e); return e.defaultPrevented; };
+        const tg = editing.querySelector('.mb-toggle'), head = tg.querySelector('.mb-tg-head');
+        placeCaret(head.firstChild, 5);                                    // "Title| words"
+        key('Enter');
+        out.enterHead = head.textContent === 'Title' && tg.querySelector('.mb-tg-body').firstElementChild.textContent === ' words';
+        const last = tg.querySelector('.mb-tg-body').lastElementChild;      // the empty last line
+        placeCaret(last, 0);
+        key('Enter');
+        out.stepOut = tg.nextElementSibling === last && !tg.contains(last);
+        out.toc = tocHeadings(editing).includes(head) && tocLevel(head) === 'h2';
+        // markdown shortcuts are off in a title, and a heading picked there sets the level
+        caretToEnd(head);
+        out.levelled = slashInToggleHead('h3') && tg.classList.contains('mb-tg-h3');
+        // the arrow, pressed on a closed note: it folds, it is saved, the note does not move
+        exitEdit();
+        const n = state.notes.find((x) => x.id === 'ba');
+        const h2 = els.get('ba').querySelector('.mb-tg-head'), hr = h2.getBoundingClientRect();
+        const at = { clientX: hr.left + 6, clientY: hr.top + hr.height / 2, bubbles: true, cancelable: true, button: 0, buttons: 1, pointerId: 91, pointerType: 'mouse' };
+        const x0 = n.x;
+        h2.dispatchEvent(new PointerEvent('pointerdown', at));
+        window.dispatchEvent(new PointerEvent('pointerup', at));
+        h2.dispatchEvent(new MouseEvent('click', at));
+        out.folded = !els.get('ba').querySelector('.mb-toggle').classList.contains('mb-open') && !/mb-open/.test(n.body);
+        out.stayed = n.x === x0;
+        // Backspace at the start of the title turns it back into text, the inside under it
+        enterEdit(n);
+        const h3 = editing.querySelector('.mb-tg-head');
+        placeCaret(h3.firstChild, 0);
+        out.bs = key('Backspace');
+        out.unwrapped = !editing.querySelector('.mb-toggle') && editing.firstElementChild.tagName === 'P' && editing.firstElementChild.textContent === 'Title';
+        out.md = noteToMarkdown('<div class="mb-toggle mb-tg-h1"><div class="mb-tg-head">Big</div><div class="mb-tg-body"><p>under</p></div></div>', () => '');
+        exitEdit();
+        return out;
+      });
+      ok(r.enterHead, 'Enter in a title takes the words after the caret inside');
+      ok(r.stepOut, 'Enter on the empty last line inside steps out of the toggle');
+      ok(r.toc, 'a toggle heading is in the table of contents at its level');
+      ok(r.levelled, 'a heading chosen on a title sets the toggle\'s level');
+      ok(r.folded && r.stayed, 'the arrow folds a closed note\'s toggle, saved, without moving the note: ' + JSON.stringify([r.folded, r.stayed]));
+      ok(r.bs && r.unwrapped, 'Backspace at the start of a title turns it back into text');
+      ok(/^# Big\n\nunder/.test(r.md), 'a toggle heading goes out to Markdown as a heading with its inside: ' + JSON.stringify(r.md));
+    });
+
+    await test('2.9 the block handle: shown beside the hovered block, its menu, a drag, Ctrl+Shift+arrows, duplicate and delete', async () => {
+      await fill('<p>alpha</p><p>beta</p><p>gamma</p><p><br></p>');
+      const r = await page(async () => {
+        const out = {};
+        const ps = () => [...editing.querySelectorAll('p')].map((p) => p.textContent).filter(Boolean).join(',');
+        const centre = (el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 4, y: b.top + b.height / 2 }; };
+        const beta = [...editing.querySelectorAll('p')][1];
+        let c = centre(beta);
+        beta.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: c.x, clientY: c.y }));
+        const h = $('blockHandle');
+        out.shown = !h.classList.contains('hidden') && bh.blk === beta;
+        const hit = document.elementFromPoint(c.x, c.y);
+        out.why = { win: [innerWidth, innerHeight], at: [Math.round(c.x), Math.round(c.y)], hit: hit && (hit.id || hit.className || hit.tagName), note: [...Object.values(editing.closest('.note').getBoundingClientRect().toJSON())].slice(0, 4).map(Math.round), slash: slash.open, pop: !!dbPopS, blk: !!blockAtPoint(c.x, c.y) };
+        // a click on the grip opens the menu, under the grip
+        const g = $('bhGrip').getBoundingClientRect();
+        const gp = { clientX: g.left + 5, clientY: g.top + 5, button: 0, buttons: 1, bubbles: true, cancelable: true, pointerId: 92, pointerType: 'mouse' };
+        $('bhGrip').dispatchEvent(new PointerEvent('pointerdown', gp));
+        window.dispatchEvent(new PointerEvent('pointerup', gp));
+        const pr = $('dbPop').getBoundingClientRect();
+        out.menu = !!dbPopS && Math.abs(pr.top - g.bottom) < 12 && dbPopS.spec.items.some((it) => it.label === t('bh.turnInto'));
+        closeDbPop(true);
+        // a drag on the grip moves the block to where it is let go: beta below gamma
+        beta.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: c.x, clientY: c.y }));
+        const g2 = $('bhGrip').getBoundingClientRect();
+        const gamma = [...editing.querySelectorAll('p')][2], gr = gamma.getBoundingClientRect();
+        const ev = (type, x, y) => new PointerEvent(type, { clientX: x, clientY: y, button: 0, buttons: 1, bubbles: true, cancelable: true, pointerId: 93, pointerType: 'mouse' });
+        $('bhGrip').dispatchEvent(ev('pointerdown', g2.left + 5, g2.top + 5));
+        window.dispatchEvent(ev('pointermove', gr.left + 20, gr.top + gr.height * 0.8));
+        window.dispatchEvent(ev('pointermove', gr.left + 20, gr.top + gr.height * 0.85));
+        window.dispatchEvent(ev('pointerup', gr.left + 20, gr.top + gr.height * 0.85));
+        out.dragged = ps();
+        // Ctrl+Shift+Up moves the caret's block, the caret with it
+        const b2 = [...editing.querySelectorAll('p')].find((p) => p.textContent === 'beta');
+        placeCaret(b2.firstChild, 2);
+        const k = new KeyboardEvent('keydown', { key: 'ArrowUp', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+        editing.dispatchEvent(k);
+        out.keyed = ps();
+        out.caretKept = getSelection().anchorNode === b2.firstChild && getSelection().anchorOffset === 2;
+        // duplicate a database: the copy is a database of its own
+        const p = document.createElement('div'); p.innerHTML = dbBlockHtml(newDbData('table'));
+        editing.prepend(p.firstChild); paintDatabases(editing);
+        const db = editing.querySelector('.mb-db');
+        const copy = duplicateBlock(db);
+        out.dbCopy = copy.dataset.dbid && copy.dataset.dbid !== db.dataset.dbid && adoptDb(copy.getAttribute('data-db')).id === copy.dataset.dbid;
+        deleteBlock(copy); deleteBlock(db);
+        // delete everything: the note is still something to type in
+        [...editing.children].forEach((x) => deleteBlock(x));
+        out.emptyOk = editing.children.length === 1 && editing.firstElementChild.tagName === 'P';
+        // typing puts the handle away
+        editing.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+        out.hiddenTyping = h.classList.contains('hidden');
+        exitEdit();
+        return out;
+      });
+      ok(r.shown, 'the handle is beside the hovered block: ' + JSON.stringify(r.why));
+      ok(r.menu, 'a click on the grip opens the block menu under it');
+      ok(r.dragged === 'alpha,gamma,beta', 'a drag on the grip moves the block: ' + r.dragged);
+      ok(r.keyed === 'alpha,beta,gamma' && r.caretKept, 'Ctrl+Shift+Up moves the caret\'s block and keeps the caret: ' + JSON.stringify([r.keyed, r.caretKept]));
+      ok(r.dbCopy, 'a duplicated database gets an id of its own');
+      ok(r.emptyOk, 'deleting every block leaves a line to type on');
+      ok(r.hiddenTyping, 'typing puts the handle away');
+    });
   }
 ];
