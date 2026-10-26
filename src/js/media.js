@@ -217,7 +217,14 @@ function wireImgBar() {
    A pen or highlighter line is `{ type, pts: [[x, y]], ws?, color, w }`; `ws`,
    one width per point, is there only when a pen with pressure drew it, and is
    drawn with ink.js's brush outline. Undo is the studio's own (`ST.undo`):
-   the marks and the crop, a step per change. */
+   the marks and the crop, a step per change.
+
+   Colours (2.10): the Adjust tool's brightness, contrast, saturation, hue and
+   black-and-white are `ST.adj`, drawn through the canvas's own `filter` — on
+   screen as a slider moves, and into the pixels on Apply, under the marks (a
+   red arrow stays red on a picture made black and white). Part of every undo
+   step, like the crop. */
+const ST_ADJ0 = { b: 100, c: 100, s: 100, h: 0, g: false };
 const ST = {
   img: null,          // HTMLImageElement of the working source
   src: '',            // data url of the working source
@@ -230,6 +237,8 @@ const ST = {
   undo: [], redo: [],
   penSeen: false,     // once a pen has drawn, one finger is a palm
   drag: null,
+  adj: { ...ST_ADJ0 },
+  onApply: null,      // where the result goes instead of the <img>: a picture under a drawing (sketch.js)
   target: null        // the <img> in the note being edited
 };
 const ST_COLORS = ['#ff5252', '#ffb300', '#ffe94d', '#43d17a', '#41c9e2', '#5b8cff', '#b07cff', '#ffffff', '#101014'];
@@ -245,17 +254,25 @@ async function toDataUrl(src) {
   return src;
 }
 
-async function openStudio(target) {
+/* `opts.inside` puts the editor inside another full-screen editor (a drawing
+   note): full screen shows nothing outside the full-screen element.
+   `opts.onApply(url, name)` takes the result instead of the <img>. */
+let studioHome = null;
+async function openStudio(target, opts) {
   const img0 = target || selImg;
   if (!img0) return;
   ST.target = img0;
+  ST.onApply = (opts && opts.onApply) || null;
+  const box = $('studio');
+  if (!studioHome) studioHome = { parent: box.parentNode, next: box.nextSibling };
+  if (opts && opts.inside && box.parentNode !== opts.inside) opts.inside.appendChild(box);
   const src = img0.dataset.orig || img0.src;
   const dataUrl = await toDataUrl(src);
   const img = new Image();
   img.onload = () => {
     ST.img = img; ST.src = dataUrl;
     ST.crop = { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight };
-    ST.marks = []; ST.tool = 'crop'; ST.undo = []; ST.redo = []; ST.penSeen = false;
+    ST.marks = []; ST.tool = 'crop'; ST.undo = []; ST.redo = []; ST.penSeen = false; ST.adj = { ...ST_ADJ0 };
     $('studio').classList.remove('hidden');
     buildStudioChrome();
     requestAnimationFrame(() => { fitStudio(); padHostChanged(); });
@@ -263,7 +280,21 @@ async function openStudio(target) {
   img.onerror = () => toast(t('msg.imageFailed'));
   img.src = dataUrl;
 }
-function closeStudio() { $('studio').classList.add('hidden'); ST.img = null; ST.target = null; ST.drag = null; padHostChanged(); }
+function closeStudio() {
+  const box = $('studio');
+  box.classList.add('hidden');
+  ST.img = null; ST.target = null; ST.drag = null; ST.onApply = null;
+  if (studioHome && box.parentNode !== studioHome.parent) studioHome.parent.insertBefore(box, studioHome.next);
+  padHostChanged();
+}
+// the colours as a canvas filter, or 'none'
+function studioFilter(a) {
+  a = a || ST.adj;
+  if (a.b === 100 && a.c === 100 && a.s === 100 && !a.h && !a.g) return 'none';
+  return `brightness(${a.b}%) contrast(${a.c}%) saturate(${a.s}%) hue-rotate(${a.h}deg)${a.g ? ' grayscale(100%)' : ''}`;
+}
+const ST_SLIDERS = [['stBright', 'b'], ['stContrast', 'c'], ['stSat', 's'], ['stHue', 'h']];
+const stSliderText = (k) => (k === 'h' ? num(ST.adj.h) + '°' : pct(ST.adj[k]));
 
 function buildStudioChrome() {
   const custom = ST_COLORS.includes(ST.color) ? '#e05a5a' : ST.color;
@@ -286,6 +317,9 @@ function buildStudioChrome() {
   $('stHint').textContent = ST.tool ? t('studio.hint.' + ST.tool) : '';
   $('stUndo').disabled = !ST.undo.length;
   $('stRedo').disabled = !ST.redo.length;
+  $('stAdjust').classList.toggle('hidden', ST.tool !== 'adjust');
+  for (const [id, k] of ST_SLIDERS) { $(id).value = ST.adj[k]; $(id).nextElementSibling.textContent = stSliderText(k); }
+  $('stGray').checked = !!ST.adj.g;
 }
 
 /* The canvas is the stage's size, in device pixels. `keepView` is a resize:
@@ -321,6 +355,7 @@ function drawStudio() {
   const W = ST.img.naturalWidth, H = ST.img.naturalHeight;
   g.save();
   g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 18 / v.z;
+  g.filter = studioFilter();
   g.drawImage(ST.img, 0, 0, W, H);
   g.restore();
   ST.marks.forEach((m) => drawMark(g, m, 1, 0, 0));
@@ -416,7 +451,7 @@ function stPoint(e) {
 
 /* ---- undo, the studio's own ---- */
 function studioStep() {
-  ST.undo.push({ marks: ST.marks.slice(), crop: { ...ST.crop } });
+  ST.undo.push({ marks: ST.marks.slice(), crop: { ...ST.crop }, adj: { ...ST.adj } });
   if (ST.undo.length > 200) ST.undo.shift();
   ST.redo = [];
   buildStudioChrome();
@@ -424,9 +459,9 @@ function studioStep() {
 function studioUndo(back) {
   const from = back ? ST.undo : ST.redo, to = back ? ST.redo : ST.undo;
   if (!ST.img || !from.length) return;
-  to.push({ marks: ST.marks.slice(), crop: { ...ST.crop } });
+  to.push({ marks: ST.marks.slice(), crop: { ...ST.crop }, adj: { ...ST.adj } });
   const s = from.pop();
-  ST.marks = s.marks; ST.crop = s.crop;
+  ST.marks = s.marks; ST.crop = s.crop; ST.adj = s.adj || { ...ST_ADJ0 };
   buildStudioChrome(); drawStudio();
 }
 
@@ -484,6 +519,7 @@ function studioDown(e) {
   e.preventDefault();
   // the pen's eraser end (button 5) or its barrel button erases, whatever the tool
   const tool = (e.button === 5 || (e.pointerType === 'pen' && (e.buttons & 2))) ? 'eraser' : ST.tool;
+  if (tool === 'adjust') return;          // the sliders do it; the picture is only looked at
   if (tool === 'crop') {
     studioStep();
     ST.drag = handle ? { kind: 'crop-h', corner: [...handle.classList].find((c) => /^(nw|ne|sw|se)$/.test(c)), c0: { ...ST.crop } }
@@ -623,7 +659,7 @@ function onStudioKey(e) {
   else if (ctrl && ch === '0') { e.preventDefault(); stSurface.zoomCentre(1 / ST.view.z); }
   else if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitStudio(); }
   else if (!ctrl) {
-    const tools = { KeyC: 'crop', KeyD: 'pen', KeyM: 'marker', KeyE: 'eraser', KeyR: 'box', KeyA: 'arrow', KeyT: 'text' };
+    const tools = { KeyC: 'crop', KeyJ: 'adjust', KeyD: 'pen', KeyM: 'marker', KeyE: 'eraser', KeyR: 'box', KeyA: 'arrow', KeyT: 'text' };
     if (tools[e.code]) { e.preventDefault(); ST.tool = tools[e.code]; buildStudioChrome(); drawStudio(); }
     else if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
       e.preventDefault();
@@ -644,6 +680,34 @@ function wireStudioSurface() {
   onPress($('stUndo'), () => studioUndo(true));
   onPress($('stRedo'), () => studioUndo(false));
   $('stCanvas').addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button erases here
+  // the colours: one drag of a slider is one undo step, taken as it starts
+  let sliding = false;
+  for (const [id, k] of ST_SLIDERS) {
+    const el = $(id);
+    el.addEventListener('input', () => {
+      if (!ST.img) return;
+      const v = +el.value;                // read first: studioStep() repaints the panel from ST.adj
+      if (!sliding) { studioStep(); sliding = true; }
+      ST.adj = Object.assign({}, ST.adj, { [k]: v });
+      el.value = v;
+      el.nextElementSibling.textContent = stSliderText(k);
+      drawStudio();
+    });
+    el.addEventListener('change', () => { sliding = false; buildStudioChrome(); });
+  }
+  $('stGray').addEventListener('change', () => {
+    if (!ST.img) return;
+    const on = $('stGray').checked;
+    studioStep();
+    ST.adj = Object.assign({}, ST.adj, { g: on });
+    buildStudioChrome(); drawStudio();
+  });
+  $('stAdjReset').addEventListener('click', () => {
+    if (!ST.img || studioFilter() === 'none') return;
+    studioStep();
+    ST.adj = { ...ST_ADJ0 };
+    buildStudioChrome(); drawStudio();
+  });
 }
 
 function rotateStudio() {
@@ -673,19 +737,23 @@ function applyStudio() {
   out.width = Math.max(1, Math.round(cr.w));
   out.height = Math.max(1, Math.round(cr.h));
   const g = out.getContext('2d');
+  g.filter = studioFilter();
   g.drawImage(ST.img, cr.x, cr.y, cr.w, cr.h, 0, 0, out.width, out.height);
+  g.filter = 'none';
   ST.marks.forEach((m) => drawMark(g, m, 1, cr.x, cr.y));
   let url;
   try { url = out.toDataURL('image/png'); } catch (_) { toast(t('msg.imageNoEdit')); closeStudio(); return; }
-  const img = ST.target;
+  const img = ST.target, onApply = ST.onApply;
   // remember where it came from so a second edit starts from the original
   if (!img.dataset.orig && !/^data:/i.test(img.src)) img.dataset.orig = img.src;
+  const name = (img.dataset.name || 'picture').replace(/\.[a-z0-9]+$/i, '') + ' (edited).png';
   closeStudio();
   /* The result is a file in the board's own folder, not a data URL in the
      note: a 6 MB base64 string inside the markup is what made big boards slow
      to save in 1.x, and a picture on disk is what a board folder can carry to
      another machine. The data URL is only the fallback for a plain browser. */
   const done = (finalUrl) => {
+    if (onApply) { onApply(finalUrl, name); toast(t('msg.imageUpdated')); return; }
     img.src = finalUrl;
     if (img.closest('.note-body')) persistEdit();
     else if (typeof pictureEdited === 'function') pictureEdited(img, finalUrl);
@@ -693,8 +761,7 @@ function applyStudio() {
     toast(t('msg.imageUpdated'));
   };
   if (FILES && FILES.attachBytes && state.activeBoard) {
-    const base = (img.dataset.name || 'picture').replace(/\.[a-z0-9]+$/i, '');
-    FILES.attachBytes(url, state.activeBoard, base + ' (edited).png').then((r) => {
+    FILES.attachBytes(url, state.activeBoard, name).then((r) => {
       done(r && r.url ? r.url : url);
     }).catch(() => done(url));
   } else done(url);

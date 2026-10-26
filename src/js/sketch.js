@@ -168,7 +168,61 @@ function okSketch(raw) {
     .filter((p) => p && [p.x, p.y, p.w, p.h].every(Number.isFinite) && p.w > 0 && p.h > 0)
     .map((p) => ({ x: r1(p.x), y: r1(p.y), w: r1(p.w), h: r1(p.h) }));
   if (pics.length) out.pics = pics;
+  // typed or pasted words on the page (2.10): where, how big, what colour, what
+  const texts = (Array.isArray(raw.texts) ? raw.texts : []).slice(0, SKETCH_TEXTS_MAX)
+    .filter((x) => x && typeof x.text === 'string' && x.text.trim() && Number.isFinite(+x.x) && Number.isFinite(+x.y))
+    .map((x) => ({ x: r1(+x.x), y: r1(+x.y), size: r1(clamp(+x.size || 20, 1, 4000)), color: inkColorOk(x.color) ? x.color : 'text', text: x.text.slice(0, SKETCH_TEXT_MAX) }));
+  if (texts.length) out.texts = texts;
   return out;
+}
+
+/* ---- words on the page (2.10) ----
+   A drawing note takes text as well as ink and pictures: the T tool, a paste
+   of plain text, text dropped on it, or a text note copied off the board.
+   `{ x, y, size, color, text }` in the drawing's units — the top left of the
+   first line, the font size, an ink colour, and the words, lines split by \n.
+   It is drawn as SVG text on the note and in the editor, and with fillText()
+   in the board picture, from the same numbers, so all three agree. */
+const SKETCH_TEXTS_MAX = 500;
+const SKETCH_TEXT_MAX = 4000;
+const SK_TEXT_PX = [18, 28, 44];    // the three sizes, as they look on screen when typed
+const SK_FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif';
+const SK_LINE = 1.25;               // line height, in font sizes
+const SK_BASE = 1.03;               // the first baseline, below the top, in font sizes — where a textarea puts it (Segoe UI's ascent)
+let skMeasure = null;
+// the box a text covers, measured once per object (moved or edited texts are new objects)
+function sketchTextBox(t) {
+  if (t._box) return t._box;
+  const g = skMeasure || (skMeasure = document.createElement('canvas').getContext('2d'));
+  g.font = `500 ${t.size}px ${SK_FONT}`;
+  const lines = t.text.split('\n');
+  let w = 0;
+  for (const l of lines) w = Math.max(w, g.measureText(l).width);
+  const box = { x: t.x, y: t.y, w: Math.max(w, t.size * 0.3), h: lines.length * t.size * SK_LINE };
+  Object.defineProperty(t, '_box', { value: box, configurable: true });
+  return box;
+}
+function makeSketchTextEl(t) {
+  const el = document.createElementNS(SVGNS, 'text');
+  el.setAttribute('class', 'sk-text');
+  el.setAttribute('font-size', t.size);
+  el.style.fill = inkColorCss(t.color);
+  t.text.split('\n').forEach((line, i) => {
+    const sp = document.createElementNS(SVGNS, 'tspan');
+    sp.setAttribute('x', t.x);
+    sp.setAttribute('y', r1(t.y + t.size * (SK_BASE + i * SK_LINE)));
+    sp.textContent = line || ' ';
+    el.appendChild(sp);
+  });
+  return el;
+}
+function paintSketchTextOnCanvas(ctx, t, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = `500 ${t.size}px ${SK_FONT}`;
+  ctx.textBaseline = 'alphabetic';
+  t.text.split('\n').forEach((line, i) => ctx.fillText(line, t.x, t.y + t.size * (SK_BASE + i * SK_LINE)));
+  ctx.restore();
 }
 
 /* ---- pictures under the ink (2.7) ----
@@ -216,8 +270,8 @@ function makeSketchPicEl(p) {
 
 /* The box round what has been drawn, with a little air, or null when nothing
    has. This is the drawing's whole size: nothing outside it is shown or kept. */
-function sketchBounds(strokes, pics) {
-  if ((!strokes || !strokes.length) && (!pics || !pics.length)) return null;
+function sketchBounds(strokes, pics, texts) {
+  if ((!strokes || !strokes.length) && (!pics || !pics.length) && (!texts || !texts.length)) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of strokes || []) {
     const b = inkBox(s);
@@ -228,6 +282,11 @@ function sketchBounds(strokes, pics) {
   for (const p of pics || []) {
     if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y;
     if (p.x + p.w > x1) x1 = p.x + p.w; if (p.y + p.h > y1) y1 = p.y + p.h;
+  }
+  for (const t of texts || []) {
+    const b = sketchTextBox(t);
+    if (b.x < x0) x0 = b.x; if (b.y < y0) y0 = b.y;
+    if (b.x + b.w > x1) x1 = b.x + b.w; if (b.y + b.h > y1) y1 = b.y + b.h;
   }
   const pad = Math.max(8, Math.max(x1 - x0, y1 - y0) * 0.04);
   return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
@@ -251,10 +310,11 @@ function paintSketch(el, n) {
   title.textContent = s.title || t('sketch.untitled');
   title.classList.toggle('empty', !s.title);
   const svg = el.querySelector('.sk-svg');
-  const b = sketchBounds(s.strokes, s.pics) || { x: 0, y: 0, w: 400, h: 250 };
+  const b = sketchBounds(s.strokes, s.pics, s.texts) || { x: 0, y: 0, w: 400, h: 250 };
   svg.setAttribute('viewBox', `${r1(b.x)} ${r1(b.y)} ${r1(b.w)} ${r1(b.h)}`);
   svg.textContent = '';
   for (const p of sketchPicsOf(n)) svg.appendChild(makeSketchPicEl(p));
+  for (const tx of s.texts || []) svg.appendChild(makeSketchTextEl(tx));
   for (const st of s.strokes) svg.appendChild(makeInkEl(st));
 }
 /* The note takes the drawing's shape, keeping its width: a drawing that grew
@@ -262,7 +322,7 @@ function paintSketch(el, n) {
    Only when the shape changed — a note the user sized stays as sized while
    the drawing keeps its proportions. */
 function fitSketchNote(n, before) {
-  const b = sketchBounds(n.sketch.strokes, n.sketch.pics);
+  const b = sketchBounds(n.sketch.strokes, n.sketch.pics, n.sketch.texts);
   if (!b) return;
   const ar = b.w / b.h;
   if (before && Math.abs(before.w / before.h - ar) / ar < 0.08) return;
@@ -293,9 +353,9 @@ function openSketch(id) {
   if (inkMode) toggleInk(false);
   closeCtxMenu();
   sk = {
-    n, strokes: n.sketch.strokes.slice(), pics: sketchPicsOf(n), undo: [], redo: [], live: null, erase: null,
-    sel: new Set(), pick: null,
-    penSeen: false, changed: false, view: { x: 0, y: 0, z: 1 }, before: sketchBounds(n.sketch.strokes, n.sketch.pics)
+    n, strokes: n.sketch.strokes.slice(), pics: sketchPicsOf(n), texts: (n.sketch.texts || []).slice(),
+    undo: [], redo: [], live: null, erase: null, sel: new Set(), pick: null, text: null, at: null,
+    penSeen: false, changed: false, view: { x: 0, y: 0, z: 1 }, before: sketchBounds(n.sketch.strokes, n.sketch.pics, n.sketch.texts)
   };
   const dlg = $('sketchDlg');
   dlg.classList.remove('hidden');
@@ -341,12 +401,13 @@ function setSketchView(v) {
   stage.style.backgroundPosition = `${v.x}px ${v.y}px`;
   const pctEl = $('skBar').querySelector('[data-sk="pct"]');
   if (pctEl) pctEl.textContent = pct(Math.round(v.z * 100));
+  if (sk.text) placeSketchText();                       // the words being typed stay on their spot
   if (typeof padDirty === 'function') padDirty();       // a paired phone sees the drawing move (js/tablet.js)
 }
 // everything drawn in view, never closer than 100%; an empty page at 100% with room top left
 function fitSketchView() {
   const r = $('skStage').getBoundingClientRect();
-  const b = sketchBounds(sk.strokes, sk.pics);
+  const b = sketchBounds(sk.strokes, sk.pics, sk.texts);
   if (!b) { setSketchView({ x: 60, y: 60, z: 1 }); return; }
   const z = clamp(Math.min((r.width - 80) / b.w, (r.height - 80) / b.h), 0.05, 1);
   setSketchView({ x: r.width / 2 - (b.x + b.w / 2) * z, y: r.height / 2 - (b.y + b.h / 2) * z, z });
@@ -366,6 +427,7 @@ function commitSketch() {
   // a new object, never an edit in place: a copy of this note may share the old one
   n.sketch = { title, strokes: sk.strokes.slice() };
   if (sk.pics.length) n.sketch.pics = sk.pics.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }));
+  if (sk.texts.length) n.sketch.texts = sk.texts.map((x) => ({ x: x.x, y: x.y, size: x.size, color: x.color, text: x.text }));
   // the pictures' files, in the same order, where every file-keeping pass will find them
   n.body = sk.pics.map((p) => picBody(p.url, p.name)).join('');
   sk.dirty = false;
@@ -374,6 +436,8 @@ function commitSketch() {
 }
 function closeSketch() {
   if (!sk) return;
+  closeSketchText(true);
+  if (!$('studio').classList.contains('hidden')) closeStudio();    // a picture being edited is let go, unapplied
   endSketchStroke();
   if (sk.dirty) commitSketch();
   const { n, undoTaken, before } = sk;
@@ -400,6 +464,12 @@ function drawSketchStrokes() {
     if (moving(p)) el.setAttribute('transform', `translate(${k.dx} ${k.dy})`);
     g.appendChild(el);
   }
+  for (const tx of sk.texts) {
+    if (sk.text && sk.text.item === tx) continue;      // being typed in, in the box over it
+    const el = makeSketchTextEl(k && k.kind === 'resize' && k.it === tx ? Object.assign({}, tx, { size: tx.size * k.w / k.b0.w }) : tx);
+    if (moving(tx)) el.setAttribute('transform', `translate(${k.dx} ${k.dy})`);
+    g.appendChild(el);
+  }
   for (const s of sk.strokes) {
     const el = makeInkEl(s);
     if (moving(s)) el.setAttribute('transform', `translate(${k.dx} ${k.dy})`);
@@ -410,12 +480,13 @@ function drawSketchStrokes() {
   bar.querySelector('[data-sk="undo"]').disabled = !sk.undo.length;
   bar.querySelector('[data-sk="redo"]').disabled = !sk.redo.length;
   bar.querySelector('[data-sk="clear"]').disabled = !sk.strokes.length;
+  bar.querySelector('[data-sk="editpic"]').disabled = !sketchOnePic();
   if (typeof padDirty === 'function') padDirty();
   if (sk.dirty) commitSketch();     // every change is on its way to the disk as it lands
 }
-// a step is the strokes and the pictures, so undo takes back an added picture too
+// a step is the strokes, the pictures and the words, so undo takes back an added picture too
 function sketchStep() {
-  sk.undo.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice() });
+  sk.undo.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice(), texts: sk.texts.slice() });
   if (sk.undo.length > 200) sk.undo.shift();
   sk.redo = [];
   sk.changed = sk.dirty = true;
@@ -423,9 +494,10 @@ function sketchStep() {
 function sketchUndo(back) {
   const from = back ? sk.undo : sk.redo, to = back ? sk.redo : sk.undo;
   if (!from.length) return;
-  to.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice() });
+  closeSketchText(false);
+  to.push({ strokes: sk.strokes.slice(), pics: sk.pics.slice(), texts: sk.texts.slice() });
   const s = from.pop();
-  sk.strokes = s.strokes; sk.pics = s.pics;
+  sk.strokes = s.strokes; sk.pics = s.pics; sk.texts = s.texts || [];
   sk.sel.clear();
   sk.changed = sk.dirty = true;
   drawSketchStrokes();
@@ -454,6 +526,7 @@ function buildSketchBar() {
     tool('select', icon('arrow_selector_tool'), te('sketch.select')) +
     tool('pen', icon('ink_pen'), te('ink.pen')) + tool('marker', icon('ink_highlighter'), te('ink.marker')) +
     tool('brush', icon('brush'), te('ink.brush')) + tool('eraser', icon('ink_eraser'), te('ink.eraser')) +
+    tool('text', icon('title'), te('sketch.text')) +
     `<span class="ik-sep"></span>` +
     [0, 1, 2].map((i) => `<button class="ik-size${p.size === i ? ' on' : ''}" data-size="${i}" title="${sizeTips[i]}"><i style="--d:${[4, 7, 11][i]}px"></i></button>`).join('') +
     `<span class="ik-sep"></span>` +
@@ -465,23 +538,34 @@ function buildSketchBar() {
     btn('zin', 'zoom_in', te('zoom.in')) + btn('fit', 'fit_screen', te('zoom.fit')) +
     `<span class="ik-sep"></span>` +
     btn('undo', 'undo', te('menu.undo')) + btn('redo', 'redo', te('menu.redo')) +
-    btn('pics', 'image', te('sketch.addFiles')) +
+    btn('pics', 'image', te('sketch.addFiles')) + btn('editpic', 'tune', te('sketch.editPic')) +
     btn('clear', 'delete_sweep', te('ink.clear')) + btn('full', 'open_in_full', te('sketch.fullScreen')) +
     `<button class="ik-btn ik-done" data-sk="done" title="${te('ink.done')}" aria-label="${te('ink.done')}">${icon('check')}</button>`;
   const set = (patch) => {
-    state.settings.sketchPen = healPen(Object.assign({}, state.settings.sketchPen, patch));
+    state.settings.sketchPen = healSketchPen(Object.assign({}, state.settings.sketchPen, patch));
     if (sk && state.settings.sketchPen.tool !== 'select') sk.sel.clear();   // leaving the arrow lets go
+    // a colour or a size picked while typing is the words' colour and size
+    if (sk && sk.text && (patch.color || patch.size != null)) restyleSketchText();
+    if (sk && sk.text && patch.tool && patch.tool !== 'text') closeSketchText(true);
     buildSketchBar(); saveSoon();
   };
   bar.querySelectorAll('[data-tool]').forEach((el) => onPress(el, () => set({ tool: el.dataset.tool })));
   bar.querySelectorAll('[data-size]').forEach((el) => onPress(el, () => set({ size: +el.dataset.size })));
-  bar.querySelectorAll('[data-ink-color]').forEach((el) => onPress(el, () => set({ color: el.dataset.inkColor, tool: p.tool === 'eraser' ? 'pen' : p.tool })));
+  // with lines or words selected, a colour recolours them (as the phone's does), and the pen keeps its own
+  const colour = (c) => {
+    if (sk && p.tool === 'select' && [...sk.sel].some((it) => it.pts || it.text != null)) { recolorSketchSel(c); return; }
+    set({ color: c, tool: p.tool === 'eraser' ? 'pen' : p.tool });
+  };
+  bar.querySelectorAll('[data-ink-color]').forEach((el) => onPress(el, () => colour(el.dataset.inkColor)));
   const pick = bar.querySelector('.ik-custom input');
   pick.addEventListener('input', () => { bar.querySelector('.ik-custom').style.setProperty('--sw', pick.value); });
-  pick.addEventListener('change', () => set({ color: pick.value, tool: p.tool === 'eraser' ? 'pen' : p.tool }));
+  pick.addEventListener('change', () => colour(pick.value));
+  // a press on the bar must not take the focus out of the words being typed
+  bar.addEventListener('pointerdown', (e) => { if (sk && sk.text && !e.target.closest('input')) e.preventDefault(); });
   bar.querySelectorAll('[data-sk]').forEach((el) => onPress(el, () => {
     const act = el.dataset.sk;
     if (act === 'done') closeSketch();
+    else if (act === 'editpic') editSketchPicture(sketchOnePic());
     else if (act === 'undo') sketchUndo(true);
     else if (act === 'redo') sketchUndo(false);
     else if (act === 'clear') clearSketch();
@@ -493,7 +577,14 @@ function buildSketchBar() {
     else if (act === 'fit') fitSketchView();
   }));
   $('sketchDlg').classList.toggle('sk-selecting', p.tool === 'select');
+  $('sketchDlg').classList.toggle('sk-typing', p.tool === 'text');
   if (sk) { drawSketchStrokes(); setSketchView(sk.view); }
+}
+// the drawing note's pen: the board pen's tools, and the T tool, which the board pen has not
+function healSketchPen(p) {
+  const out = healPen(p);
+  if (p && p.tool === 'text') out.tool = 'text';
+  return out;
 }
 
 /* ---- a stroke on the page ---- */
@@ -504,6 +595,8 @@ function sketchPoint(e) {
 }
 function onSketchDown(e) {
   if (!sk || sk.live || sk.erase || skSurface.busy()) return;
+  // a press anywhere on the page keeps the words being typed, then does what it does
+  if (sk.text) { closeSketchText(true); if (state.settings.sketchPen.tool === 'text') { e.preventDefault(); return; } }
   if (e.pointerType === 'pen') sk.penSeen = true;
   else if (e.pointerType === 'touch' && sk.penSeen) return;     // a palm, once a pen has been used
   if (e.button !== 0 && e.button !== 5) return;
@@ -524,6 +617,13 @@ function onSketchDown(e) {
     return;
   }
   if (p.tool === 'select') { beginSketchPick(e, at); return; }
+  if (p.tool === 'text') {
+    // on words already there: type into them; anywhere else: new words, starting where it was pressed
+    endSketchStroke();
+    const hit = sketchHit(at);
+    openSketchText(hit && hit.text != null ? hit : at, hit && hit.text != null ? hit : null);
+    return;
+  }
   if (sk.strokes.length >= SKETCH_MAX) { toast(t('sketch.full')); return; }
   const tool = p.tool === 'select' ? 'pen' : p.tool;
   const s = { id: uid(), tool, color: p.color, size: Math.round(INK_SIZES[tool][p.size] / at.k * 100) / 100 };
@@ -622,11 +722,34 @@ function onSketchKey(e) {
     if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); $('skTitle').blur(); }
     return;
   }
+  if (e.target.closest && e.target.closest('input, textarea')) return;    // the words being typed have their own keys
   const ctrl = e.ctrlKey || e.metaKey;
   const k = (e.key || '').toLowerCase();
-  if (e.key === 'Escape') { e.preventDefault(); closeSketch(); return; }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (sk.sel.size) { sk.sel.clear(); drawSketchStrokes(); sketchSelChanged(); return; }   // let go first, as on the board
+    closeSketch(); return;
+  }
   if (ctrl && k === 'z') { e.preventDefault(); sketchUndo(!e.shiftKey); return; }
   if (ctrl && k === 'y') { e.preventDefault(); sketchUndo(false); return; }
+  // the clipboard, inside the drawing (2.10)
+  const code = (e.code || '').replace(/^Key/, '').toLowerCase();
+  if (ctrl && !e.shiftKey && !e.altKey) {
+    if (code === 'c' && sk.sel.size) { e.preventDefault(); copySketchSel(false); return; }
+    if (code === 'x' && sk.sel.size) { e.preventDefault(); copySketchSel(true); return; }
+    if (code === 'a') { e.preventDefault(); selectAllSketch(); return; }
+    if (code === 'd' && sk.sel.size) { e.preventDefault(); duplicateSketchSel(); return; }
+    /* Ctrl+V is not prevented: Chromium's paste command is what raises the
+       `paste` event, and that event is what carries a screenshot or a copied
+       file (onSketchPaste). If it never comes, the drawing's own clipboard is
+       pasted instead — the board does the same (MAP.md §4v). */
+    if (code === 'v' && !e.repeat) {
+      skPasteSeen = false;
+      clearTimeout(skPasteTimer);
+      skPasteTimer = setTimeout(() => { if (!skPasteSeen && sk) pasteInternalIntoSketch(sketchPastePoint()); }, 150);
+      return;
+    }
+  }
   // the board's own zoom keys, on the drawing
   const ch = chordKey(e);
   if (ctrl && (ch === '=' || ch === '+')) { e.preventDefault(); skSurface.zoomCentre(1.25); return; }
@@ -636,10 +759,14 @@ function onSketchKey(e) {
   if (ctrl) return;
   const p = state.settings.sketchPen;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sk.sel.size) { e.preventDefault(); deleteSketchSel(); return; }
-  const tools = { v: 'select', d: 'pen', m: 'marker', b: 'brush', e: 'eraser' };
-  const code = (e.code || '').replace(/^Key/, '').toLowerCase();
+  if (e.key === 'Enter' && sketchOnePic()) { e.preventDefault(); editSketchPicture(sketchOnePic()); return; }
+  const tools = { v: 'select', d: 'pen', m: 'marker', b: 'brush', e: 'eraser', t: 'text' };
   const pick = tools[code];
-  const set = (patch) => { state.settings.sketchPen = healPen(Object.assign({}, p, patch)); buildSketchBar(); saveSoon(); };
+  const set = (patch) => {
+    state.settings.sketchPen = healSketchPen(Object.assign({}, p, patch));
+    if (state.settings.sketchPen.tool !== 'select') sk.sel.clear();
+    buildSketchBar(); saveSoon();
+  };
   if (pick) { e.preventDefault(); set({ tool: pick }); return; }
   if (e.code === 'BracketLeft') { e.preventDefault(); set({ size: Math.max(0, p.size - 1) }); return; }
   if (e.code === 'BracketRight') { e.preventDefault(); set({ size: Math.min(2, p.size + 1) }); return; }
@@ -658,6 +785,10 @@ const SK_HIT_PX = 8, SK_HANDLE_PX = 14;
 function sketchHit(at) {
   const r = SK_HIT_PX / at.k;
   for (let i = sk.strokes.length - 1; i >= 0; i--) if (strokeNear(sk.strokes[i], at, r)) return sk.strokes[i];
+  for (let i = sk.texts.length - 1; i >= 0; i--) {
+    const b = sketchTextBox(sk.texts[i]);
+    if (at.x >= b.x - r && at.x <= b.x + b.w + r && at.y >= b.y - r && at.y <= b.y + b.h + r) return sk.texts[i];
+  }
   for (let i = sk.pics.length - 1; i >= 0; i--) {
     const p = sk.pics[i];
     if (at.x >= p.x && at.x <= p.x + p.w && at.y >= p.y && at.y <= p.y + p.h) return p;
@@ -666,14 +797,23 @@ function sketchHit(at) {
 }
 function sketchItemBox(it) {
   if (it.pts) { const b = inkBox(it); return { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }; }
+  if (it.text != null) return sketchTextBox(it);
   return { x: it.x, y: it.y, w: it.w, h: it.h };
+}
+// the one picture selected, if that is what is selected — the one Edit picture works on
+function sketchOnePic() {
+  if (!sk || sk.sel.size !== 1) return null;
+  const it = [...sk.sel][0];
+  return !it.pts && it.text == null && it.url ? it : null;
 }
 function beginSketchPick(e, at) {
   const sel = sk.sel, id = e.pointerId;
   const one = sel.size === 1 ? [...sel][0] : null;
   const hs = SK_HANDLE_PX / at.k;
-  if (one && !one.pts && Math.abs(at.x - (one.x + one.w)) < hs && Math.abs(at.y - (one.y + one.h)) < hs) {
-    sk.pick = { kind: 'resize', id, it: one, w: one.w, h: one.h };
+  // a picture's corner resizes it; a text's corner makes its letters bigger or smaller
+  const ob = one && !one.pts ? sketchItemBox(one) : null;
+  if (ob && Math.abs(at.x - (ob.x + ob.w)) < hs && Math.abs(at.y - (ob.y + ob.h)) < hs) {
+    sk.pick = { kind: 'resize', id, it: one, b0: ob, w: ob.w, h: ob.h };
     drawSketchStrokes();
     return;
   }
@@ -695,8 +835,8 @@ function moveSketchPick(at) {
   const k = sk.pick;
   if (k.kind === 'move') { k.dx = at.x - k.at0.x; k.dy = at.y - k.at0.y; }
   else if (k.kind === 'resize') {
-    const ar = k.it.w / k.it.h;
-    k.w = Math.max(16 / at.k, at.x - k.it.x, (at.y - k.it.y) * ar);
+    const ar = k.b0.w / k.b0.h;
+    k.w = Math.max(16 / at.k, at.x - k.b0.x, (at.y - k.b0.y) * ar);
     k.h = k.w / ar;
   } else if (k.kind === 'lasso') {
     k.at1 = at;
@@ -708,6 +848,7 @@ function moveSketchPick(at) {
       }
     }
     for (const p of sk.pics) if (p.x < x1 && p.x + p.w > x0 && p.y < y1 && p.y + p.h > y0) sk.sel.add(p);
+    for (const tx of sk.texts) { const b = sketchTextBox(tx); if (b.x < x1 && b.x + b.w > x0 && b.y < y1 && b.y + b.h > y0) sk.sel.add(tx); }
   } else return;
   drawSketchStrokes();
 }
@@ -723,16 +864,21 @@ function endSketchPick() {
       const n = Object.assign({}, s, { id: uid(), pts: shift(s.pts) });
       moved.add(n); return n;
     });
-    sk.pics = sk.pics.map((p) => {
+    const slide = (p) => {
       if (!sk.sel.has(p)) return p;
       const n = Object.assign({}, p, { x: r1(p.x + k.dx), y: r1(p.y + k.dy) });
       moved.add(n); return n;
-    });
+    };
+    sk.pics = sk.pics.map(slide);
+    sk.texts = sk.texts.map(slide);
     sk.sel = moved;
-  } else if (k.kind === 'resize' && (k.w !== k.it.w)) {
+  } else if (k.kind === 'resize' && (k.w !== k.b0.w)) {
     sketchStep();
-    const n = Object.assign({}, k.it, { w: r1(k.w), h: r1(k.h) });
-    sk.pics = sk.pics.map((p) => (p === k.it ? n : p));
+    const isText = k.it.text != null;
+    const n = isText ? Object.assign({}, k.it, { size: r1(Math.max(1, k.it.size * k.w / k.b0.w)) })
+                     : Object.assign({}, k.it, { w: r1(k.w), h: r1(k.h) });
+    if (isText) sk.texts = sk.texts.map((x) => (x === k.it ? n : x));
+    else sk.pics = sk.pics.map((p) => (p === k.it ? n : p));
     sk.sel = new Set([n]);
   }
   drawSketchStrokes();
@@ -743,18 +889,23 @@ function padSketchSelection(m) {
   if (!sk) return;
   if (m.act === 'delete') { deleteSketchSel(); return; }
   if (m.act === 'clear') { sk.sel.clear(); drawSketchStrokes(); return; }
-  if (m.act === 'color' && inkColorOk(m.color) && [...sk.sel].some((it) => it.pts)) {
-    sketchStep();
-    const next = new Set();
-    sk.strokes = sk.strokes.map((s) => {
-      if (!sk.sel.has(s)) return s;
-      const n = Object.assign({}, s, { color: m.color });
-      next.add(n); return n;
-    });
-    for (const p of sk.sel) if (!p.pts) next.add(p);
-    sk.sel = next;
-    drawSketchStrokes();
-  }
+  if (m.act === 'color') recolorSketchSel(m.color);
+}
+// the selected lines and words take a colour; a picture has none to take
+function recolorSketchSel(color) {
+  if (!sk || !inkColorOk(color) || ![...sk.sel].some((it) => it.pts || it.text != null)) return;
+  sketchStep();
+  const next = new Set();
+  const paint = (s) => {
+    if (!sk.sel.has(s)) return s;
+    const n = Object.assign({}, s, { color });
+    next.add(n); return n;
+  };
+  sk.strokes = sk.strokes.map(paint);
+  sk.texts = sk.texts.map(paint);
+  for (const p of sk.pics) if (sk.sel.has(p)) next.add(p);
+  sk.sel = next;
+  drawSketchStrokes();
 }
 // a paired phone lights its bin by how much is selected
 function sketchSelChanged() { if (typeof sendPadView === 'function') sendPadView(); }
@@ -763,6 +914,7 @@ function deleteSketchSel() {
   sketchStep();
   sk.strokes = sk.strokes.filter((s) => !sk.sel.has(s));
   sk.pics = sk.pics.filter((p) => !sk.sel.has(p));
+  sk.texts = sk.texts.filter((x) => !sk.sel.has(x));
   sk.sel.clear();
   drawSketchStrokes();
   sketchSelChanged();
@@ -791,6 +943,308 @@ function paintSketchSel(g) {
   if (k && k.kind === 'lasso') {
     rect(Math.min(k.at0.x, k.at1.x), Math.min(k.at0.y, k.at1.y), Math.abs(k.at1.x - k.at0.x), Math.abs(k.at1.y - k.at0.y), 'sk-lasso');
   }
+}
+
+/* ---- typing on the page (2.10) ----
+   The T tool: press on the paper and type; press on words already there to
+   change them. The box is a textarea laid over the drawing at the words' own
+   place and size (it follows the zoom), so what you type is where it lands.
+   Enter is a new line; Escape, Ctrl+Enter, a press anywhere else or another
+   tool keeps it. Emptied words are removed. One undo step per visit. */
+function openSketchText(where, item) {
+  if (!sk) return;
+  closeSketchText(true);
+  if (!item && sk.texts.length >= SKETCH_TEXTS_MAX) { toast(t('sketch.textsFull')); return; }
+  const p = state.settings.sketchPen;
+  const ta = document.createElement('textarea');
+  ta.className = 'sk-text-in';
+  ta.dir = 'auto';
+  ta.rows = 1;
+  ta.spellcheck = state.settings.spell !== false;
+  ta.value = item ? item.text : '';
+  ta.setAttribute('aria-label', t('sketch.text'));
+  sk.text = { ta, item, x: where.x, y: where.y, size: item ? item.size : r1(SK_TEXT_PX[p.size] / sk.view.z), color: item ? item.color : p.color };
+  $('skStage').appendChild(ta);
+  placeSketchText();
+  ta.addEventListener('keydown', (e) => {
+    e.stopPropagation();                // the drawing's keys (T, D, Delete…) are letters here
+    if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) { e.preventDefault(); closeSketchText(true); }
+  });
+  ta.addEventListener('blur', () => { if (sk && sk.text && sk.text.ta === ta) closeSketchText(true); });
+  drawSketchStrokes();                  // the words being changed are hidden under the box
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+function placeSketchText() {
+  const T = sk.text, v = sk.view;
+  T.ta.style.left = (v.x + T.x * v.z) + 'px';
+  T.ta.style.top = (v.y + T.y * v.z) + 'px';
+  T.ta.style.fontSize = (T.size * v.z) + 'px';
+  T.ta.style.color = inkColorCss(T.color);
+}
+// the pen's colour or size changed while typing: the words take it
+function restyleSketchText() {
+  const T = sk.text, p = state.settings.sketchPen;
+  T.color = p.color;
+  T.size = r1(SK_TEXT_PX[p.size] / sk.view.z);
+  placeSketchText();
+}
+function closeSketchText(keep) {
+  const T = sk && sk.text;
+  if (!T) return;
+  sk.text = null;
+  T.ta.remove();
+  const v = T.ta.value.replace(/\r\n?/g, '\n').replace(/\s+$/, '').slice(0, SKETCH_TEXT_MAX);
+  const it = T.item;
+  const changed = it ? (v !== it.text || T.color !== it.color || T.size !== it.size) : !!v.trim();
+  if (keep && changed) {
+    sketchStep();
+    const made = v.trim() ? { x: r1(T.x), y: r1(T.y), size: r1(T.size), color: T.color, text: v } : null;
+    if (it) sk.texts = sk.texts.flatMap((x) => (x === it ? (made ? [made] : []) : [x]));
+    else sk.texts = sk.texts.concat([made]);
+    if (it && sk.sel.has(it)) { sk.sel.delete(it); if (made) sk.sel.add(made); }
+  }
+  drawSketchStrokes();
+}
+// words from a paste or a drop, centred where they were put
+function addSketchText(text, at) {
+  const v = String(text || '').replace(/\r\n?/g, '\n').replace(/\s+$/, '').slice(0, SKETCH_TEXT_MAX);
+  if (!sk || !v.trim()) return 0;
+  return pasteSketchItems({ strokes: [], pics: [], texts: [{ x: 0, y: 0, size: r1(SK_TEXT_PX[0] / sk.view.z), color: 'text', text: v }] }, at);
+}
+
+/* ---- copy, cut, paste, duplicate, select all (2.10) ----
+   Inside a drawing, Ctrl+C / X / V / D / A work on what the arrow selected.
+   A copy is kept here (`skClip`) as the lines, pictures and words themselves,
+   and also goes to the system clipboard as a picture, so a piece of a
+   drawing can be pasted into anything else.
+
+   Ctrl+V has four sources, and which was meant is a question of time. The
+   system clipboard can only have changed behind this app's back while the
+   window was not in front, or by a copy in a text field (`sysClipAt`). So a
+   copy made here — in a drawing, or of notes on the board — since then is
+   what was meant, and pastes as itself: lines stay lines, a picture note
+   becomes a picture under the ink, a drawing note its drawing, a text note
+   its words. Otherwise the system clipboard wins: files (a copied PDF or
+   picture in Explorer), a screenshot's pixels, or plain text, which become
+   words on the page. */
+let skClip = null;
+let skPasteSeen = false, skPasteTimer = 0;
+const lastCopy = { board: 0, sketch: 0 };   // when each of the app's own clipboards was last filled
+let sysClipAt = 0;                          // when the system clipboard last could have changed without us
+function markInternalCopy(kind) { lastCopy[kind] = performance.now(); }
+
+function sketchSelClip() {
+  return {
+    strokes: sk.strokes.filter((s) => sk.sel.has(s)).map((s) => Object.assign({}, s)),
+    pics: sk.pics.filter((p) => sk.sel.has(p)).map((p) => Object.assign({}, p)),
+    texts: sk.texts.filter((x) => sk.sel.has(x)).map((x) => Object.assign({}, x))
+  };
+}
+function copySketchSel(cut) {
+  if (!sk || !sk.sel.size) return;
+  const n = sk.sel.size;
+  skClip = sketchSelClip();
+  markInternalCopy('sketch');
+  sketchClipImage(skClip);              // not awaited: the copy has happened as far as the drawing is concerned
+  toast(t(cut ? 'msg.cut' : 'msg.copied', { n }));
+  if (cut) deleteSketchSel();
+}
+function selectAllSketch() {
+  if (!sk) return;
+  if (state.settings.sketchPen.tool !== 'select') {
+    state.settings.sketchPen = healSketchPen(Object.assign({}, state.settings.sketchPen, { tool: 'select' }));
+    buildSketchBar(); saveSoon();
+  }
+  sk.sel = new Set([...sk.strokes, ...sk.pics, ...sk.texts]);
+  drawSketchStrokes(); sketchSelChanged();
+}
+// a copy of the selection a little down and right of it, selected; the clipboard is not touched
+function duplicateSketchSel() {
+  const clip = sketchSelClip();
+  const b = sketchBounds(clip.strokes, clip.pics, clip.texts);
+  if (!b) return;
+  const off = 24 / sk.view.z;
+  pasteSketchItems(clip, { x: b.x + b.w / 2 + off, y: b.y + b.h / 2 + off });
+}
+// where a paste lands: under the pointer when it is over the page, else the middle of the view
+function sketchPastePoint() {
+  const r = $('skStage').getBoundingClientRect(), v = sk.view, a = sk.at;
+  const inside = a && a.x >= r.left && a.x <= r.right && a.y >= r.top && a.y <= r.bottom;
+  const cx = inside ? a.x - r.left : r.width / 2, cy = inside ? a.y - r.top : r.height / 2;
+  return { x: (cx - v.x) / v.z, y: (cy - v.y) / v.z };
+}
+/* Copies of `clip` (lines, pictures, words), centred on `at`, one undo step,
+   left selected with the arrow out so they can be put where they belong.
+   Returns how many landed. */
+function pasteSketchItems(clip, at) {
+  if (!sk) return 0;
+  const b = sketchBounds(clip.strokes, clip.pics, clip.texts);
+  if (!b) return 0;
+  const over = (have, max, n) => n > 0 && have + n > max;
+  if (over(sk.strokes.length, SKETCH_MAX, clip.strokes.length)) { toast(t('sketch.full')); return 0; }
+  if (over(sk.pics.length, SKETCH_PICS_MAX, clip.pics.length)) { toast(t('sketch.picsFull')); return 0; }
+  if (over(sk.texts.length, SKETCH_TEXTS_MAX, clip.texts.length)) { toast(t('sketch.textsFull')); return 0; }
+  closeSketchText(true);
+  const dx = r1(at.x - (b.x + b.w / 2)), dy = r1(at.y - (b.y + b.h / 2));
+  sketchStep();
+  const made = new Set();
+  const add = (o) => { made.add(o); return o; };
+  const slide = (o) => add(Object.assign({}, o, { x: r1(o.x + dx), y: r1(o.y + dy) }));
+  sk.strokes = sk.strokes.concat(clip.strokes.map((s) => add(Object.assign({}, s, { id: uid(), pts: s.pts.map((v, i) => r1(v + (i % 2 ? dy : dx))) }))));
+  sk.pics = sk.pics.concat(clip.pics.map(slide));
+  sk.texts = sk.texts.concat(clip.texts.map(slide));
+  if (state.settings.sketchPen.tool !== 'select') {
+    state.settings.sketchPen = healSketchPen(Object.assign({}, state.settings.sketchPen, { tool: 'select' }));
+    buildSketchBar(); saveSoon();
+  }
+  sk.sel = made;
+  drawSketchStrokes(); sketchSelChanged();
+  carrySketchPics();
+  return made.size;
+}
+/* Notes copied on the board, pasted into a drawing: each as what it looks
+   like, where it sat relative to the others. A picture note is its picture;
+   a drawing note is its drawing, scaled to the note as the board shows it; a
+   text note is its words. Workflows have nothing to draw. */
+function pasteBoardNotesIntoSketch(at) {
+  const notes = (clipboard || []).filter((c) => !c.frame).map((c) => c.data);
+  const clip = { strokes: [], pics: [], texts: [] };
+  for (const n of notes) {
+    if (n.pic) {
+      const url = picSrc(n);
+      if (url) clip.pics.push({ x: n.x, y: n.y, w: n.w, h: n.h, url, name: picName(n) });
+    } else if (n.sketch) {
+      const s = okSketch(n.sketch);
+      const b = s && sketchBounds(s.strokes, s.pics, s.texts);
+      if (!b) continue;
+      const room = { x: n.x + 6, y: n.y + SKETCH_TITLE_H, w: Math.max(10, n.w - 12), h: Math.max(10, n.h - SKETCH_TITLE_H - 6) };
+      const k = Math.min(room.w / b.w, room.h / b.h);
+      const ox = room.x + (room.w - b.w * k) / 2 - b.x * k, oy = room.y + (room.h - b.h * k) / 2 - b.y * k;
+      for (const st of s.strokes) {
+        const c = Object.assign({}, st, { size: r1(Math.max(0.05, st.size * k)), pts: st.pts.map((v, i) => r1((i % 2 ? oy : ox) + v * k)) });
+        if (st.ws) c.ws = st.ws.map((w) => Math.round(Math.max(0.05, w * k) * 100) / 100);
+        clip.strokes.push(c);
+      }
+      for (const p of sketchPicsOf(Object.assign({}, n, { sketch: s }))) clip.pics.push(Object.assign({}, p, { x: ox + p.x * k, y: oy + p.y * k, w: p.w * k, h: p.h * k }));
+      for (const x of s.texts || []) clip.texts.push(Object.assign({}, x, { x: ox + x.x * k, y: oy + x.y * k, size: r1(x.size * k) }));
+    } else {
+      // its words as lines; a heading's # marks are for Markdown, not for a page
+      const text = noteToText(n.body).replace(/^#{1,6} /gm, '').trim().slice(0, SKETCH_TEXT_MAX);
+      if (text) clip.texts.push({ x: n.x + 14, y: n.y + 12, size: 16, color: 'text', text });
+    }
+  }
+  return pasteSketchItems(clip, at);
+}
+function pasteInternalIntoSketch(at) {
+  const board = clipboard && clipboard.some((c) => !c.frame);
+  if (board && (lastCopy.board > lastCopy.sketch || !skClip)) return pasteBoardNotesIntoSketch(at);
+  if (skClip) return pasteSketchItems(skClip, at);
+  return 0;
+}
+// the document's paste event, while a drawing note is open (init.js)
+function onSketchPaste(e) {
+  if (!sk) return;
+  if (e.target.closest && e.target.closest('input, textarea')) return;    // the title, words being typed
+  e.preventDefault();
+  skPasteSeen = true; clearTimeout(skPasteTimer);
+  const at = sketchPastePoint();
+  if (Math.max(lastCopy.board, lastCopy.sketch) > sysClipAt && pasteInternalIntoSketch(at)) return;
+  const dt = e.clipboardData;
+  const files = dt && dt.files ? [...dt.files] : [];
+  if (!files.length && dt) for (const it of dt.items || []) if (it.kind === 'file') { const f = it.getAsFile(); if (f) files.push(f); }
+  if (files.length) { sketchItemsFromFiles(files).then((items) => sketchImport(items, at)); return; }
+  const text = dt ? dt.getData('text/plain') : '';
+  if (text && text.trim()) { addSketchText(text, at); return; }
+  pasteInternalIntoSketch(at);
+}
+/* Pictures pasted from another board still point at that board's folder;
+   they are copied into this one and re-addressed, so this board stays whole
+   (the same as pasteClipboard() does for notes). */
+async function carrySketchPics() {
+  if (!sk || !FILES || !FILES.carry || !state.activeBoard) return;
+  const mine = `mbf://${String(state.activeBoard).toLowerCase()}/`;
+  const urls = [...new Set(sk.pics.map((p) => p.url).filter((u) => /^mbf:/i.test(u) && !u.toLowerCase().startsWith(mine)))];
+  if (!urls.length) return;
+  const n0 = sk.n;
+  let got = null;
+  try { got = await FILES.carry(urls, state.activeBoard); } catch (_) {}
+  if (!got || !got.map || !sk || sk.n !== n0) return;
+  const sel = new Set();
+  sk.pics = sk.pics.map((p) => {
+    const to = got.map[p.url];
+    const q = to ? Object.assign({}, p, { url: to }) : p;
+    if (sk.sel.has(p)) sel.add(q);
+    return q;
+  });
+  for (const it of sk.sel) if (it.pts || it.text != null) sel.add(it);
+  sk.sel = sel;
+  sk.dirty = true;
+  drawSketchStrokes();
+}
+/* The copy as a picture on the system clipboard, on the drawing's own paper,
+   twice as sharp as at 100% (at most 4096 px a side). Pictures are read as
+   data, so the canvas is never tainted. */
+async function sketchClipImage(clip) {
+  try {
+    const b = sketchBounds(clip.strokes, clip.pics, clip.texts);
+    if (!b) return;
+    const k = Math.min(2, 4096 / Math.max(b.w, b.h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(b.w * k)); c.height = Math.max(1, Math.ceil(b.h * k));
+    const g = c.getContext('2d');
+    g.fillStyle = getComputedStyle($('skStage')).backgroundColor;
+    g.fillRect(0, 0, c.width, c.height);
+    g.scale(k, k); g.translate(-b.x, -b.y);
+    for (const p of clip.pics) {
+      const img = new Image();
+      img.src = await toDataUrl(p.url);
+      try { await img.decode(); g.drawImage(img, p.x, p.y, p.w, p.h); } catch (_) {}
+    }
+    const colours = new Map();
+    const colorOf = (cc) => {
+      if (!colours.has(cc)) {
+        const probe = document.createElement('i');
+        probe.style.color = inkColorCss(cc);
+        $('sketchDlg').appendChild(probe);
+        colours.set(cc, getComputedStyle(probe).color);
+        probe.remove();
+      }
+      return colours.get(cc);
+    };
+    for (const x of clip.texts) paintSketchTextOnCanvas(g, x, colorOf(x.color));
+    paintInkOnCanvas(g, clip.strokes, colorOf);
+    const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+    if (blob) await toSystemClipboardImage(blob);
+  } catch (err) { console.warn('drawing note: the copy did not reach the system clipboard', err); }
+}
+
+/* ---- a picture under the drawing, edited (2.10) ----
+   Select one picture and press Edit picture (or Enter, or double-click it):
+   the picture editor opens over the drawing — crop, colours, marks — and
+   Apply puts the edited copy in its place, keeping its width; the shape
+   follows a crop. One undo step of the drawing; the original file is kept. */
+function editSketchPicture(p) {
+  if (!sk || !p || !sk.pics.includes(p)) return;
+  closeSketchText(true);
+  const img = new Image();
+  img.src = p.url;
+  if (p.name) img.dataset.name = p.name;
+  const n0 = sk.n;
+  openStudio(img, {
+    inside: $('sketchDlg'),            // full screen shows only the full-screen element and what is in it
+    onApply: async (url, name) => {
+      if (!sk || sk.n !== n0 || !sk.pics.includes(p)) return;
+      const size = await measureImage(url);
+      if (!sk || sk.n !== n0 || !sk.pics.includes(p)) return;
+      sketchStep();
+      const h = size && size.w && size.h ? p.w * size.h / size.w : p.h;
+      const q = Object.assign({}, p, { url, name: name || p.name, h: r1(h) });
+      sk.pics = sk.pics.map((x) => (x === p ? q : x));
+      sk.sel = new Set([q]);
+      drawSketchStrokes(); sketchSelChanged();
+    }
+  });
 }
 
 /* ---- bringing pictures and PDFs in (2.7) ---- */
@@ -856,8 +1310,9 @@ async function keepSketchPicture(dataUrl, name) {
 /* Files → pictures under the drawing, one below another, starting under
    whatever is already there (or at the top left of an empty page). One undo
    step for the lot. `items` is what files:pick-drawing hands back, or the
-   same built from files dropped on the editor. */
-async function sketchImport(items) {
+   same built from files dropped on the editor. With `at` (a drop, a paste)
+   they start there instead, and the view stays where it is. */
+async function sketchImport(items, at) {
   if (!sk || !items || !items.length) return 0;
   const n0 = sk.n;
   const placed = [];
@@ -890,23 +1345,26 @@ async function sketchImport(items) {
   if (!sk || sk.n !== n0 || !placed.length) return 0;
   const room = SKETCH_PICS_MAX - sk.pics.length;
   if (room <= 0) { toast(t('sketch.picsFull')); return 0; }
+  closeSketchText(true);
   sketchStep();
-  let { x, y } = sketchNextSpot(sk.strokes, sk.pics);
+  let { x, y } = at || sketchNextSpot(sk.strokes, sk.pics, sk.texts);
   for (const p of placed.slice(0, room)) {
     sk.pics.push({ x: r1(x), y: r1(y), w: r1(p.w), h: r1(p.h), url: p.url, name: p.name });
     y += p.h + 40;
   }
   drawSketchStrokes();
+  if (at) return placed.length;
   fitSketchView();
   // and again once the layout has settled — a file dialog or a toast can still be moving things
   requestAnimationFrame(() => { if (sk && sk.n === n0) fitSketchView(); });
   return placed.length;
 }
 // under everything already there, lined up with the pictures (sketchBounds' box has air round it)
-function sketchNextSpot(strokes, pics) {
+function sketchNextSpot(strokes, pics, texts) {
   let x = pics.length ? Math.min(...pics.map((p) => p.x)) : 0, y = -Infinity;
   for (const p of pics) y = Math.max(y, p.y + p.h);
   for (const s of strokes) y = Math.max(y, inkBox(s).y1);
+  for (const tx of texts || []) { const b = sketchTextBox(tx); y = Math.max(y, b.y + b.h); }
   if (!pics.length && strokes.length) x = Math.min(...strokes.map((s) => inkBox(s).x0));
   return { x, y: Number.isFinite(y) ? y + 40 : 0 };
 }
@@ -941,7 +1399,7 @@ async function dropIntoSketch(id, files) {
 function pictureIntoSketch(target, pic) {
   const s = target.sketch;
   const files = sketchPicFiles(target);
-  const spot = sketchNextSpot(s.strokes, s.pics || []);
+  const spot = sketchNextSpot(s.strokes, s.pics || [], s.texts);
   const ar = pic.ar || pic.w / pic.h || 1;
   const w = Math.min(SKETCH_PIC_MAX, pic.w * 2);
   const pics = (s.pics || []).slice(0, files.length);
@@ -1035,11 +1493,29 @@ function wireSketch() {
   // pictures and PDFs dropped on the editor go under the drawing, like the button's
   const stage = $('skStage');
   stage.addEventListener('dragover', (e) => { if (sk) { e.preventDefault(); e.stopPropagation(); } });
+  // …where they were dropped (2.10); and text dropped from anywhere becomes words on the page
   stage.addEventListener('drop', async (e) => {
     if (!sk) return;
     e.preventDefault(); e.stopPropagation();
-    await sketchImport(await sketchItemsFromFiles(e.dataTransfer && e.dataTransfer.files));
+    const at = sketchPoint(e), dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length) { await sketchImport(await sketchItemsFromFiles(dt.files), at); return; }
+    const text = dt ? dt.getData('text/plain') : '';
+    if (text && text.trim()) addSketchText(text, at);
   });
+  // where a paste lands (sketchPastePoint)
+  stage.addEventListener('pointermove', (e) => { if (sk) sk.at = { x: e.clientX, y: e.clientY }; });
+  // a double-click on words types in them; on a picture, edits it
+  svg.addEventListener('dblclick', (e) => {
+    if (!sk || !['select', 'text'].includes(state.settings.sketchPen.tool)) return;
+    const hit = sketchHit(sketchPoint(e));
+    if (hit && hit.text != null) openSketchText(hit, hit);
+    else if (hit && hit.url) editSketchPicture(hit);
+  });
+  // what can change the system clipboard behind the app's back (onSketchPaste)
+  window.addEventListener('blur', () => { sysClipAt = performance.now(); });
+  const typedCopy = (e) => { if (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) sysClipAt = performance.now(); };
+  document.addEventListener('copy', typedCopy, true);
+  document.addEventListener('cut', typedCopy, true);
   svg.addEventListener('pointerdown', onSketchDown);
   svg.addEventListener('contextmenu', (e) => e.preventDefault());   // the pen's button is the eraser here
   skSurface = zoomPanSurface($('skStage'), {
@@ -1067,7 +1543,7 @@ function paintSketchOnCanvas(ctx, n, pal, inkColor, font, pictures) {
   ctx.font = `600 15px ${font}`;
   ctx.textBaseline = 'middle';
   ctx.fillText(s.title || t('sketch.untitled'), n.x + 14, n.y + 34 / 2 + 2, n.w - 28);
-  const b = sketchBounds(s.strokes, s.pics);
+  const b = sketchBounds(s.strokes, s.pics, s.texts);
   if (b) {
     const room = { x: n.x + 6, y: n.y + 34, w: n.w - 12, h: n.h - 34 - 6 };
     const k = Math.min(room.w / b.w, room.h / b.h);
@@ -1079,6 +1555,7 @@ function paintSketchOnCanvas(ctx, n, pal, inkColor, font, pictures) {
       const img = pictures && pictures.get(n.id + '#' + i);
       if (img) { try { ctx.drawImage(img, p.x, p.y, p.w, p.h); } catch (_) {} }
     });
+    for (const x of s.texts || []) paintSketchTextOnCanvas(ctx, x, inkColor(x.color));
     paintInkOnCanvas(ctx, s.strokes, inkColor);
   }
   ctx.restore();

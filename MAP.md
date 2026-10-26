@@ -2026,8 +2026,8 @@ undo, the picture editor's pen, and nothing on the board behind.
   reports it as the eraser on some builds (`button` 5, `buttons & 32`) and as
   the secondary button on others (`button` 2, `buttons & 2`); all of them
   count (`erasing(e)` in phone.html). Pressed or released *mid-line*, the line
-  ends and the other tool carries on from the same point. The hover dot turns
-  red while it is held.
+  ends and the other tool carries on from the same point. (The phone's own
+  hover dot, which turned red then, is gone since 2.10 — §4z8.)
 - The eraser from the phone takes whole strokes along the whole sweep, like
   `eraseAt()`, and takes its undo step at the first stroke it actually
   removes, so a sweep across nothing leaves no step to pop.
@@ -2533,8 +2533,8 @@ still sees a visit as one step: `pushUndo()` is taken at the first commit
 (`sk.undoTaken`), while the note is still as it was. `closeSketch()` only
 reshapes and repaints the note on the board.
 
-**The 5-minute autosave** (`startAutosave()`, state.js, `AUTOSAVE_MS`) is the
-backstop over that: it commits an open drawing and calls `save()`, which
+**The autosave** (`startAutosave()`, state.js; every 5 minutes, or 4, 6 or 10
+as Settings says since 2.10, §4z8) is the backstop over that: it commits an open drawing and calls `save()`, which
 writes only boards whose JSON changed. Text notes already save on every input.
 The picture editor's marks are still kept only on Apply — they are burned
 into a new picture, which is not a thing to do behind the user's back.
@@ -2809,6 +2809,101 @@ a closed note; the handle shown by a hover, its menu, a drag, Ctrl+Shift+↑, a
 duplicated database, deleting every block. The handle test hovers by screen
 position, so the suite first closes any dialog an earlier suite left open.
 
+## 4z8. Mental Board 2.10 — anything into a drawing note, pictures edited there, the autosave interval
+
+### Words on the page — the T tool (`sketch.js`)
+
+A drawing note holds text as well as ink and pictures: `sketch.texts`, each
+`{ x, y, size, color, text }` in the drawing's units (top left of the first
+line, font size, an ink colour, lines split by `\n`). Healed by `okSketch`
+(500 at most, 4,000 characters each, a bad colour becomes `text`). Drawn as
+SVG `<text>` on the note and in the editor (`makeSketchTextEl`) and with
+`fillText` in the board picture (`paintSketchTextOnCanvas`), from the same
+numbers — `SK_FONT`, `SK_LINE` 1.25 and `SK_BASE` 1.03, the first baseline
+where a textarea with that line height puts it for Segoe UI, so nothing jumps
+when the box closes. Its box is measured once per object
+(`sketchTextBox`, a non-enumerable `_box` like ink's) and is part of
+`sketchBounds`, hits, the lasso, moves and deletes; the corner of one selected
+text scales its letters. `noteText()` (helpers.js) is the title plus the
+words, so search finds them.
+
+Typing (`openSketchText` → `closeSketchText`): T, then a press on the paper; a
+press on words already there types in them (so does a double-click with the
+arrow). The box is a textarea at the words' place and size, following the zoom
+(`placeSketchText`). Enter is a new line; Escape, Ctrl+Enter, a press anywhere
+or another tool keeps it; emptied words are removed. Its keydown stops
+propagation, so T, D, Delete are letters there. A colour or size picked while
+typing restyles the words; a press on the bar does not take the focus.
+
+### The clipboard inside a drawing (`sketch.js`)
+
+With the arrow: Ctrl+C / X / D / A, Delete, and a colour recolours selected
+lines **and** words. Ctrl+C keeps `skClip` (copies of the selected lines,
+pictures and words) and puts a PNG of it on the system clipboard
+(`sketchClipImage` → `toSystemClipboardImage`, edit-ops.js; the suite stubs
+both clipboard writers).
+
+Ctrl+V has four sources and the choice is about time. The system clipboard can
+only change behind the app's back while its window is not in front, or by a
+copy in a text field — `sysClipAt` is stamped by `blur` and by `copy`/`cut`
+from an editable. A copy made in the app since then (`lastCopy.board` from
+`copySelection()`, `lastCopy.sketch`) is what was meant and pastes as itself;
+otherwise files (a copied PDF or picture), then a screenshot's pixels, then
+plain text (words) win (`onSketchPaste`). The board's own notes paste as what
+they look like (`pasteBoardNotesIntoSketch`): a picture note a picture, a
+drawing note its drawing scaled to the note, a text note its words. Pictures
+from another board are copied into this one (`carrySketchPics`, `FILES.carry`).
+The document's paste listener (init.js) routes to `onSketchPaste` while a
+drawing is open — before 2.10 a screenshot pasted there became a note on the
+board **behind** the editor. Ctrl+V's keydown is not prevented (§4v); a 150 ms
+timer pastes the internal copy if no paste event comes. A paste lands under
+the pointer (`sk.at`), is selected, and puts the arrow out.
+
+Drops on the open editor land where they are dropped (`sketchImport(items,
+at)`); dropped text becomes words.
+
+### A picture edited inside a drawing (`editSketchPicture`, media.js)
+
+One selected picture ▸ the tune button, Enter, or a double-click: the picture
+editor opens **inside `#sketchDlg`** (`openStudio(img, { inside, onApply })`) —
+full screen shows only the full-screen element — and goes back to its place on
+close (`studioHome`). Apply hands the new file to `onApply` instead of an
+`<img>`: the picture is replaced, its width kept, its height following a crop;
+one step of the drawing's undo, the original file untouched. While it is open
+it has the keys and Escape closes it, not the drawing (`onKeyDown`, init.js),
+and the phone draws in it (`padHost()` asks for the studio first).
+
+**Colours** (any picture, on the board too): the Adjust tool (J, `tune`) shows
+`#stAdjust` — brightness, contrast, saturation, hue, black and white, reset.
+`ST.adj`, drawn through the canvas `filter` (`studioFilter`) on screen and into
+the pixels on Apply, under the marks; part of every studio undo step; a slider
+drag is one step. Read the control **before** `studioStep()` — it repaints the
+panel from `ST.adj`, which is how the first version lost every change.
+
+### The autosave interval (state.js)
+
+Settings ▸ Your boards ▸ **Save everything every** 4 / 5 / 6 / 10 minutes
+(`settings.autosaveMin`, `AUTOSAVE_MINUTES`, default 5). `startAutosave()`
+clears and restarts its interval, so a choice takes effect at once.
+
+### The phone, one circle under the S Pen
+
+The phone page's own blue hover dot is gone, and the PC's hover ring
+(`#padCursor`) is hidden while `padPump()` photographs the region, so the
+S Pen's own pointer is the only circle on the phone (there were three). The
+ring still shows on the PC. Also on the phone: the bar acts on the press
+(`press()`, except full screen, which needs a click); the line under the pen is
+drawn through the midpoints like `inkLinePath`, a pressed brush wider like
+`brushWidths`, and a few milliseconds ahead with `getPredictedEvents()` (drawn,
+never sent).
+
+Tests: **2.10** in `tools/test-app-features.js` — words typed, kept, found,
+healed; the clipboard's four sources and the board left alone; a picture
+edited in full screen (crop, black and white in the pixels, a slider step,
+Escape, undo); the autosave setting on disk; a pan writing no rope; the ring
+hidden during a capture. **Only the real phone can confirm** how the S Pen and
+`getPredictedEvents()` feel there.
+
 ## 4o. Lining a note up with its neighbours
 
 `guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
@@ -2906,6 +3001,7 @@ bug in any of them cannot reach most people.
 | **Re-stubbing on the way out (2.2)** | `restubMounted()` §5, from `syncMounted()` | Notes already on screen when the view crosses `FAR_Z` used to stay finished with their body hidden by CSS — blank cards still carrying their whole text. Each sweep in far zoom turns any finished note back into a stub, except the one being edited and those a gesture holds; `exitEdit()` and `endGesture()` ask for a sweep so those follow as soon as they are let go. 0.3 ms a frame over 3,000 mounted notes. |
 | **Rope culling + reuse** | `drawLinks()` §10 | One `<g>` per rope, built once and updated in place, and only the ropes near the viewport are in the document at all. Gated on the same `culling` flag. |
 | **Partial rope redraw** | `drawLinks(moving)` §10 | During a drag only the ropes tied to the notes under the pointer are recomputed. Everything else is standing still. |
+| **No rewrite of a rope that did not change (2.10)** | `drawLinks()` §10, `r.key` | The full sweep runs on every pan and zoom frame (`syncMounted`). It used to write every mounted rope's `d`, centres and colour each time; an SVG attribute write invalidates even when the value is the same, so at far zoom on the 3,000-note / 2,000-rope board that was ~6,600 writes a frame, 11 ms of style recalc, 9 ms of layerising and a repaint of the rope layer. Each rope now keeps the key it was drawn with and is skipped when it matches. |
 | **Geometry-only undo** | `pushUndoGeom()` §14b | A drag stores four numbers per item instead of the whole board as JSON. |
 | **Cached note text** | `noteText()` §1 | Ctrl+F and the jump palette run over every note on every board on every keystroke; `stripHtml()` is memoised on the body string so they parse each note's HTML once, not once per letter. |
 | **Graphics tiers** | `resolvedPerf()` §3 + `body[data-perf]` | Three since 2.1 — Full, Balanced, Light — and Auto picks one from the cores, the memory and the graphics chip by name (`gpuName()`, WebGL's debug extension: a software renderer is Light, an Intel integrated part before Iris Xe/Arc is Balanced). Balanced drops the backdrop blur behind menus; Light also turns blurred shadows into flat rings and stops canvas transitions. Layout, colours and type are untouched — see later.css §31 and mental.css §59. The Auto hint in Settings names the chip it saw. |
@@ -2944,6 +3040,16 @@ from fit-everything still drops to 15–30 fps between 0.2× and 0.4×** — wha
 left is the browser rasterising a few hundred DOM notes at every new scale, not
 script, and taking it further means drawing far zoom on a `<canvas>` instead of
 in the DOM. That is the next thing to do here, not a tweak.
+
+**Measured in 2.10** (3,000 notes, 2,000 ropes, 1920×1080, RTX-class GPU), frame
+times p50 / p95 before → after the rope key above: panning at far zoom
+77.6 / 87.8 → 6.5 / 9.7 ms; zooming inside far zoom 41.7 / 88.4 →
+8.6 / 13.4 ms; panning at 1× 16 → 5.6 ms. Dragging a note with ropes holds
+5.5 ms. **Still slow: zooming across the far-zoom line and between it and 1×**
+(p50 ~25–55, p95 ~150–200 ms). A trace puts ~80% of it in GPU rasterisation of
+the notes' real text at each new scale; mounting revealed notes as stubs while
+zooming was tried and bought nothing, so it was not kept. The canvas far zoom
+above is still the fix.
 
 The `<g>` wrapper is load-bearing, not tidiness: `.lk-hit:hover + .lk-line` is
 an adjacent-sibling rule, so the hit path and the visible line must stay next to

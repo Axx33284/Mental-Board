@@ -2119,3 +2119,35 @@ body.bh-dragging #blockHandle { pointer-events: none; opacity: .4; }
 .pk-tg span { display: block; margin-top: 3px; color: var(--dim); font-size: 12px; }
 .pk-tg.lvl1 b { font-size: 22px; } .pk-tg.lvl2 b { font-size: 18px; } .pk-tg.lvl3 b { font-size: 15px; }
 .pk-tg.lvl0 b { font-weight: 500; }
+
+/* ─────────────── 81. words, the clipboard and pictures edited in a drawing note (2.10, js/sketch.js) ───────────────
+   The words are SVG text in the drawing's units (sketch.js makeSketchTextEl);
+   the box you type them in is a textarea laid exactly over where they land,
+   same face, size and line height (SK_FONT, SK_LINE), so nothing jumps when
+   it closes. */
+.sk-text { font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; font-weight: 500; white-space: pre; pointer-events: none; }
+#sketchDlg.sk-typing #skSvg { cursor: text; }
+.sk-text-in {
+  position: absolute; z-index: 2; margin: 0; padding: 0; border: 0; border-radius: 2px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; font-weight: 500; line-height: 1.25;
+  background: color-mix(in srgb, var(--sk-bg, var(--surface)) 70%, transparent);
+  outline: 1.5px dashed var(--accent); outline-offset: 4px;
+  resize: none; overflow: hidden; white-space: pre; field-sizing: content; min-width: 2ch; user-select: text;
+}
+/* the picture editor opened over a drawing note sits inside it (full screen
+   shows nothing else), above the bar and the paper */
+#sketchDlg > #studio { z-index: 5; }
+
+/* the picture editor's colours (js/media.js ST.adj): a panel in the stage's corner while Adjust is the tool */
+.st-adjust {
+  position: absolute; top: 14px; inset-inline-end: 14px; z-index: 3; width: 250px;
+  display: flex; flex-direction: column; gap: 9px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+  font-size: 12px; color: var(--dim);
+}
+.st-adjust.hidden { display: none; }
+.st-adjust label { display: grid; grid-template-columns: 82px 1fr 42px; align-items: center; gap: 8px; }
+.st-adjust input[type="range"] { width: 100%; min-width: 0; }
+.st-adjust output { text-align: end; font-variant-numeric: tabular-nums; color: var(--text); }
+.st-adjust .st-gray { display: flex; gap: 8px; color: var(--text); cursor: pointer; }
+.st-adjust .btn { align-self: flex-start; }

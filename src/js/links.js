@@ -251,6 +251,16 @@ function drawLinks(moving) {
     const p1 = anchor(a, cb), p2 = anchor(b, ca);
     const d = ropePath(p1, p2, a, b);
     const r = el._rope;
+    // this one rope's own colour, if it has one; otherwise the setting's, through --rope
+    const own = linkColorCss(l.color);
+    /* Nothing about it changed — the usual case on a pan or a zoom, where the
+       ropes stand still in the world (2.10). Writing the same `d` and centres
+       anyway is not free: every SVG attribute set re-lays-out that element and
+       repaints the rope layer, and at far zoom on a big board that was
+       ~6,000 attribute writes a frame and most of what made panning stutter. */
+    const key = d + '|' + pinned + '|' + own;
+    if (r.key === key) continue;
+    r.key = key;
     r.hit.setAttribute('d', d);
     r.line.setAttribute('d', d);
     /* A pin at both ends when the ropes are pinned to the top edge — one dot
@@ -259,8 +269,6 @@ function drawLinks(moving) {
     r.dotA.setAttribute('cx', p1.x); r.dotA.setAttribute('cy', p1.y);
     r.dotB.setAttribute('cx', p2.x); r.dotB.setAttribute('cy', p2.y);
     r.dotA.style.display = pinned ? '' : 'none';
-    // this one rope's own colour, if it has one; otherwise the setting's, through --rope
-    const own = linkColorCss(l.color);
     r.line.style.stroke = own; r.dotA.style.fill = own; r.dotB.style.fill = own;
   }
 

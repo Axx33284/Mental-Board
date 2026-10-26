@@ -544,6 +544,9 @@ window.MB_LANG.en = {
   'set.backup': 'Mirror to another drive',
   'set.backupNow': 'Back up now',
   'set.backupFolder': 'Choose folder…',
+  'set.autosave': 'Save everything every',
+  'set.minutes': '{n} min',
+  'set.autosaveHint': 'Every change is already saved within a second or two. This is the safety net on top: it also saves a drawing note that is still open.',
   'set.backupAuto': 'Back up once a day when the app starts',
   'set.backupWhere': 'Copies go to {dir}',
   'set.backupLast': 'last one {when}',
@@ -654,6 +657,14 @@ window.MB_LANG.en = {
   'studio.hint.box': 'Drag to draw a rectangle.',
   'studio.hint.arrow': 'Drag to point at something.',
   'studio.hint.text': 'Click where you want a note, then type.',
+  'studio.adjust': 'Colours — brightness, contrast, saturation (J)',
+  'studio.hint.adjust': 'Move a slider to change the colours of the whole picture. Apply keeps them; undo takes a change back.',
+  'studio.bright': 'Brightness',
+  'studio.contrast': 'Contrast',
+  'studio.saturation': 'Saturation',
+  'studio.hue': 'Hue',
+  'studio.gray': 'Black and white',
+  'studio.adjReset': 'Reset colours',
   'studio.notePlaceholder': 'note…',
 
   /* ---- dialogs ---- */
@@ -1061,6 +1072,9 @@ window.MB_LANG.en = {
   'sketch.picsFull': 'This drawing has as many pictures as it can hold.',
   'sketch.select': 'Select and move (V) — Shift adds, Delete removes, drag a picture’s corner to resize',
   'sketch.cannotHold': 'A drawing note can only hold pictures and PDFs — not: {names}. Save those as a PDF first.',
+  'sketch.text': 'Text (T) — click and type; Escape keeps it',
+  'sketch.textsFull': 'This drawing has as much text as it can hold.',
+  'sketch.editPic': 'Edit the selected picture — crop, colours, marks (Enter)',
   'sketch.pictureIn': 'The picture is now under the drawing.',
 
   /* ---- databases (2.8, js/database.js) ---- */

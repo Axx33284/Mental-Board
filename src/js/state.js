@@ -235,6 +235,8 @@ function defaults() {
       // the same, for drawing notes (2.5, js/sketch.js), and whether one opens full screen
       sketchPen: { tool: 'pen', color: 'text', size: 1 },
       sketchFull: true,
+      // minutes between the saves that happen whatever else does (2.10) — one of AUTOSAVE_MINUTES
+      autosaveMin: 5,
       // menu sounds (2.1, js/sound.js): off unless asked for, and how loud
       sounds: false,
       soundVol: 60,
@@ -871,8 +873,9 @@ function adopt(raw, keepSettings) {
   st.guides = st.guides !== false;
   st.minimap = st.minimap !== false;
   st.pen = healPen(st.pen);
-  st.sketchPen = healPen(st.sketchPen);
+  st.sketchPen = healSketchPen(st.sketchPen);
   st.sketchFull = st.sketchFull !== false;
+  st.autosaveMin = AUTOSAVE_MINUTES.includes(+st.autosaveMin) ? +st.autosaveMin : 5;
   st.sounds = !!st.sounds;
   st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);
   if (!KEY_SOUNDS.includes(st.keySounds)) st.keySounds = 'off';
@@ -1175,18 +1178,24 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, save
 // the close path, and the only caller that wants the blocking write
 function flushSave() { clearTimeout(saveTimer); saveTimer = null; save(true); }
 
-/* Every 5 minutes, whatever happens, everything is saved (2.7.1). Every
+/* Every few minutes, whatever happens, everything is saved (2.7.1). Every
    change already saves within a second or two (saveSoon) and a drawing note
    now saves as it is drawn, so this is the backstop for anything that ever
    slips past them — an editor open for an hour, a change some path forgot to
    announce. save() writes only the boards whose JSON differs from what is on
-   disk, so a tick with nothing new costs one serialise and no write. */
-const AUTOSAVE_MS = 5 * 60 * 1000;
+   disk, so a tick with nothing new costs one serialise and no write.
+
+   How many minutes is Settings ▸ Board (2.10): 4, 5, 6 or 10, 5 unless
+   chosen. Choosing restarts the clock, so the next save is that far away. */
+const AUTOSAVE_MINUTES = [4, 5, 6, 10];
+let autosaveTimer = 0;
 function startAutosave() {
-  setInterval(() => {
+  clearInterval(autosaveTimer);
+  const min = AUTOSAVE_MINUTES.includes(state.settings.autosaveMin) ? state.settings.autosaveMin : 5;
+  autosaveTimer = setInterval(() => {
     if (typeof sketchOpen === 'function' && sketchOpen()) commitSketch();
     save();
-  }, AUTOSAVE_MS);
+  }, min * 60 * 1000);
 }
 
 /* One dated copy per board per launch-day, in Backups\, handled by the store

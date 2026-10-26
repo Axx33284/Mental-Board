@@ -212,6 +212,11 @@ function onContextMenu(e) {
 }
 
 function onKeyDown(e) {
+  // the picture editor over a drawing note (2.10) has the keys first, and Escape closes it, not the drawing
+  if (sketchOpen() && !$('studio').classList.contains('hidden')) {
+    if (e.key === 'Escape') { e.preventDefault(); closeStudio(); return; }
+    onStudioKey(e); return;
+  }
   if (sketchOpen()) { onSketchKey(e); return; }    // a drawing note open full screen has every key (sketch.js)
   if (!$('studio').classList.contains('hidden') && onStudioKey(e)) return;   // and so has the picture editor (media.js)
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
@@ -705,6 +710,8 @@ function init() {
      image, this listener does nothing and Ctrl+V means what it always did. */
   document.addEventListener('paste', (e) => {
     if (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
+    // into an open drawing note, never onto the board behind it (sketch.js)
+    if (sketchOpen()) { if ($('studio').classList.contains('hidden')) onSketchPaste(e); return; }
     if (editing) return;
     if (!$('settings').classList.contains('hidden')) return;
     pasteSeen = true; clearTimeout(pasteTimer);
@@ -908,6 +915,11 @@ function init() {
     $('gridFadeVal').textContent = pct(state.settings.gridFade);
     applySettings(); saveSoon();
   });
+  $('autosaveSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    state.settings.autosaveMin = +b.dataset.autosave;
+    startAutosave();                // the next one is that far from now
+    syncSettingsUI(); saveSoon();
+  }));
   $('wheelSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.settings.wheel = b.dataset.wheel; syncSettingsUI(); saveSoon();
   }));
@@ -1114,7 +1126,8 @@ function init() {
     if (!ST.img) return;
     studioStep();
     ST.marks = []; ST.crop = { x: 0, y: 0, w: ST.img.naturalWidth, h: ST.img.naturalHeight };
-    drawStudio();
+    ST.adj = { ...ST_ADJ0 };
+    buildStudioChrome(); drawStudio();
   });
   // on the press, not the click — see onPress() in helpers.js
   $('stTools').querySelectorAll('[data-tool]').forEach((b) => onPress(b, () => {
@@ -1437,6 +1450,7 @@ const STATIC_ICONS = [
   ['#btnCleanFiles .b-ic', 'cleaning_services'],
   ['#btnBackupFolder .b-ic', 'folder_open'],
   ['#setBackupAuto + .row-ic', 'schedule'],
+  ['label:has([data-t="set.autosave"]) .row-ic', 'autorenew'],
   ['label:has([data-t="set.pictureTheme"]) .row-ic', 'image'],
   ['#setExportTheme + .sel-chev', 'expand_more'],
   ['#setDaily + .row-ic', 'today'],
@@ -1460,6 +1474,7 @@ const STATIC_ICONS = [
   ['#imgBar [data-img="out"]', 'north_east'],
   ['#imgBar [data-img="delete"]', 'delete'],
   ['#stTools [data-tool="crop"]', 'crop'],
+  ['#stTools [data-tool="adjust"]', 'tune'],
   ['#stTools [data-tool="pen"]', 'draw'],
   ['#stTools [data-tool="marker"]', 'ink_highlighter'],
   ['#stTools [data-tool="eraser"]', 'ink_eraser'],

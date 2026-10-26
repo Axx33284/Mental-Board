@@ -683,6 +683,17 @@
             </div>
           </div>
           <p class="set-note dim" id="setSafety"></p>
+          <!-- The backstop under the save-as-you-go (state.js startAutosave). -->
+          <div class="set-row">
+            <label><span class="row-ic"></span><span data-t="set.autosave"></span></label>
+            <div class="seg" id="autosaveSeg">
+              <button data-autosave="4"></button>
+              <button data-autosave="5"></button>
+              <button data-autosave="6"></button>
+              <button data-autosave="10"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.autosaveHint"></p>
 
           <!-- A copy somewhere that is not this disk. Everything above protects
                a board from you; this protects it from the drive. Two rows:
@@ -903,6 +914,7 @@
       <h2 data-t="studio.title"></h2>
       <div class="st-tools" id="stTools">
         <button data-tool="crop" class="on" data-t-title="studio.crop"></button>
+        <button data-tool="adjust" data-t-title="studio.adjust"></button>
         <button data-tool="pen" data-t-title="studio.pen"></button>
         <button data-tool="marker" data-t-title="studio.marker"></button>
         <button data-tool="eraser" data-t-title="studio.eraser"></button>
@@ -926,6 +938,15 @@
           <span class="stc h sw"></span><span class="stc h se"></span>
         </div>
         <div id="stMarks"></div>
+      </div>
+      <!-- the Adjust tool's colours (2.10, js/media.js ST.adj) -->
+      <div class="st-adjust hidden" id="stAdjust">
+        <label><span data-t="studio.bright"></span><input type="range" id="stBright" min="0" max="200" step="1" data-t-aria="studio.bright"><output></output></label>
+        <label><span data-t="studio.contrast"></span><input type="range" id="stContrast" min="0" max="200" step="1" data-t-aria="studio.contrast"><output></output></label>
+        <label><span data-t="studio.saturation"></span><input type="range" id="stSat" min="0" max="200" step="1" data-t-aria="studio.saturation"><output></output></label>
+        <label><span data-t="studio.hue"></span><input type="range" id="stHue" min="-180" max="180" step="1" data-t-aria="studio.hue"><output></output></label>
+        <label class="st-gray"><input type="checkbox" id="stGray"><span data-t="studio.gray"></span></label>
+        <button class="btn small" id="stAdjReset"><span data-t="studio.adjReset"></span></button>
       </div>
     </div>
     <footer class="studio-foot">

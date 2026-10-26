@@ -539,6 +539,7 @@ function copySelection(cut) {
      has already happened as far as the board is concerned, and a clipboard
      permission prompt must not hold up the toast. */
   toSystemClipboard(itemsToText(items), itemsToHtml(items));
+  markInternalCopy('board');      // so a drawing note knows this is the newer copy (sketch.js onSketchPaste)
   toast(t(cut ? 'msg.cut' : 'msg.copied', { n: items.length }));
   if (cut) { pushUndo(); deleteItems(items.map((i) => i.id)); }
 }

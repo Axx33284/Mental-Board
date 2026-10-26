@@ -16,6 +16,10 @@
      strokes to move, recolour or delete; fingers move the board (one pans, two
      zoom, a two-finger tap undoes); a palm on the glass does nothing.
 
+     No pointer of its own (2.10): the S Pen shows its own small circle while it
+     hovers, and the computer leaves its ring out of the pictures it sends, so
+     there is one circle under the pen, not three.
+
      The three placeholders (the title, the nonce, the strings) are written
      in capitals between double underscores, and appear nowhere else in this
      file — tablet.js fills them by plain text replacement. -->
@@ -56,7 +60,6 @@
   #frame { flex: 1; position: relative; min-height: 0; touch-action: none; background: #181a21;
     margin: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   #frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #hoverDot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; border: 1.5px solid var(--accent); pointer-events: none; display: none; }
   #msg { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; color: var(--text);
     font-size: 15px; pointer-events: none; background: rgba(18, 19, 24, .72); }
   #msg.show { display: grid; }
@@ -82,7 +85,7 @@
   <button id="full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   <span id="status"><span class="dot"></span><span id="stText"></span><span id="rtt"></span></span>
 </div>
-<div id="frame"><canvas id="cv"></canvas><div id="hoverDot"></div><div id="msg"></div></div>
+<div id="frame"><canvas id="cv"></canvas><div id="msg"></div></div>
 <script nonce="__NONCE__">
 'use strict';
 const S = __STRINGS__;
@@ -96,6 +99,13 @@ const pen = { tool: 'pen', size: 1, color: 'text' };
 let fingerDraws = false;
 let readOnly = false, selCount = 0, regionW = 400, palette = [{ k: 'text', c: '#e8e9ee' }];
 const colorOf = (k) => (palette.find((p) => p.k === k) || palette[0]).c;
+/* The bar acts on the press, as the computer's bars do (helpers.js onPress):
+   an S Pen tap that slides a millimetre across a button still counts. Full
+   screen stays a click, because a browser only allows it from one. */
+function press(el, fn) {
+  el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse' && e.button !== 0) return; e.preventDefault(); fn(); });
+  el.addEventListener('click', (e) => { if (e.detail === 0) fn(); });     // the keyboard
+}
 function paintBar() {
   document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === pen.tool));
   document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('on', +b.dataset.size === pen.size));
@@ -113,7 +123,7 @@ function paintSwatches() {
     b.dataset.color = p.k;
     b.innerHTML = '<span class="sw"></span>';
     b.firstChild.style.setProperty('--c', p.c);
-    b.addEventListener('click', () => {
+    press(b, () => {
       if (pen.tool === 'select' && selCount) { send({ t: 'sel', act: 'color', color: p.k }); return; }
       pen.color = p.k;
       if (pen.tool === 'eraser' || pen.tool === 'select') setTool('pen');
@@ -130,11 +140,11 @@ function setTool(tool) {
   pen.tool = tool;
   paintBar();
 }
-document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
-document.querySelectorAll('[data-size]').forEach((b) => b.addEventListener('click', () => { pen.size = +b.dataset.size; paintBar(); }));
-$('undo').addEventListener('click', () => send({ t: 'undo' }));
-$('del').addEventListener('click', () => send({ t: 'sel', act: 'delete' }));
-$('fingers').addEventListener('click', () => { fingerDraws = !fingerDraws; paintBar(); });
+document.querySelectorAll('[data-tool]').forEach((b) => press(b, () => setTool(b.dataset.tool)));
+document.querySelectorAll('[data-size]').forEach((b) => press(b, () => { pen.size = +b.dataset.size; paintBar(); }));
+press($('undo'), () => send({ t: 'undo' }));
+press($('del'), () => send({ t: 'sel', act: 'delete' }));
+press($('fingers'), () => { fingerDraws = !fingerDraws; paintBar(); });
 $('full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else goFull(); });
 function goFull() {
   const d = document.documentElement;
@@ -216,21 +226,43 @@ function draw() {
     ctx.drawImage(shot.img, 0, 0, W, H);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  const all = mine.slice();
-  if (stroke && W_PX[stroke.tool]) all.push(stroke);
-  for (const s of all) {
-    if (!W_PX[s.tool]) continue;
-    ctx.globalAlpha = s.tool === 'marker' ? 0.38 : 1;
-    ctx.strokeStyle = s.color;
-    // the width it will land with: its size on the computer's screen, scaled from the region to this surface
-    ctx.lineWidth = W_PX[s.tool][s.size] * (W / regionW);
-    ctx.lineCap = s.tool === 'marker' ? 'square' : 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    s.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * W, y * H) : ctx.moveTo(x * W, y * H)));
-    if (s.pts.length === 1) ctx.lineTo(s.pts[0][0] * W + 0.01, s.pts[0][1] * H);
-    ctx.stroke();
-  }
+  for (const s of mine) drawStroke(s, null);
+  // the line under the pen, a few milliseconds ahead of it where the browser can predict the pen (2.10)
+  if (stroke) drawStroke(stroke, stroke.pred);
   ctx.globalAlpha = 1;
+}
+/* A line as the computer will draw it: through the midpoints of its points
+   (inkLinePath, js/ink.js), and a brush pressed harder drawn wider
+   (brushWidths) — so the picture that replaces it shows the same line.
+   `ahead` is the predicted points, drawn and never sent. */
+function drawStroke(s, ahead) {
+  const pts = ahead && ahead.length ? s.pts.concat(ahead) : s.pts;
+  if (!W_PX[s.tool] || !pts.length) return;
+  // the width it will land with: its size on the computer's screen, scaled from the region to this surface
+  const base = W_PX[s.tool][s.size] * (W / regionW);
+  const X = (q) => q[0] * W, Y = (q) => q[1] * H;
+  ctx.globalAlpha = s.tool === 'marker' ? 0.38 : 1;
+  ctx.strokeStyle = s.color;
+  ctx.lineCap = s.tool === 'marker' ? 'square' : 'round'; ctx.lineJoin = 'round';
+  if (s.tool === 'brush' && pts.length > 1 && pts.some((q) => q[2] > 0)) {
+    let w = base * (0.25 + Math.max(0, pts[0][2]) * 1.25);
+    for (let i = 1; i < pts.length; i++) {
+      w += (base * (0.25 + (pts[i][2] > 0 ? pts[i][2] : 0.5) * 1.25) - w) * 0.35;
+      ctx.lineWidth = Math.max(0.5, w);
+      ctx.beginPath(); ctx.moveTo(X(pts[i - 1]), Y(pts[i - 1])); ctx.lineTo(X(pts[i]), Y(pts[i])); ctx.stroke();
+    }
+    return;
+  }
+  ctx.lineWidth = base;
+  ctx.beginPath();
+  ctx.moveTo(X(pts[0]), Y(pts[0]));
+  if (pts.length === 1) ctx.lineTo(X(pts[0]) + 0.01, Y(pts[0]));
+  else if (pts.length === 2) ctx.lineTo(X(pts[1]), Y(pts[1]));
+  else {
+    for (let i = 1; i < pts.length - 1; i++) ctx.quadraticCurveTo(X(pts[i]), Y(pts[i]), (X(pts[i]) + X(pts[i + 1])) / 2, (Y(pts[i]) + Y(pts[i + 1])) / 2);
+    ctx.lineTo(X(pts[pts.length - 1]), Y(pts[pts.length - 1]));
+  }
+  ctx.stroke();
 }
 
 /* ---- the connection ---- */
@@ -296,13 +328,14 @@ const toolFor = (e) => (erasing(e) ? 'eraser' : pen.tool);
 
 function beginStroke(e, tool) {
   const p = norm(e);
-  stroke = { id: 's' + Date.now().toString(36) + (sid++), k: ++strokeK, pid: e.pointerId, tool, size: pen.size, color: colorOf(pen.color), pts: [[p.x, p.y]] };
+  stroke = { id: 's' + Date.now().toString(36) + (sid++), k: ++strokeK, pid: e.pointerId, tool, size: pen.size, color: colorOf(pen.color), pts: [[p.x, p.y, pressure(e)]], pred: null };
   send({ t: 'down', id: stroke.id, k: stroke.k, x: p.x, y: p.y, p: pressure(e), tool, size: pen.size, color: pen.color });
   paint();
 }
 function finishStroke() {
   if (!stroke) return;
   send({ t: 'up', id: stroke.id });
+  stroke.pred = null;
   if (W_PX[stroke.tool]) mine.push(stroke);
   stroke = null;
   paint();
@@ -314,7 +347,6 @@ frame.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   goFull();
   try { frame.setPointerCapture(e.pointerId); } catch (_) {}
-  $('hoverDot').style.display = 'none';
   beginStroke(e, toolFor(e));
 }, { passive: false });
 
@@ -329,8 +361,10 @@ frame.addEventListener('pointermove', (e) => {
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     const list = evs.length ? evs : [e];
     const pts = [];
-    for (const q of list) { const p = norm(q); pts.push(p.x, p.y, pressure(q)); stroke.pts.push([p.x, p.y]); }
+    for (const q of list) { const p = norm(q); pts.push(p.x, p.y, pressure(q)); stroke.pts.push([p.x, p.y, pressure(q)]); }
     send({ t: 'move', id: stroke.id, pts });
+    const ahead = e.getPredictedEvents ? e.getPredictedEvents() : [];
+    stroke.pred = ahead.length ? ahead.map((q) => { const p = norm(q); return [p.x, p.y, pressure(q)]; }) : null;
     paint();
     return;
   }
@@ -344,15 +378,13 @@ function endStroke(e) {
 }
 frame.addEventListener('pointerup', endStroke);
 frame.addEventListener('pointercancel', endStroke);
-frame.addEventListener('pointerleave', (e) => { if (e.pointerType === 'pen' && !stroke) { send({ t: 'leave' }); $('hoverDot').style.display = 'none'; } });
+frame.addEventListener('pointerleave', (e) => { if (e.pointerType === 'pen' && !stroke) send({ t: 'leave' }); });
 frame.addEventListener('contextmenu', (e) => e.preventDefault());
 
+// where the pen hovers goes to the computer's ring; here the S Pen shows its own pointer
 let hoverQ = null;
 function hover(e) {
   const p = norm(e);
-  const d = $('hoverDot');
-  d.style.display = 'block'; d.style.left = p.x * 100 + '%'; d.style.top = p.y * 100 + '%';
-  d.style.borderColor = erasing(e) ? '#ef6b6b' : '';
   if (!hoverQ) requestAnimationFrame(() => { send(Object.assign({ t: 'hover' }, hoverQ)); hoverQ = null; });
   hoverQ = p;
 }

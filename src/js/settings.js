@@ -554,6 +554,10 @@ function syncSettingsUI() {
   $('gridSize').disabled = !paper;
   $('gridFade').disabled = !paper;
   $('wheelSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.wheel === s.wheel));
+  $('autosaveSeg').querySelectorAll('button').forEach((b) => {
+    b.textContent = t('set.minutes', { n: num(+b.dataset.autosave) });
+    b.classList.toggle('on', +b.dataset.autosave === s.autosaveMin);
+  });
   $('zoomSpeed').value = s.zoomSpeed;
   $('zoomSpeedVal').textContent = pct(s.zoomSpeed);
   $('setGuides').checked = !!s.guides;

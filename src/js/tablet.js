@@ -144,13 +144,14 @@ function qrSvg(rows) {
    it, which is to say not where anybody was looking. `id` tells a stroke
    whether what it began on is still open. */
 function padHost() {
-  if (typeof sketchOpen === 'function' && sketchOpen()) {
-    const r = $('skStage').getBoundingClientRect();
-    return { kind: 'sketch', id: sk.n.id, r, v: sk.view };
-  }
+  // the picture editor first: since 2.10 it can be open over a drawing note
   if (ST.img && !$('studio').classList.contains('hidden')) {
     const r = $('studioStage').getBoundingClientRect();
     return { kind: 'studio', id: ST.target, r, v: ST.view };
+  }
+  if (typeof sketchOpen === 'function' && sketchOpen()) {
+    const r = $('skStage').getBoundingClientRect();
+    return { kind: 'sketch', id: sk.n.id, r, v: sk.view };
   }
   return { kind: 'board', id: state.activeBoard, r: vpRect(), v: state.view };
 }
@@ -195,12 +196,18 @@ async function padPump() {
   padShot.dirty = false;
   padShot.busy = true;
   padShot.last = performance.now();
+  /* The ring where the pen hovers is for this screen only. The phone has the
+     S Pen's own pointer, and a picture of this ring under it was a second
+     circle there (2.10) — so it is hidden while the picture is taken. */
+  const ring = $('padCursor');
+  if (ring) ring.style.visibility = 'hidden';
   // two frames, so what changed has been painted before main photographs it
   await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
   const r = padHost().r, p = padRect();
   const n = ++padShot.n;
   let res = null;
   try { res = await PAD.frame({ n, nav: padNav, k: padK, rect: { x: r.left + p.x, y: r.top + p.y, width: p.w, height: p.h } }); } catch (_) {}
+  if (ring) ring.style.visibility = '';
   if (!res || !res.sent) { padShot.busy = false; if (padShot.dirty) padDirty(); return; }
   // sent: wait for the phone to say it has it, but never for ever
   clearTimeout(padShot.wait);

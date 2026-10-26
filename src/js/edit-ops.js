@@ -570,6 +570,11 @@ async function toSystemClipboard(text, html) {
   return false;
 }
 
+// a picture onto the system clipboard (a copy in a drawing note, sketch.js); best effort, never throws
+async function toSystemClipboardImage(blob) {
+  try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); return true; } catch (_) { return false; }
+}
+
 /* --- the board as a picture ---------------------------------------------
    Everything on the board is already in world coordinates with a known
    bounding box, so a picture of it is one transform and a draw loop. What it

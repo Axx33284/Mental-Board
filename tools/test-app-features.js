@@ -1845,5 +1845,249 @@ module.exports = [
       ok(r.emptyOk, 'deleting every block leaves a line to type on');
       ok(r.hiddenTyping, 'typing puts the handle away');
     });
+  },
+
+  /* ---- 2.10: words, the clipboard and pictures edited inside a drawing note;
+     the autosave interval; ropes that stand still are not rewritten; the
+     phone's pictures carry no hover ring (MAP.md §4z8) ---- */
+  async ({ page, test, ok, BOARDS, fs, path }) => {
+    await test('2.10 words on a drawing note: typed where pressed, kept on disk, drawn on the board, found by search', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const b = makeBoard('Two-ten');
+        state.boards.push(b);
+        await switchBoard(b.id);
+        const n = addSketch({ x: 0, y: 0 });
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const svg = $('skSvg'), box = $('skStage').getBoundingClientRect();
+        const scr = (x, y) => ({ x: box.left + sk.view.x + x * sk.view.z, y: box.top + sk.view.y + y * sk.view.z });
+        const pe = (type, p) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 81, pointerType: 'mouse', clientX: p.x, clientY: p.y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 });
+        // T picks the text tool; a press on the paper opens a box there, with the caret in it
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', code: 'KeyT', bubbles: true }));
+        out.tool = state.settings.sketchPen.tool;
+        svg.dispatchEvent(pe('pointerdown', scr(40, 60))); window.dispatchEvent(pe('pointerup', scr(40, 60)));
+        const ta = document.querySelector('.sk-text-in');
+        out.box = !!ta && document.activeElement === ta;
+        ta.value = 'Due Friday\nask Sam';
+        // the drawing's letter keys are letters in the box, and Escape keeps the words
+        ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', code: 'KeyD', bubbles: true, cancelable: true }));
+        out.toolKept = state.settings.sketchPen.tool;
+        ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        out.open = sketchOpen();
+        out.texts = sk.texts.map((x) => [Math.round(x.x), Math.round(x.y), x.text]);
+        // a press on the words types in them; emptied, they go; undo brings them back
+        svg.dispatchEvent(pe('pointerdown', scr(50, 70))); window.dispatchEvent(pe('pointerup', scr(50, 70)));
+        const ta2 = document.querySelector('.sk-text-in');
+        out.editing = ta2 && ta2.value;
+        ta2.value = '';
+        closeSketchText(true);
+        out.emptied = sk.texts.length;
+        sketchUndo(true);
+        out.undone = sk.texts.length;
+        closeSketch();
+        await saveNow();
+        out.board = [...els.get(n.id).querySelectorAll('.sk-text')].map((x) => x.textContent);
+        out.search = noteText(n);
+        out.healed = okSketch({ title: '', strokes: [], texts: [
+          { x: 1, y: 2, size: 20, color: 'red', text: 'ok' }, { x: 'a', y: 0, text: 'bad' }, { x: 0, y: 0, text: '   ' },
+          { x: 0, y: 0, text: 5 }, { x: 0, y: 0, color: '<b>', text: 'c' }] }).texts;
+        out.id = n.id;
+        return out;
+      });
+      ok(r.tool === 'text', 'T picks the text tool: ' + r.tool);
+      ok(r.box, 'a press on the paper opens a focused box');
+      ok(r.toolKept === 'text', 'a letter typed in the box is not a tool key: ' + r.toolKept);
+      ok(r.open, 'Escape in the box keeps the words and leaves the drawing open');
+      ok(r.texts.length === 1 && r.texts[0][0] === 40 && r.texts[0][1] === 60 && r.texts[0][2] === 'Due Friday\nask Sam', 'the words, where pressed: ' + JSON.stringify(r.texts));
+      ok(r.editing === 'Due Friday\nask Sam', 'a press on the words types in them');
+      ok(r.emptied === 0 && r.undone === 1, 'emptied words go, undo brings them back');
+      ok(r.board.length === 1 && r.board[0].includes('Due Friday') && r.board[0].includes('ask Sam'), 'drawn on the board: ' + JSON.stringify(r.board));
+      ok(r.search.includes('ask Sam'), 'search finds the words: ' + JSON.stringify(r.search));
+      ok(r.healed.length === 2 && r.healed[1].color === 'text', 'nonsense off the disk is dropped: ' + JSON.stringify(r.healed));
+      const dir = fs.readdirSync(BOARDS).find((d) => d.startsWith('Two-ten'));
+      const note = JSON.parse(fs.readFileSync(path.join(BOARDS, dir, 'board.json'), 'utf8')).notes.find((x) => x.id === r.id);
+      ok(note && note.sketch.texts && note.sketch.texts[0].text === 'Due Friday\nask Sam', 'on disk');
+    });
+
+    await test('2.10 the clipboard in a drawing note: board notes come in as themselves, outside text as words, its own copy as itself, never onto the board', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const realImg = toSystemClipboardImage;
+        let imgs = 0;
+        toSystemClipboardImage = async () => { imgs++; return true; };     // never touch the real clipboard
+        toSystemClipboard = async () => {};
+        const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+        // a text note and a picture note, copied on the board
+        const tn = addNote({ x: 2000, y: 0 }, { body: '<h2>Plan</h2><p>one</p>', edit: false });
+        const c = document.createElement('canvas'); c.width = 200; c.height = 100; c.getContext('2d').fillRect(0, 0, 200, 100);
+        const pn = await addPicture({ x: 2400, y: 0 }, { url: c.toDataURL('image/png'), name: 'box.png' });
+        setSelection([tn.id, pn.id], false);
+        copySelection(false);
+        const n = addSketch({ x: 2000, y: 600 });
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const key = (code, o) => window.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: code.replace('Key', '').toLowerCase(), code, bubbles: true, cancelable: true }, o)));
+        const count = () => sk.pics.length + sk.texts.length + sk.strokes.length;
+        const notes0 = state.notes.length;
+        // Ctrl+V with no paste event behind it: the board's notes, as what they look like
+        key('KeyV', { ctrlKey: true });
+        await sleep(300);
+        out.fromBoard = { pics: sk.pics.length, texts: sk.texts.map((x) => x.text), sel: sk.sel.size, tool: state.settings.sketchPen.tool };
+        // plain text copied outside the app since: words on the page
+        sysClipAt = performance.now() + 1;
+        const dt = new DataTransfer(); dt.setData('text/plain', 'from outside');
+        document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+        out.outside = sk.texts.some((x) => x.text === 'from outside');
+        // Ctrl+A, Ctrl+C: the drawing's own copy, and a picture of it for other apps
+        key('KeyA', { ctrlKey: true });
+        const all = sk.sel.size;
+        key('KeyC', { ctrlKey: true });
+        await sleep(400);
+        out.copied = { all, clip: skClip && skClip.pics.length + skClip.texts.length + skClip.strokes.length, imgs };
+        // the drawing's copy is now the newest: a paste carrying older outside text pastes the copy
+        const c0 = count();
+        const dt2 = new DataTransfer(); dt2.setData('text/plain', 'stale');
+        document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt2, bubbles: true, cancelable: true }));
+        out.internal = { added: count() - c0, stale: sk.texts.some((x) => x.text === 'stale') };
+        // Ctrl+D duplicates the selection; Ctrl+X cuts it; one undo each
+        const c1 = count();
+        key('KeyD', { ctrlKey: true });
+        out.dup = count() - c1;
+        const c2 = count();
+        key('KeyX', { ctrlKey: true });
+        out.cut = c2 - count();
+        sketchUndo(true);
+        out.cutUndone = count() === c2;
+        out.boardUntouched = state.notes.length === notes0;
+        closeSketch();
+        out.bodyImgs = (n.body.match(/<img/g) || []).length === n.sketch.pics.length;
+        toSystemClipboardImage = realImg;
+        return out;
+      });
+      ok(r.fromBoard.pics === 1 && r.fromBoard.texts.includes('Plan\none'), 'a picture note is a picture, a text note its words: ' + JSON.stringify(r.fromBoard));
+      ok(r.fromBoard.sel === 2 && r.fromBoard.tool === 'select', 'what was pasted is selected, with the arrow out');
+      ok(r.outside, 'text from outside the app becomes words');
+      ok(r.copied.all === r.copied.clip && r.copied.all === 3 && r.copied.imgs === 1, 'Ctrl+A, Ctrl+C: all of it, and one picture for other apps: ' + JSON.stringify(r.copied));
+      ok(r.internal.added === 3 && !r.internal.stale, 'the newer copy wins: ' + JSON.stringify(r.internal));
+      ok(r.dup === 3 && r.cut === 3 && r.cutUndone, 'duplicate and cut: ' + JSON.stringify([r.dup, r.cut, r.cutUndone]));
+      ok(r.boardUntouched, 'nothing lands on the board behind the drawing');
+      ok(r.bodyImgs, 'every picture\'s file is in the note\'s body');
+    });
+
+    await test('2.10 a picture in a drawing note: edited over it in full screen — crop, black and white — Escape closes only the editor, undo takes it back', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+        const n = addSketch({ x: 2000, y: 1400 });
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const c = document.createElement('canvas'); c.width = 300; c.height = 200;
+        const g = c.getContext('2d');
+        ['#e33', '#3a3', '#33e'].forEach((col, i) => { g.fillStyle = col; g.fillRect(i * 100, 0, 100, 200); });
+        await sketchImport([{ name: 'bars.png', kind: 'image', ext: 'png', dataUrl: c.toDataURL('image/png') }], { x: 0, y: 0 });
+        const p0 = sk.pics[0];
+        state.settings.sketchPen = healSketchPen({ tool: 'select', color: 'text', size: 1 }); buildSketchBar();
+        sk.sel = new Set([p0]); drawSketchStrokes();
+        const btn = $('skBar').querySelector('[data-sk="editpic"]');
+        out.enabled = !btn.disabled;
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }));
+        await sleep(500);
+        out.inside = !$('studio').classList.contains('hidden') && $('studio').parentNode === $('sketchDlg');
+        out.phoneOn = padHost().kind;
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        out.escape = { studio: $('studio').classList.contains('hidden'), sketch: sketchOpen(), home: $('studio').parentNode === document.body };
+        editSketchPicture(sk.pics[0]);
+        await sleep(500);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', code: 'KeyJ', bubbles: true, cancelable: true }));
+        out.adjust = ST.tool === 'adjust' && !$('stAdjust').classList.contains('hidden');
+        // a slider dragged is one undo step and keeps where it was dragged to
+        const steps0 = ST.undo.length, sat = $('stSat');
+        sat.value = 40; sat.dispatchEvent(new Event('input'));
+        sat.value = 30; sat.dispatchEvent(new Event('input')); sat.dispatchEvent(new Event('change'));
+        out.slider = { s: ST.adj.s, shown: sat.value, steps: ST.undo.length - steps0 };
+        studioUndo(true);
+        out.sliderUndone = ST.adj.s;
+        $('stGray').click();
+        studioStep(); ST.crop = { x: 0, y: 0, w: 150, h: 200 };
+        applyStudio();
+        await sleep(1200);
+        const p1 = sk.pics[0];
+        out.after = { w: p1.w, h: p1.h, edited: /edited/.test(p1.url) && p1.url !== p0.url, body: n.body.includes(p1.url.replace(/&/g, '&amp;')) };
+        const img = new Image(); img.src = await toDataUrl(p1.url); await img.decode();
+        const k = document.createElement('canvas'); k.width = img.naturalWidth; k.height = img.naturalHeight;
+        const kg = k.getContext('2d'); kg.drawImage(img, 0, 0);
+        const px = kg.getImageData(10, 10, 1, 1).data;
+        out.size = [img.naturalWidth, img.naturalHeight];
+        out.gray = Math.abs(px[0] - px[1]) < 4 && Math.abs(px[1] - px[2]) < 4;
+        sketchUndo(true);
+        out.undone = sk.pics[0].url === p0.url && sk.pics[0].h === p0.h;
+        closeSketch();
+        return out;
+      });
+      ok(r.enabled, 'Edit picture is on with one picture selected');
+      ok(r.inside, 'the picture editor opens inside the full-screen drawing');
+      ok(r.phoneOn === 'studio', 'a paired phone draws in the picture editor while it is open: ' + r.phoneOn);
+      ok(r.escape.studio && r.escape.sketch && r.escape.home, 'Escape closes the editor, not the drawing: ' + JSON.stringify(r.escape));
+      ok(r.adjust, 'J is the colours tool, and its panel shows');
+      ok(r.slider.s === 30 && r.slider.shown === '30' && r.slider.steps === 1 && r.sliderUndone === 100, 'a slider drag is one step and stays put: ' + JSON.stringify([r.slider, r.sliderUndone]));
+      ok(r.after.edited && r.after.w === 300 && r.after.h === 400 && r.after.body, 'the edited copy takes its place, the width kept and the shape the crop\'s: ' + JSON.stringify(r.after));
+      ok(r.size[0] === 150 && r.size[1] === 200 && r.gray, 'cropped and black and white in the pixels: ' + JSON.stringify([r.size, r.gray]));
+      ok(r.undone, 'one undo puts the original back');
+    });
+
+    await test('2.10 the autosave interval is a setting: 4, 5, 6 or 10 minutes, kept, and anything else is 5', async () => {
+      const r = await page(async () => {
+        const t0 = autosaveTimer;
+        $('autosaveSeg').querySelector('[data-autosave="6"]').click();
+        const out = { set: state.settings.autosaveMin, restarted: autosaveTimer !== t0, on: $('autosaveSeg').querySelector('.on').dataset.autosave,
+          label: $('autosaveSeg').querySelector('[data-autosave="10"]').textContent };
+        await saveNow();
+        out.payload = settingsPayload().settings.autosaveMin;
+        out.choices = AUTOSAVE_MINUTES.join(',');
+        $('autosaveSeg').querySelector('[data-autosave="5"]').click();
+        return out;
+      });
+      ok(r.set === 6 && r.on === '6' && r.restarted, 'chosen, shown, and the clock restarted: ' + JSON.stringify(r));
+      ok(r.payload === 6, 'kept with the settings');
+      ok(r.choices === '4,5,6,10' && /10/.test(r.label), 'the four choices, labelled: ' + r.label);
+      const st = fs.readFileSync(path.join(BOARDS, 'settings.json'), 'utf8');
+      ok(/"autosaveMin":\s*[56]/.test(st), 'on disk');
+    });
+
+    await test('2.10 a pan rewrites no rope that did not move; a moved note\'s rope does follow', async () => {
+      const r = await page(async () => {
+        const a = addNote({ x: 6000, y: 0 }, { edit: false }), b = addNote({ x: 6600, y: 300 }, { edit: false });
+        state.links.push({ id: uid(), from: a.id, to: b.id });
+        state.view = { x: -5800, y: 100, z: 1 }; applyView(); drawLinks();
+        const writes = [];
+        const mo = new MutationObserver((m) => writes.push(...m));
+        mo.observe($('linksInner'), { attributes: true, subtree: true });
+        for (let i = 0; i < 5; i++) { state.view.x -= 10; applyView(); drawLinks(); }
+        await new Promise((res) => setTimeout(res, 0));
+        const still = writes.length;
+        a.x += 40; drawLinks(new Set([a.id]));
+        await new Promise((res) => setTimeout(res, 0));
+        mo.disconnect();
+        return { still, moved: writes.length - still };
+      });
+      ok(r.still === 0, 'standing ropes are left alone on a pan: ' + r.still + ' attribute writes');
+      ok(r.moved > 0, 'a moved note\'s rope is redrawn');
+    });
+
+    await test('2.10 the hover ring is on this screen and never in the pictures the phone is sent', async () => {
+      const r = await page(async () => {
+        const was = padInfo;
+        padInfo = { state: 'connected' };
+        showPadCursor(0.5, 0.5);
+        padShot.busy = false; padShot.dirty = true;
+        const going = padPump();
+        await new Promise((res) => requestAnimationFrame(res));
+        const during = $('padCursor').style.visibility;
+        await going;
+        const after = $('padCursor').style.visibility;
+        hidePadCursor();
+        padInfo = was; padShot.busy = false;
+        return { during, after };
+      });
+      ok(r.during === 'hidden' && r.after === '', 'hidden while the picture is taken, back after: ' + JSON.stringify(r));
+    });
   }
 ];

@@ -587,6 +587,9 @@ window.MB_LANG.ar = {
   'set.backup': 'مرآة على قرص آخر',
   'set.backupNow': 'انسخ الآن',
   'set.backupFolder': 'اختر مجلدًا…',
+  'set.autosave': 'حفظ كل شيء كل',
+  'set.minutes': '{n} دقائق',
+  'set.autosaveHint': 'كل تغيير يُحفظ أصلًا خلال ثانية أو ثانيتين. هذه شبكة أمان إضافية، وهي تحفظ أيضًا ملاحظة الرسم المفتوحة.',
   'set.backupAuto': 'نسخة واحدة يوميًا عند تشغيل التطبيق',
   'set.backupWhere': 'تُحفظ النسخ في {dir}',
   'set.backupLast': 'آخر نسخة {when}',
@@ -743,6 +746,14 @@ window.MB_LANG.ar = {
   'studio.hint.box': 'اسحب لرسم مستطيل.',
   'studio.hint.arrow': 'اسحب للإشارة إلى شيء ما.',
   'studio.hint.text': 'انقر حيث تريد الملاحظة ثم اكتب.',
+  'studio.adjust': 'الألوان — السطوع والتباين والتشبع (J)',
+  'studio.hint.adjust': 'حرّك شريط التمرير لتغيير ألوان الصورة كلها. «تطبيق» يحفظها، والتراجع يلغي التغيير.',
+  'studio.bright': 'السطوع',
+  'studio.contrast': 'التباين',
+  'studio.saturation': 'التشبع',
+  'studio.hue': 'تدرج اللون',
+  'studio.gray': 'أبيض وأسود',
+  'studio.adjReset': 'إعادة الألوان',
   'studio.notePlaceholder': 'ملاحظة…',
 
   /* ---- dialogs ---- */
@@ -1165,6 +1176,9 @@ window.MB_LANG.ar = {
   'sketch.picsFull': 'هذا الرسم يحمل أكبر عدد ممكن من الصور.',
   'sketch.select': 'تحديد ونقل (V) — Shift للإضافة، Delete للحذف، اسحب زاوية الصورة لتغيير حجمها',
   'sketch.cannotHold': 'ملاحظة الرسم تحمل الصور وملفات PDF فقط — لا: {names}. احفظها بصيغة PDF أولًا.',
+  'sketch.text': 'نص (T) — انقر واكتب، وEscape يحفظه',
+  'sketch.textsFull': 'هذا الرسم يحمل أكبر قدر ممكن من النص.',
+  'sketch.editPic': 'تحرير الصورة المحددة — قص وألوان وعلامات (Enter)',
   'sketch.pictureIn': 'أصبحت الصورة تحت الرسم.',
 
   /* ---- قواعد البيانات (2.8) ---- */
