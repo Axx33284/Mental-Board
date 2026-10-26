@@ -2,7 +2,7 @@
 
 ## Read `MAP.md` first
 
-The app is `src/js/*.js` (26 scripts) and `src/css/*.css` (9 sheets), with
+The app is `src/js/*.js` (28 scripts) and `src/css/*.css` (9 sheets), with
 `src/main.js`, `src/store.js` (the My Boards folder), `src/sdocx.js` (Samsung
 Notes files) and `src/preload.js`. `MAP.md`
 §4 and §5 say which file holds what — use them instead of grepping the whole
