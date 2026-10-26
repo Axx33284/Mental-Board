@@ -233,7 +233,13 @@ function ghostBlocks(html) {
   return out;
 }
 
-function noteGhost(n) {
+/* The ghost as geometry (2.11): every bar as { x, y, w, h, a } in px from the
+   ghost's own top-left — `a` is which of --gc0..3 it wears — and a line of
+   words carries `words`, the start and end of each word along the line, and
+   `rtl` when they run from the right. Two things draw it: noteGhost() below
+   turns it into the background layers of a DOM stub, and the far-zoom canvas
+   (far.js) fills the same rectangles, so the two cannot drift apart. */
+function ghostBars(n) {
   const s = state.settings || {};
   const fs = (s.fontScale || 100) / 100;
   const small = document.body.classList.contains('small-text');
@@ -241,17 +247,17 @@ function noteGhost(n) {
   const pad = ((state.settings || {}).notePad || PAD_PRESETS.cosy).l;
   const key = `${n.w}|${n.h}|${fs}|${small}|${face}|${pad}|${!!n.icon}|${document.body.dataset.cork || ''}`;
   const hit = ghostCache.get(n.id);
-  if (hit && hit.body === n.body && hit.key === key) return hit.css;
+  if (hit && hit.body === n.body && hit.key === key) return hit;
 
   const f = (small ? 12 : 14) * fs;               // the body's font size, world px
   const em = GHOST_CH[face] || .5;
   const x0 = pad, W = Math.max(8, n.w - pad * 2);
   const H = n.h - pad - 12;                        // leave the bottom padding and the pill row
   let y = pad - 2 + 6 + (/cork|wood/.test(document.body.dataset.cork || '') ? 8 : 0);
-  const layers = [];
+  const bars = [];
   const bar = (x, yy, w, h, a) => {
     if (yy + h > H || w < 1) return false;
-    layers.push(`linear-gradient(var(--gc${a}),var(--gc${a})) ${x.toFixed(1)}px ${yy.toFixed(1)}px/${w.toFixed(1)}px ${h.toFixed(1)}px no-repeat`);
+    bars.push({ x, y: yy, w, h, a });
     return true;
   };
   if (n.icon) { bar(x0 - 4, pad - 4, 30, 30, 2); y = pad - 4 + 32; }
@@ -262,11 +268,11 @@ function noteGhost(n) {
 
   let codeTop = -1;
   const blocks = ghostBlocks(n.body || '');
-  for (let bi = 0; bi < blocks.length && y < H && layers.length < 40; bi++) {
+  for (let bi = 0; bi < blocks.length && y < H && bars.length < 40; bi++) {
     const b = blocks[bi];
     if (b.k === 'code-start') { codeTop = y; y += .3 * f; continue; }
     if (b.k === 'code-end') {
-      if (codeTop >= 0) layers.push(`linear-gradient(var(--gc0),var(--gc0)) ${x0}px ${codeTop.toFixed(1)}px/${W}px ${(y - codeTop + .3 * f).toFixed(1)}px no-repeat`);
+      if (codeTop >= 0) bars.push({ x: x0, y: codeTop, w: W, h: y - codeTop + .3 * f, a: 0 });
       codeTop = -1; y += .9 * f; continue;
     }
     if (b.k === 'hr') { y += .85 * f; bar(x0, y, W, Math.max(1, f * .08), 0); y += .85 * f; continue; }
@@ -289,10 +295,10 @@ function noteGhost(n) {
     if (b.k === 'li') bar(mx(x0 + .45 * f, f * .28), y + lh / 2 - f * .14, f * .28, f * .28, 2);
     if (b.k === 'todo') bar(mx(x0 + .2 * f, f * .72), y + lh / 2 - f * .36, f * .72, f * .72, b.done ? 3 : 1);
     /* Wrap the real words at the note's width, then draw each line as **one**
-       layer: a gradient with a hard-edged stop pair per word, so the gaps fall
-       where the spaces are. That is what makes it read as text from across
-       the room rather than as a rule — the eye picks up word shapes long
-       before it can read a letter — and it costs no more than a plain bar. */
+       bar with the words marked along it, so the gaps fall where the spaces
+       are. That is what makes it read as text from across the room rather
+       than as a rule — the eye picks up word shapes long before it can read a
+       letter — and in CSS it costs no more than a plain bar. */
     const cw = em * fz, sp = cw * .62;            // one character, one space
     const lines = [];
     let line = [], used = 0;
@@ -310,27 +316,46 @@ function noteGhost(n) {
     for (const words of lines) {
       if (words.length) {
         let x = 0;
-        const stops = [];
-        const c = `var(--gc${alpha})`;
+        const marks = [];
         words.forEach((wl, i) => {
           const w = wl * cw * (.9 + wob() * .2 - .1);
-          if (i) { stops.push(`transparent ${x.toFixed(1)}px ${(x + sp).toFixed(1)}px`); x += sp; }
-          stops.push(`${c} ${x.toFixed(1)}px ${(x + w).toFixed(1)}px`);
+          if (i) x += sp;
+          marks.push(x, x + w);
           x += w;
         });
         const w = Math.min(bw - lead * cw, x);
         const bx = mx(x0 + ind + lead * cw, w);
         const yy = y + (lh - th) / 2;
         if (yy + th > H) { y = H; break; }
-        layers.push(`linear-gradient(${b.rtl ? 'to left' : 'to right'},${stops.join(',')}) ${bx.toFixed(1)}px ${yy.toFixed(1)}px/${w.toFixed(1)}px ${th.toFixed(1)}px no-repeat`);
+        bars.push({ x: bx, y: yy, w, h: th, a: alpha, words: marks, rtl: b.rtl });
       }
       y += lh;
     }
   }
-  const css = layers.join(',');
+  const g = { body: n.body, key, bars, css: null };
   if (ghostCache.size > GHOST_MAX) ghostCache.clear();
-  ghostCache.set(n.id, { body: n.body, key, css });
-  return css;
+  ghostCache.set(n.id, g);
+  return g;
+}
+
+/* The ghost as the background of a DOM stub's one `.note-ghost` element: a
+   layer per bar, and for a line of words one gradient with a hard-edged stop
+   pair per word. */
+function noteGhost(n) {
+  const g = ghostBars(n);
+  if (g.css == null) g.css = g.bars.map(ghostLayer).join(',');
+  return g.css;
+}
+function ghostLayer(b) {
+  const box = `${b.x.toFixed(1)}px ${b.y.toFixed(1)}px/${b.w.toFixed(1)}px ${b.h.toFixed(1)}px no-repeat`;
+  const c = `var(--gc${b.a})`;
+  if (!b.words) return `linear-gradient(${c},${c}) ${box}`;
+  const stops = [];
+  for (let i = 0; i < b.words.length; i += 2) {
+    if (i) stops.push(`transparent ${b.words[i - 1].toFixed(1)}px ${b.words[i].toFixed(1)}px`);
+    stops.push(`${c} ${b.words[i].toFixed(1)}px ${b.words[i + 1].toFixed(1)}px`);
+  }
+  return `linear-gradient(${b.rtl ? 'to left' : 'to right'},${stops.join(',')}) ${box}`;
 }
 
 // the icon shown on a note: a badge above the text, Notion-style
@@ -883,6 +908,7 @@ function clearSelection() { selection = new Set(); syncSelectionClasses(); }
 function syncSelectionClasses() {
   els.forEach((el, id) => el.classList.toggle('selected', selection.has(id)));
   drawHotRopes();         // a selected note shows its ropes above the notes
+  requestFar();           // and a note on the far-zoom canvas its ring (far.js)
 }
 function selectedItems() { return [...selection].map(itemById).filter(Boolean); }
 

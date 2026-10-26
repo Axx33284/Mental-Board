@@ -96,6 +96,7 @@ const CUSTOM_VAR_NAMES = Object.keys(customVars({ mode: 'dark', bg: '#000000', s
 
 function applyTheme() {
   minimapThemeChanged();            // the map reads the note colours from the theme
+  if (typeof forgetFarPalette === 'function') forgetFarPalette();   // and so does the far-zoom canvas (far.js)
   const t = resolvedTheme();
   const root = document.documentElement;
   /* A custom theme is CSS variables written straight onto the root; every other
@@ -313,6 +314,7 @@ function resolvedPerf() {
 
 function applySettings() {
   const s = state.settings;
+  if (typeof forgetFarPalette === 'function') forgetFarPalette();   // rope colour, paper, corners (far.js)
   forgetVpRect();           // the rail or focus mode may move the canvas
   applyLinkStyle();
   /* One attribute on <body>; css/later.css §31 does the rest, and view.js reads

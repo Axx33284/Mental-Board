@@ -87,10 +87,15 @@ function onPointerDown(e) {
   const frameTitle = e.target.closest('.frame-title');
   const frameEl = e.target.closest('.frame');
   const rz = e.target.closest('.rz');
+  /* A note on the far-zoom canvas has no element, so the press landed on the
+     board behind it; ask the canvas what it drew there (far.js). Everything
+     below needs only the note's id. */
+  const farNote = !noteEl && !rz && !frameTitle ? farNoteAt(e.clientX, e.clientY) : null;
+  const noteId = noteEl ? noteEl.dataset.id : farNote ? farNote.id : null;
 
   // link mode swallows the click
   if (linkFrom) {
-    if (noteEl) { finishLinking(noteEl.dataset.id); e.preventDefault(); return; }
+    if (noteId) { finishLinking(noteId); e.preventDefault(); return; }
     cancelLinking();
     return;
   }
@@ -107,6 +112,9 @@ function onPointerDown(e) {
      Shift still lassos, so a selection can be started on top of a rope. */
   const rope = e.target.closest('.lk-hit');
   if (rope && !e.shiftKey) { e.preventDefault(); followRope(rope.dataset.id, e.clientX, e.clientY); return; }
+  // and one on the far-zoom canvas, where nothing is drawn over it
+  const farRope = !rope && !noteId && !rz && !frameTitle && !e.shiftKey ? farRopeAt(e.clientX, e.clientY) : null;
+  if (farRope) { e.preventDefault(); followRope(farRope.id, e.clientX, e.clientY); return; }
 
   if (rz) {
     const host = rz.closest('.note, .frame');
@@ -115,10 +123,10 @@ function onPointerDown(e) {
 
   if (frameTitle && frameTitle.classList.contains('renaming')) return;   // let the caret work
 
-  if (noteEl) {
-    const id = noteEl.dataset.id;
+  if (noteId) {
+    const id = noteId;
     const inBody = e.target.closest('.note-body');
-    if (noteEl.classList.contains('editing') && inBody) return;   // let the caret work
+    if (noteEl && noteEl.classList.contains('editing') && inBody) return;   // let the caret work
     if (e.shiftKey) { toggleSelection(id); return; }
     if (editing && editNote && editNote.id !== id) exitEdit();
     e.preventDefault();
@@ -177,6 +185,9 @@ function onDblClick(e) {
     return;
   }
   if (hit.closest('.rz')) return;
+  // a note on the far-zoom canvas opens the same way (far.js)
+  const farNote = hit.closest('.frame-title') ? null : farNoteAt(e.clientX, e.clientY);
+  if (farNote) { enterEdit(farNote); return; }
   addNote(toWorld(e.clientX, e.clientY));
 }
 
@@ -205,6 +216,13 @@ function onContextMenu(e) {
   if (noteEl) { openCtxMenu(e.clientX, e.clientY, noteEl.dataset.id); return; }
   const rope = hit.closest('.lk-hit');
   if (rope) { openRopeMenu(e.clientX, e.clientY, rope.dataset.id); return; }
+  // what the far-zoom canvas drew there, which has no element to hit (far.js)
+  if (!hit.closest('.frame-title, .rz')) {
+    const farNote = farNoteAt(e.clientX, e.clientY);
+    if (farNote) { openCtxMenu(e.clientX, e.clientY, farNote.id); return; }
+    const farRope = farRopeAt(e.clientX, e.clientY);
+    if (farRope) { openRopeMenu(e.clientX, e.clientY, farRope.id); return; }
+  }
   // frames are pointer-events:none so a lasso can reach through them — hit-test
   // them by geometry instead, which also makes their whole area right-clickable
   const f = frameAt(toWorld(e.clientX, e.clientY));

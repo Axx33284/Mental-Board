@@ -2089,5 +2089,175 @@ module.exports = [
       });
       ok(r.during === 'hidden' && r.after === '', 'hidden while the picture is taken, back after: ' + JSON.stringify(r));
     });
+  },
+
+  /* ---- 2.11: the far-zoom canvas (far.js, MAP.md §4c) ----
+     Below FAR_Z a big board is one <canvas>, not thousands of DOM stubs. What
+     can break: notes still mounted (the stall comes back), a press that finds
+     nothing (the board goes dead at far zoom), and a small board or a lighter
+     tier drawn differently from before. Each of these was checked by breaking
+     it: mounting stubs again fails the first, dropping farNoteAt() from the
+     pointer routing fails the second. */
+  async ({ page, test, ok, sleep }) => {
+    await page(async () => {
+      confirmDlg = async () => true;
+      const b = makeBoard('Far');
+      // well over the culling threshold on every tier: rows of notes, each tied to its neighbour
+      const COLS = 20, N = Math.max(160, CULL_MIN.full * 3);
+      for (let i = 0; i < N; i++) {
+        b.notes.push({ id: 'f' + i, x: (i % COLS) * 400, y: Math.floor(i / COLS) * 360, w: 260, h: 200, z: i + 1,
+          color: COLORS[i % COLORS.length], status: i % 3 ? '' : 'done', body: `<h3>note ${i}</h3><p>words on the far zoom canvas ${i}</p>` });
+      }
+      for (let i = 0; i + 1 < N; i++) if ((i + 1) % COLS) b.links.push({ id: 'fl' + i, from: 'f' + i, to: 'f' + (i + 1) });
+      state.boards.push(b);
+      await switchBoard(b.id);
+      // straight ropes from the facing edges, so a rope's middle is in the gap; no guides to nudge a drag
+      window.__farWas = { style: state.settings.linkStyle, anchor: state.settings.linkAnchor, guides: state.settings.guides };
+      state.settings.linkStyle = 'straight'; state.settings.linkAnchor = 'edge'; state.settings.guides = false; applySettings();
+      window.__farSee = (z) => {
+        const r = vpRect();
+        state.view = { z, x: r.width / 2 - 2000 * z, y: r.height / 2 - 1500 * z };
+        applyView();
+        lastScaleAt = 0;              // as if the wheel had been still for a while
+        syncMounted();
+      };
+      window.__farAt = (id, fx, fy) => {
+        const n = state.notes.find((x) => x.id === id), r = vpRect();
+        const s = toScreen(n.x + n.w * (fx == null ? .5 : fx), n.y + n.h * (fy == null ? .5 : fy));
+        return { x: s.x + r.left, y: s.y + r.top };
+      };
+      window.__farPress = (type, p, extra) => {
+        const t = type === 'pointerdown' ? $('viewport') : window;
+        t.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: p.x, clientY: p.y, pointerId: 11 }, extra || {})));
+      };
+    });
+
+    await test('2.11 below FAR_Z a big board is one canvas: no note and no rope in the document, every note on screen drawn', async () => {
+      const r = await page(() => {
+        __farSee(FAR_Z[document.body.dataset.perf] * .5);
+        drawFar();
+        const notes = [...els.values()].filter((el) => el.classList.contains('note')).length;
+        const cv = $('farCanvas'), ctx = cv.getContext('2d'), dpr = cv.width / vpRect().width;
+        const p = __farAt('f45', .5, .1), r = vpRect();
+        const px = ctx.getImageData(Math.round((p.x - r.left) * dpr), Math.round((p.y - r.top) * dpr), 1, 1).data;
+        return { far: farMode, shown: farShown, notes, ropes: linkEls.size, svg: $('linksInner').childElementCount, alpha: px[3], ms: farLastDraw };
+      });
+      ok(r.far && r.shown, 'far zoom with the canvas showing: ' + JSON.stringify(r));
+      ok(r.notes === 0 && r.ropes === 0 && r.svg === 0, 'nothing mounted: ' + JSON.stringify(r));
+      ok(r.alpha > 200, 'the note is painted on the canvas: alpha ' + r.alpha);
+    });
+
+    await test('2.11 at far zoom a press selects and drags a canvas note, Shift adds one, and none of it mounts them', async () => {
+      const r = await page(() => {
+        clearSelection();
+        const n = state.notes.find((x) => x.id === 'f45'), x0 = n.x, y0 = n.y, z = state.view.z;
+        const p = __farAt('f45');
+        __farPress('pointerdown', p);
+        __farPress('pointermove', { x: p.x + 20, y: p.y + 10 });
+        __farPress('pointermove', { x: p.x + 40, y: p.y + 20 });
+        __farPress('pointerup', { x: p.x + 40, y: p.y + 20 });
+        const moved = { dx: Math.round((n.x - x0) * z), dy: Math.round((n.y - y0) * z) };
+        const sel1 = [...selection];
+        __farPress('pointerdown', __farAt('f48'), { shiftKey: true });
+        __farPress('pointerup', __farAt('f48'), { shiftKey: true });
+        syncMounted();
+        return { moved, sel1, sel2: [...selection].sort(), mounted: els.has('f45') || els.has('f48') };
+      });
+      ok(r.sel1.length === 1 && r.sel1[0] === 'f45', 'selected by a press: ' + r.sel1);
+      ok(Math.abs(r.moved.dx - 40) <= 2 && Math.abs(r.moved.dy - 20) <= 2, 'dragged with the pointer: ' + JSON.stringify(r.moved));
+      ok(r.sel2.join() === 'f45,f48', 'Shift adds: ' + r.sel2);
+      ok(!r.mounted, 'still drawn on the canvas, not mounted');
+    });
+
+    await test('2.11 at far zoom the lasso, the right-click menu and a double-click reach canvas notes', async () => {
+      const r = await page(() => {
+        const out = {};
+        // the lasso, from the gap between rows to the far side of two notes
+        const a = __farAt('f61', -.05, -.05), b = __farAt('f62', .5, .5);
+        __farPress('pointerdown', a); __farPress('pointermove', b); __farPress('pointerup', b);
+        out.lasso = [...selection].sort();
+        // right-click
+        const p = __farAt('f63');
+        $('viewport').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: p.x, clientY: p.y }));
+        out.menu = !$('ctxMenu').classList.contains('hidden');
+        out.acts = [...document.querySelectorAll('#ctxMenu .cm-item')].map((x) => x.dataset.act);
+        out.menuSel = [...selection];
+        closeCtxMenu();
+        // double-click opens it to type in, mounted and pinned while it is open
+        $('viewport').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y }));
+        out.edit = editNote && editNote.id;
+        out.editing = !!(els.get('f63') && els.get('f63').classList.contains('editing'));
+        syncMounted();
+        out.kept = els.has('f63');
+        exitEdit(); syncMounted();
+        out.after = els.has('f63');
+        return out;
+      });
+      ok(r.lasso.join() === 'f61,f62', 'the lasso took the two notes in its box: ' + r.lasso);
+      ok(r.menu && r.acts.includes('icon') && r.acts.includes('del') && r.menuSel[0] === 'f63', 'the note\'s own menu: ' + JSON.stringify(r));
+      ok(r.edit === 'f63' && r.editing && r.kept, 'double-click edits it, and the sweep keeps it: ' + JSON.stringify(r));
+      ok(!r.after, 'closed, it goes back to the canvas');
+    });
+
+    await test('2.11 at far zoom a rope on the canvas is followed by a press and has its own right-click menu', async () => {
+      const r = await page(async () => {
+        clearSelection();
+        // the straight rope f80 → f81 crosses the gap between them
+        const a = state.notes.find((x) => x.id === 'f80'), rr = vpRect();
+        const s = toScreen(a.x + a.w + 40, a.y + a.h / 2), p = { x: s.x + rr.left, y: s.y + rr.top };
+        const hit = farRopeAt(p.x, p.y);
+        $('viewport').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: p.x, clientY: p.y }));
+        const goes = [...document.querySelectorAll('#ctxMenu .cm-go')].map((x) => x.dataset.note).sort();
+        const icon = !!document.querySelector('#ctxMenu [data-act="icon"]');
+        closeCtxMenu();
+        __farPress('pointerdown', p); __farPress('pointerup', p);
+        await new Promise((res) => setTimeout(res, 900));
+        return { hit: hit && hit.id, goes, icon, sel: [...selection], z: state.view.z };
+      });
+      ok(r.hit === 'fl80', 'the hit test finds the rope: ' + r.hit);
+      ok(r.goes.join() === 'f80,f81' && !r.icon, 'the rope menu, not the note menu: ' + JSON.stringify(r));
+      ok(r.sel.length === 1 && r.sel[0] === 'f81', 'flew to the far end: ' + r.sel);
+    });
+
+    await test('2.11 leaving far zoom mounts the notes back a few a frame, and the canvas goes when they are all in', async () => {
+      const r = await page(async () => {
+        __farSee(FAR_Z[document.body.dataset.perf] * .5);
+        __farSee(1);
+        const first = [...els.values()].filter((el) => el.classList.contains('note')).length;
+        for (let i = 0; i < 240 && farShown; i++) await new Promise((res) => requestAnimationFrame(res));
+        const v = state.view, vr = vpRect();
+        const V = { x0: -v.x / v.z, y0: -v.y / v.z, x1: (vr.width - v.x) / v.z, y1: (vr.height - v.y) / v.z };
+        const onScreen = state.notes.filter((n) => inRect(n, V));
+        const missing = onScreen.filter((n) => !els.has(n.id) || els.get(n.id).dataset.stub).map((n) => n.id);
+        return { first, want: onScreen.length, missing, shown: farShown, far: farMode, ropes: linkEls.size };
+      });
+      ok(!r.far && !r.shown, 'out of far zoom, canvas gone: ' + JSON.stringify(r));
+      ok(r.want > 0 && !r.missing.length && r.ropes > 0, 'every note on screen is a finished note again, the ropes are SVG: ' + JSON.stringify(r));
+    });
+
+    await test('2.11 a small board is untouched by it, and the Light tier starts it at its own FAR_Z', async () => {
+      const r = await page(async () => {
+        const out = {};
+        const was = state.settings.perf;
+        state.settings.perf = 'lite'; applySettings(); updateCulling();
+        __farSee(FAR_Z.lite - .05);
+        out.lite = { far: farMode, shown: farShown, notes: [...els.values()].filter((el) => el.classList.contains('note')).length };
+        __farSee(FAR_Z.lite + .05);
+        out.liteAbove = { far: farMode };
+        state.settings.perf = was; applySettings();
+        // a board under cullMin(): same zoom, every note mounted, no canvas
+        const s = makeBoard('Small far');
+        for (let i = 0; i < 8; i++) s.notes.push({ id: 's' + i, x: i * 300, y: 0, w: 240, h: 160, z: 1, color: 'default', body: '<p>s</p>' });
+        state.boards.push(s);
+        await switchBoard(s.id);
+        __farSee(.1);
+        out.small = { culling, far: farMode, shown: farShown, notes: [...els.values()].filter((el) => el.classList.contains('note')).length };
+        state.settings.linkStyle = __farWas.style; state.settings.linkAnchor = __farWas.anchor; state.settings.guides = __farWas.guides; applySettings();
+        return out;
+      });
+      ok(r.lite.far && r.lite.shown && r.lite.notes === 0, 'Light: canvas below its FAR_Z: ' + JSON.stringify(r.lite));
+      ok(!r.liteAbove.far, 'Light: and not above it');
+      ok(!r.small.culling && !r.small.far && !r.small.shown && r.small.notes === 8, 'small board as before: ' + JSON.stringify(r.small));
+    });
   }
 ];

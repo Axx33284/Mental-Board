@@ -20,6 +20,7 @@
    and from applySettings() whenever the global they fall back to changes. */
 
 function applyBoardLook() {
+  forgetFarPalette();               // a board's own font and paper change what the canvas reads (far.js)
   const b = activeBoard();
   const s = state.settings;
   document.body.dataset.notefont = (b && b.font) || s.noteFont;

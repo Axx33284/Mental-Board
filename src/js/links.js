@@ -229,6 +229,14 @@ function ropeVisible(a, b, R) {
 function drawLinks(moving) {
   const g = $('linksInner');
   if (!g) return;
+  /* Below FAR_Z the ropes are on the far-zoom canvas (far.js): the SVG layer
+     is emptied and the canvas is asked for a frame instead. */
+  if (farMode) {
+    if (linkEls.size) { linkEls.forEach((el) => el.remove()); linkEls.clear(); }
+    drawHotRopes();
+    requestFar();
+    return;
+  }
   const byId = noteIndex();
   const pinned = state.settings.linkAnchor === 'top' || corkMode();
   const R = culling ? visibleWorldRect() : null;
@@ -277,6 +285,7 @@ function drawLinks(moving) {
     linkEls.forEach((el, id) => { if (!keep.has(id)) { el.remove(); linkEls.delete(id); } });
   }
   drawHotRopes();
+  requestFar();                // a note it moved may be one the canvas is drawing
 }
 // the ropes are rebuilt from scratch — render() empties the layer under them
 function resetLinks() {

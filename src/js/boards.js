@@ -1066,6 +1066,7 @@ function noteMatchesFocus(n) {
   return (n.status || '') === focusValue;
 }
 function syncFocusClasses() {
+  requestFar();          // the canvas dims what the filter does not match (far.js)
   if (!focusKind) { els.forEach((el) => el.classList.remove('focus-hit')); return; }
   els.forEach((el, id) => {
     const n = state.notes.find((x) => x.id === id);

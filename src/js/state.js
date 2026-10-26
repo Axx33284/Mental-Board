@@ -1174,7 +1174,11 @@ function saveDelay() {
 }
 /* Every change to the board ends here, which makes it the place a paired phone
    hears that its picture is out of date (js/tablet.js, MAP.md §4x). */
-function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); scheduleMinimap(); if (typeof padDirty === 'function') padDirty(); }
+/* Every change to the board ends here (CLAUDE.md: mutate, draw, saveSoon), so
+   this is also where the far-zoom canvas hears that something it draws may
+   have changed — a status set from the menu on a note that has no element.
+   One draw per frame however often it is asked (far.js). */
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, saveDelay()); scheduleMinimap(); if (typeof padDirty === 'function') padDirty(); if (typeof requestFar === 'function') requestFar(); }
 // the close path, and the only caller that wants the blocking write
 function flushSave() { clearTimeout(saveTimer); saveTimer = null; save(true); }
 

@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-six scripts or nine sheets holds the thing you are after, so you never
+twenty-eight scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-six ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + twenty-eight ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -140,6 +140,7 @@ The things that make it more than a note wall:
 | **Notion's block handle: Turn into, colour, duplicate, move (drag, Ctrl+Shift+↑/↓), delete** | js/blocks.js + css/mental.css §80 §4z7 |
 | **Text and background colours, on a block or on words** | js/blocks.js + css/mental.css §78 §4z7 |
 | **Toggle lists and toggle headings** | js/blocks.js + css/mental.css §79 §4z7 |
+| **A board of thousands of notes that stays smooth at every zoom: the far-zoom canvas** | js/far.js + js/view.js + css/mental.css §82 §4c |
 
 ---
 
@@ -153,7 +154,7 @@ user?" answerable by looking at its path.
 ```
 src/          the app — this is what gets packaged
   index.html    the whole DOM, and the load order for everything below
-  js/           26 plain scripts, one global scope, no bundler   (§4)
+  js/           28 plain scripts, one global scope, no bundler   (§4)
   css/          9 sheets whose <link> order *is* the cascade     (§5)
   assets/       generated: icons.js, lang/, fonts/, icon.png; vendored: katex/
   main.js       Electron main
@@ -178,7 +179,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
 | `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
-| `src/js/*.js` | ~19900 | All app logic, in 26 plain scripts sharing one global scope. See §4. |
+| `src/js/*.js` | ~19900 | All app logic, in 28 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
 | `src/assets/lang/en.js` | ~860 | **The string catalogue.** English is the source of truth; every other file is a translation of it. |
 | `src/assets/lang/ar.js` | ~960 | Arabic, `_rtl: true`. Complete — same keys as `en.js`. |
@@ -224,7 +225,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-six scripts that follow. Between them they hold one mutable `state`,
+twenty-eight scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -627,10 +628,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-six files
+## 4. `src/js/` — the app, in twenty-eight files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) 2.8 one (`database.js`, after `embeds.js`) and 2.9 one (`blocks.js`, after `toolbars.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) 2.8 one (`database.js`, after `embeds.js`) and 2.9 one (`blocks.js`, after `toolbars.js`), and 2.11 one (`far.js`, after `links.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -642,9 +643,10 @@ no bundler and no build step — the only thing joining them is the order
 | `state.js` | ~1150 | One mutable `state`. `makeBoard` `canEditHere` `adoptBoard`/`adopt` `serialise()` `writeNow`/`save` `reportSaveFailure`, per-note history, the status list, `okDateKey()` (§4s), and the settings tables (`THEME_MODES`, `LINK_STYLES`, `okClock`). See §3a, §3b. |
 | `sound.js` | ~400 | **Menu sounds** and **typing sounds** (2.1, both in Settings ▸ Extra): `keySfx` `KEY_SWITCHES` `wireKeySounds`, and `sfx(kind)` — move, select, back, open, toggle — synthesised with Web Audio through a generated room reverb, and `wireSounds()`, which hears menus by delegation and a MutationObserver. Off unless `settings.sounds`. See §4v. |
 | `theme.js` | ~340 | `clockSaysDark`/`startThemeClock`, `customVars()`, `applyTheme`, **`applyThemeFaded(ms)`** (a View Transition crossfade, §4v), `applyLang`, `applySettings`, `applyNotePad` (§4z), and the graphics tiers: `gpuName` `detectPerf` `resolvedPerf` (§4c). See §3d. |
-| `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `fillStubs` `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
-| `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote` `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `stopFlight` `fitTo`, `followCamera` + `gestureDelta` — §4z1, and `onWheel`, which lets a long note scroll — §4v). |
-| `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. |
+| `view.js` | ~540 | `applyView` `toWorld` `toScreen`, the cached `vpRect()` (§4c), `render()`, and viewport culling: `syncMounted` `mountSome` (a few a frame, none while the scale is still changing — `ZOOM_HOLD`) `ensureMounted` `applyFarMode`. See §4c. Also the pills under a note — `paintNoteStatus` (status **and date**), `setStatus`, and the dates: `setNoteDate` `dateState` `dateLabel` `fmtDay` `dayKeyIn` `watchDayChange`. See §4s. |
+| `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote`, `ghostBars` — the geometry, shared with the canvas — `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `stopFlight` `fitTo`, `followCamera` + `gestureDelta` — §4z1, and `onWheel`, which lets a long note scroll — §4v). |
+| `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. Below FAR_Z `drawLinks()` empties the SVG layer and hands the ropes to far.js. |
+| `far.js` | ~500 | **The far-zoom canvas** (2.11): one `<canvas>` in `#world` that draws every note on screen without an element — and below FAR_Z every rope — from the model: `drawFar` (one a frame, `requestFar`), `drawFarNote` / `drawFarTiny` (a note a few pixels across is batched by colour), `drawFarRopes` with `farRopeOf` / `farRopePaths` (Path2Ds kept, joined per colour), the colours read off a probe note (`farPal` `farNoteColors` `farPill`, dropped by `forgetFarPalette`), and the hit test the pointer routing asks (`farNoteAt` `farRopeAt`). See §4c. |
 | `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
 | `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
 | `embeds.js` | ~350 | Bookmark cards, click-to-play video, `/video` and `/bookmark` (one window, `embedMode`), and the paste-as menu. See §4e. |
@@ -2994,12 +2996,14 @@ bug in any of them cannot reach most people.
 | Mechanism | Where | What it does |
 |---|---|---|
 | **Viewport culling** | `syncMounted()` §5 | Only items within `cullPad()` screen px of the viewport (700 / 520 / 380 by tier) are in the document. Panning mounts and unmounts, one sweep per animation frame. |
-| **Stubs filled a few at a time** | `fillStubs()` §5 | Coming back in from far zoom, the stubs that stay on screen are filled nearest the middle first, inside a per-frame budget (7 / 5 / 4 ms); the rest wait for the next frame. Only stubs are looked at, through one index — this used to be a `state.notes.find()` per visible note per frame. |
+| **Notes mounted a few at a time** | `mountSome()` §5 | Notes the view wants that are missing or still stubs are built nearest the middle first, inside a per-frame budget (7 / 5 / 4 ms, `MOUNT_BUDGET`); the rest wait for the next frame and the far-zoom canvas draws them meanwhile. This was `fillStubs()` until 2.11, which only finished stubs — now that far zoom mounts nothing, coming back in is mounting, not filling. |
+| **Nothing built while the scale moves (2.11)** | `mountSome()` + `ZOOM_HOLD` §5 | Between FAR_Z and 1× a zoom out reveals notes every frame, and a note mounted mid-zoom is rasterised at that frame's scale and again at the next — on the 3,000-note board that was most of a zoom frame. Until the scale has been still for 150 ms (`lastScaleAt`, set in `applyView()`) nothing new is mounted; the canvas draws those notes, and a timer sweeps once the wheel stops. Notes already mounted stay as they are, and the note being edited is always mounted. |
+| **The far-zoom canvas (2.11)** | js/far.js, `drawFar()` | One viewport-sized `<canvas>` in `#world`, between the rope SVG and the notes, redrawn from the model at most once a frame. It draws **every note on screen that has no element** — colour, border, stripe, the ghost, the status and date pills, the selection ring, the focus filter's dimming, a tilt on pinned paper, a shape — and, below FAR_Z, every rope. Placed in world units, so a frame it has not been redrawn for still sits on the board under the world's transform. A note under ~12 device px is batched per colour with `fillRect` (a single path of thousands of rects made the GPU tessellate it: 6 → 25 ms a frame); ropes keep their `Path2D` and are joined per colour, rebuilt only when one moves. Colours come off a probe note (`farPal`), so the twenty themes, a custom palette, pinned paper and any hex need no JS of their own. It never takes the pointer — see the rules below. |
 | **The viewport box, cached** | `vpRect()` §5 | `getBoundingClientRect()` forces a synchronous layout whenever the document changed, which during a pan on a big board is always. The box is cached and dropped by a ResizeObserver, `resize` and `applySettings()`. |
-| **Far zoom** | `applyFarMode()` §5 + `body.far-zoom` | Below `FAR_Z` (0.34 Full, 0.42 Balanced, 0.5 Light) every note is a **stub**: its colour, its place, its status pill and the *ghost* of its text — no body, no handles, no glyphs. Culling cannot help at fit-everything zoom — every note really is on screen — but at that scale nothing is readable. |
-| **The text ghost (2.2)** | `noteGhost()` `ghostBlocks()` in items.js + mental.css §66 | A stub draws each line of its text as the note's **real words, wrapped where they really wrap** — a dash per word with the gaps where the spaces are, so it reads as text and not as a rule — headings taller and darker, bullet dots, to-do boxes, a block for a picture or a code block, right-aligned for Arabic — as background layers of **one** `.note-ghost` element: one gradient per line, a hard-edged stop pair per word. No layout, no glyphs, no extra nodes. Lines come from a regex tokeniser over the stored HTML (no DOM parse), wrapped at the board's font size, density and face, so the ghost stands where the text will be on the way back in. Cached per note on body + size + metrics: all 3,000 notes of the perf board in 25–33 ms once, and no measurable change to a far-zoom pan frame (14.5 ms either way at 0.2×). Bars are `currentColor` mixed down (`--gc0..3`), so they follow the theme. |
-| **Re-stubbing on the way out (2.2)** | `restubMounted()` §5, from `syncMounted()` | Notes already on screen when the view crosses `FAR_Z` used to stay finished with their body hidden by CSS — blank cards still carrying their whole text. Each sweep in far zoom turns any finished note back into a stub, except the one being edited and those a gesture holds; `exitEdit()` and `endGesture()` ask for a sweep so those follow as soon as they are let go. 0.3 ms a frame over 3,000 mounted notes. |
-| **Rope culling + reuse** | `drawLinks()` §10 | One `<g>` per rope, built once and updated in place, and only the ropes near the viewport are in the document at all. Gated on the same `culling` flag. |
+| **Far zoom** | `applyFarMode()` §5 + `body.far-zoom` | Below `FAR_Z` (0.34 Full, 0.42 Balanced, 0.5 Light) the notes and ropes are not in the document at all: the far-zoom canvas draws them. Only what it does not draw is mounted — pictures and drawing notes (never stubbed), the note being edited, and anything a gesture already held as an element. Culling cannot help at fit-everything zoom — every note really is on screen — but at that scale nothing is readable. Until 2.11 every note here was a DOM **stub** (colour, place, pill, ghost); a stub is now only the first step of `ensureMounted()` at far zoom. |
+| **The text ghost (2.2)** | `ghostBars()` `noteGhost()` `ghostBlocks()` in items.js + mental.css §66 | Since 2.11 `ghostBars()` is the geometry — `{ x, y, w, h, a, words, rtl }` per bar — and two things draw it: `noteGhost()` as the CSS layers of a DOM stub, `drawFarNote()` as rects on the canvas (the words when a gap is at least half a pixel, the whole line below that). What follows is the 2.2 design. A stub draws each line of its text as the note's **real words, wrapped where they really wrap** — a dash per word with the gaps where the spaces are, so it reads as text and not as a rule — headings taller and darker, bullet dots, to-do boxes, a block for a picture or a code block, right-aligned for Arabic — as background layers of **one** `.note-ghost` element: one gradient per line, a hard-edged stop pair per word. No layout, no glyphs, no extra nodes. Lines come from a regex tokeniser over the stored HTML (no DOM parse), wrapped at the board's font size, density and face, so the ghost stands where the text will be on the way back in. Cached per note on body + size + metrics: all 3,000 notes of the perf board in 25–33 ms once, and no measurable change to a far-zoom pan frame (14.5 ms either way at 0.2×). Bars are `currentColor` mixed down (`--gc0..3`), so they follow the theme. |
+| **Unmounting on the way out (2.2, 2.11)** | `syncMounted()` §5 | Notes already on screen when the view crosses `FAR_Z` are unmounted by the next sweep — the canvas has them — except the one being edited and those a gesture holds; `exitEdit()` and `endGesture()` ask for a sweep so those follow as soon as they are let go. 2.2 turned them back into stubs instead (`restubMounted()`, gone). |
+| **Rope culling + reuse** | `drawLinks()` §10 | One `<g>` per rope, built once and updated in place, and only the ropes near the viewport are in the document at all. Gated on the same `culling` flag. Below FAR_Z the layer is empty and the canvas strokes them (2.11). |
 | **Partial rope redraw** | `drawLinks(moving)` §10 | During a drag only the ropes tied to the notes under the pointer are recomputed. Everything else is standing still. |
 | **No rewrite of a rope that did not change (2.10)** | `drawLinks()` §10, `r.key` | The full sweep runs on every pan and zoom frame (`syncMounted`). It used to write every mounted rope's `d`, centres and colour each time; an SVG attribute write invalidates even when the value is the same, so at far zoom on the 3,000-note / 2,000-rope board that was ~6,600 writes a frame, 11 ms of style recalc, 9 ms of layerising and a repaint of the rope layer. Each rope now keeps the key it was drawn with and is skipped when it matches. |
 | **Geometry-only undo** | `pushUndoGeom()` §14b | A drag stores four numbers per item instead of the whole board as JSON. |
@@ -3017,6 +3021,24 @@ Three rules make culling safe, and breaking any of them is a real bug:
   for the length of the gesture.
 - **`ensureMounted(id)` is how you reach an item the user cannot see.**
   `enterEdit` uses it, because "jump to this note and open it" is one gesture.
+
+And two that the far-zoom canvas (2.11) adds:
+
+- **A note on screen may have no element.** At far zoom, and for a few frames
+  after a zoom, a visible note is pixels on the canvas: `els.get(id)` is empty
+  and `e.target` is the viewport. The pointer routing in init.js asks
+  `farNoteAt()` / `farRopeAt()` when nothing it knows was hit, then runs the
+  ordinary path with the id — `beginMove`, `toggleSelection`, `openCtxMenu`,
+  `enterEdit`, `followRope`, `openRopeMenu`, `finishLinking` all work from an
+  id. A new press, drop or hover target that reads `.closest('.note')` must do
+  the same, or it goes dead at far zoom. (Not done yet: dropping a picture or
+  a file onto a note, and the rope hover highlight.)
+- **Whatever changes how a note looks has to reach `requestFar()`.** Every
+  model change ends in `saveSoon()`, which asks for a frame; selection
+  (`syncSelectionClasses`), the focus filter (`syncFocusClasses`), the rope
+  layer (`drawLinks`) and the viewport box (`forgetVpRect`) ask too, and
+  `applyTheme` / `applySettings` / `applyBoardLook` drop the probed colours. A
+  class toggled on an element and nothing else is invisible on the canvas.
 
 `drawLinks()` runs on every pointer move of every drag, so both of its lookups
 go through a `Map` built once per call rather than a `state.notes.find()` per
@@ -3050,6 +3072,31 @@ times p50 / p95 before → after the rope key above: panning at far zoom
 the notes' real text at each new scale; mounting revealed notes as stubs while
 zooming was tried and bought nothing, so it was not kept. The canvas far zoom
 above is still the fix.
+
+**Measured in 2.11**, the far-zoom canvas and `ZOOM_HOLD`. A synthetic board of
+3,000 notes (headings, paragraphs, lists, to-dos; nine colours; statuses) and
+2,000 ropes, 1920×1080 maximised, real Ctrl+wheel and mouse input over CDP,
+frame time from `requestAnimationFrame` on a 180 Hz display (so 5.6 ms is the
+floor). Full tier, 2.10 → 2.11, p95 / max in ms:
+
+| Scenario | 2.10 | 2.11 |
+|---|---|---|
+| Pan at 0.2× | 272 / 283 (p50 261) | 5.7 / 5.7 |
+| Zoom 0.12× ↔ 0.3× | 839 / 1183 | 5.7 / 11 |
+| Zoom 0.15× ↔ 1×, fine steps (across FAR_Z) | 395 / 1000 | 5.7 / 39 |
+| Zoom 0.4× ↔ 1× | 61 / 145 | 5.7 / 83 (one settle frame) |
+| Zoom 0.15× ↔ 1×, whole wheel notches | 506 / 1272 | 5.7 / 11 |
+| Pan at fit-everything (0.055×, all 3,000 on screen) | 1122 / 1161 | 11 / 17 |
+| Zoom 0.04× ↔ 0.12× | page lost, ~1.1 s frames | 11 / 17 |
+| Drag a note with ropes at 0.2× | 294 / 295 (p50 283) | 5.7 / 11 |
+| Pan at 1×, drag at 1× | 5.7 | 5.7 |
+
+Balanced and Light hold the same 2.11 numbers to within a frame (their
+2.10 zoom p95 was 216–544 and 150–389 ms). The canvas draw itself is 3–4 ms a
+frame at 0.2×, 6–8 ms at fit-everything, under 1 ms between FAR_Z and 1×,
+where it only stands in for notes not yet mounted. What the numbers do not
+cover: an integrated GPU (this was an RTX-class card), and a board of
+pictures, which stay DOM at far zoom.
 
 The `<g>` wrapper is load-bearing, not tidiness: `.lk-hit:hover + .lk-line` is
 an adjacent-sibling rule, so the hit path and the visible line must stay next to
@@ -3430,7 +3477,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line. Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line; and **2.11**: §82 the far-zoom canvas (§4c). Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
@@ -4130,21 +4177,20 @@ Six from 2.1 first, because they are the freshest:
   written in. `safeClass()` splits and filters; `al-` is on the list because
   that is the only record of an image's alignment.
 
-- **A far-zoom note has no `.note-body` — even one that had one a moment ago.**
-  Since 2.2 `restubMounted()` turns finished notes back into stubs on every
-  far-zoom sweep, so an element reference taken before a zoom-out may have lost
-  its body. Below `FAR_Z` notes mount as stubs —
-  see §4c — so `els.get(id)` can hand back an element that is a coloured
-  rectangle and nothing else. **Anything that reaches for a `.note-body`, a head
-  button or a resize handle must go through `ensureMounted(id)`**, which fills a
-  stub before returning it. That was already the rule for culled items; it now
-  covers "mounted but not finished" as well, with the same one call.
+- **A far-zoom note has no element — even one that had one a moment ago.**
+  Since 2.11 every far-zoom sweep unmounts the notes on screen (the canvas
+  draws them, §4c), so an element reference taken before a zoom-out may be
+  detached, and `els.get(id)` is empty for a note you can see. A note mounted
+  at far zoom through `ensureMounted()` is built as a stub first and filled
+  before it is handed back. **Anything that reaches for a `.note-body`, a head
+  button or a resize handle must go through `ensureMounted(id)`.** That was
+  already the rule for culled items; it covers far zoom with the same one call.
 
-- **Filling the stubs back in belongs in `syncMounted()`, after the cull — not
+- **Mounting the notes back belongs in `syncMounted()`, after the cull — not
   in `applyFarMode()`.** Leaving far zoom means going from the whole board on
-  screen to a screenful of it, so nearly every mounted stub is about to be
-  culled. Finishing them all first measured 600ms of building notes to throw
-  most of them away on the next line; doing it to the survivors is 18ms.
+  screen to a screenful of it. Building notes before the cull measured 600ms of
+  work thrown away on the next line; `mountSome()` builds the survivors, a few
+  a frame, while the canvas stands in for the rest.
 
 - **A status returned is a status that must be acted on — backups included.**
   `versionSnapshot()`'s return was ignored outright and `maybeSnapshot()` set

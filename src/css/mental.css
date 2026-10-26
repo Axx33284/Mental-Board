@@ -2151,3 +2151,9 @@ body.bh-dragging #blockHandle { pointer-events: none; opacity: .4; }
 .st-adjust output { text-align: end; font-variant-numeric: tabular-nums; color: var(--text); }
 .st-adjust .st-gray { display: flex; gap: 8px; color: var(--text); cursor: pointer; }
 .st-adjust .btn { align-self: flex-start; }
+
+/* ─────────────── 82. the far-zoom canvas (2.11, js/far.js) ───────────────
+   One canvas in #world, between the ropes and the notes, placed in world
+   units every frame it is drawn. It never takes the pointer: init.js asks it
+   what is under a press (farNoteAt, farRopeAt). */
+#farCanvas { position: absolute; pointer-events: none; }

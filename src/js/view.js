@@ -76,6 +76,7 @@ function paintGrid(x, y, z) {
 
 function applyView() {
   const { x, y, z } = state.view;
+  if (z !== lastScale) { lastScale = z; lastScaleAt = performance.now(); }
   const world = $('world');
   world.style.transform = `translate(${x}px, ${y}px) scale(${z})`;
   paintGrid(x, y, z);
@@ -112,7 +113,7 @@ function vpRect() {
   vpCache = { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, x: r.x, y: r.y };
   return vpCache;
 }
-function forgetVpRect() { vpCache = null; }
+function forgetVpRect() { vpCache = null; requestFar(); }
 function watchVpRect() {
   window.addEventListener('resize', forgetVpRect);
   if (window.ResizeObserver) new ResizeObserver(forgetVpRect).observe($('viewport'));
@@ -225,102 +226,100 @@ function syncMounted() {
     state.frames.forEach((f) => { if (!els.has(f.id)) mountFrame(f, fl); });
     state.notes.forEach((n) => { if (!els.has(n.id)) mountNote(n, nl); });
     if (!farMode) state.notes.forEach((n) => unstub(els.get(n.id), n));
+    hideFar();
     return;
   }
   const R = visibleWorldRect();
   const want = new Set();
   state.frames.forEach((f) => { if (inRect(f, R)) want.add(f.id); });
-  state.notes.forEach((n) => { if (inRect(n, R)) want.add(n.id); });
+  /* Below FAR_Z the notes are drawn on the canvas (far.js), so only what the
+     canvas does not draw is mounted: a picture, a drawing note. */
+  state.notes.forEach((n) => { if (inRect(n, R) && (!farMode || n.pic || n.sketch)) want.add(n.id); });
   if (editNote) want.add(editNote.id);                       // never pull the caret out
-  if (gesture && gesture.items) gesture.items.forEach(({ it }) => want.add(it.id));
-  if (gesture && gesture.it) want.add(gesture.it.id);
+  /* What a gesture holds stays in the document — but in far zoom a note is not
+     mounted just because it is held: a drag that began on the canvas moves the
+     model, and the canvas follows it. */
+  const hold = (id) => { if (!farMode || els.has(id)) want.add(id); };
+  if (gesture && gesture.items) gesture.items.forEach(({ it }) => hold(it.id));
+  if (gesture && gesture.it) hold(gesture.it.id);
 
   els.forEach((el, id) => { if (!want.has(id)) { el.remove(); els.delete(id); } });
   state.frames.forEach((f) => { if (want.has(f.id) && !els.has(f.id)) mountFrame(f, fl); });
-  state.notes.forEach((n) => { if (want.has(n.id) && !els.has(n.id)) mountNote(n, nl); });
-  /* Any stub that survived the cull becomes a real note now that the text is
-     going to be readable again — **after** the removals above, which is the
-     whole point of doing it here rather than in applyFarMode(). Zooming out to
-     the whole board and back in mounts thousands of stubs and keeps a
-     screenful; filling them before the cull built every one of them for
-     nothing. */
-  if (!farMode) fillStubs(want, R);
-  else restubMounted();
+  /* Notes **after** the removals above: zooming in from the whole board
+     keeps a screenful of it, and building notes before the cull built most of
+     them for nothing. */
+  mountSome(want, R);
   /* The ropes are culled to the same rectangle, so panning has to sweep them
      too or a rope stays mounted for a note that left the document — or worse,
      never appears for one that arrived. Cheap: the test is four comparisons per
-     rope and only the visible handful are redrawn. */
+     rope and only the visible handful are redrawn. In far zoom this unmounts
+     them all: the canvas has them. */
   drawLinks();
   refreshFrameCounts();
+  drawFar();                       // what is on screen and not mounted (far.js)
 }
 
-/* The other direction (2.2). Going out past FAR_Z, the notes already on
-   screen are finished ones, and far-zoom CSS only hid their text: a blank card
-   that still carried its whole body. Each goes back to being a stub, so it
-   shows the ghost of its text (items.js noteGhost) and the document sheds the
-   body. Here rather than in applyFarMode() because the exemptions end later:
-   the note being edited keeps its caret until the edit closes, and nothing a
-   gesture is holding is touched until it lets go — after either, the next
-   sweep catches it. A picture is never a stub. Measured at 0.3 ms a frame over
-   3,000 mounted notes, almost all of them already stubs. */
-function restubMounted() {
-  let byId = null;
-  els.forEach((el, id) => {
-    if (el.dataset.stub || el.classList.contains('frame') || el.classList.contains('pic')) return;
-    if (editNote && editNote.id === id) return;
-    if (gesture && ((gesture.it && gesture.it.id === id) ||
-        (gesture.items && gesture.items.some(({ it }) => it.id === id)))) return;
-    const n = (byId || (byId = noteIndex())).get(id);
-    if (n && !n.pic && !n.sketch) stubNote(el, n);
-  });
-}
-
-/* Finish the stubs that are staying on screen — a few at a time (2.1).
+/* Mount the notes the view wants, and finish any stub among them — a few at
+   a time (2.1, 2.11).
 
    This used to be `want.forEach(id => unstub(el, state.notes.find(...)))`,
    run on every frame of every pan: a linear search of the whole board for
    every note on screen, whether or not it was a stub — about a million
    comparisons a frame on a board of three thousand. And on the frame the view
-   left far zoom it built every stub still on screen at once, which measured
+   left far zoom it built every note still on screen at once, which measured
    at a 100–145 ms stall on the way back in from fit-everything.
 
-   Now only stubs are looked at, through one index, and they are filled
-   nearest the middle of the screen first within a time budget per frame; what
-   is left waits for the next frame, which scheduleMount() asks for. A stub
-   is a coloured card in its right place, so for the two or three frames this
+   Now only notes that are missing or unfinished are looked at, nearest the
+   middle of the screen first, within a time budget per frame; what is left
+   waits for the next frame, which scheduleMount() asks for. Since 2.11 the
+   far-zoom canvas draws the ones still waiting, so for the few frames this
    takes the board looks like it is focusing rather than like it froze — and
    anything that needs a note's insides still gets them at once through
-   ensureMounted(), so the contract in §4c is unchanged. */
-const STUB_BUDGET = { full: 7, balanced: 5, lite: 4 };     // ms of filling per frame
-function fillStubs(ids, R) {
-  let stubs = null;
-  for (const id of ids) {
-    const el = els.get(id);
-    if (el && el.dataset.stub) (stubs || (stubs = [])).push(el);
+   ensureMounted(), so the contract in §4c is unchanged.
+
+   In far zoom what is wanted is only what the canvas cannot draw (a picture,
+   a drawing note, the note being edited), so it is all mounted at once. */
+const MOUNT_BUDGET = { full: 7, balanced: 5, lite: 4 };     // ms of mounting per frame
+/* While the scale is still changing nothing new is built (2.11). A note
+   mounted mid-zoom is rasterised at that frame's scale and again at the next
+   one, and on a big board those rasters were most of a zoom frame; the canvas
+   draws it instead until the wheel has been still for ZOOM_HOLD ms. */
+const ZOOM_HOLD = 150;
+let lastScale = 0, lastScaleAt = 0, zoomHoldTimer = 0;
+function mountSome(want, R) {
+  let todo = null;
+  const hold = !farMode && performance.now() - lastScaleAt < ZOOM_HOLD;
+  for (const n of state.notes) {
+    if (!want.has(n.id)) continue;
+    const el = els.get(n.id);
+    if (el && !el.dataset.stub) continue;
+    if (hold && !el && !(editNote && editNote.id === n.id)) continue;
+    (todo || (todo = [])).push(n);
   }
-  if (!stubs) return;
-  const byId = noteIndex();
+  if (hold) { clearTimeout(zoomHoldTimer); zoomHoldTimer = setTimeout(scheduleMount, ZOOM_HOLD + 16); }
+  if (!todo) return;
+  const nl = $('notesLayer');
+  const finish = (n) => {
+    if (!els.has(n.id)) mountNote(n, nl);
+    // in far zoom only the note being edited is finished; one a gesture holds stays as it is
+    if (!farMode || (editNote && editNote.id === n.id)) unstub(els.get(n.id), n);
+  };
+  if (farMode) { todo.forEach(finish); return; }
   /* The middle of the view from the rectangle syncMounted() measured *before*
      it changed the document. Asking the viewport again here, after the cull
      has added and removed notes, forced a synchronous layout of the whole
      layer — 30 ms of it on the frame that leaves far zoom. */
-  const c = R ? { x: (R.x0 + R.x1) / 2, y: (R.y0 + R.y1) / 2 } : viewCenterWorld();
-  const d2 = (el) => {
-    const n = byId.get(el.dataset.id);
-    if (!n) return Infinity;
-    const dx = n.x + n.w / 2 - c.x, dy = n.y + n.h / 2 - c.y;
-    return dx * dx + dy * dy;
-  };
-  if (stubs.length > 1) stubs.sort((a, b) => d2(a) - d2(b));
-  const budget = STUB_BUDGET[document.body.dataset.perf] || STUB_BUDGET.full;
+  const c = { x: (R.x0 + R.x1) / 2, y: (R.y0 + R.y1) / 2 };
+  const d2 = (n) => { const dx = n.x + n.w / 2 - c.x, dy = n.y + n.h / 2 - c.y; return dx * dx + dy * dy; };
+  if (todo.length > 1) todo.sort((a, b) => d2(a) - d2(b));
+  const budget = MOUNT_BUDGET[document.body.dataset.perf] || MOUNT_BUDGET.full;
   const t0 = performance.now();
   let i = 0;
-  while (i < stubs.length) {
-    unstub(stubs[i], byId.get(stubs[i].dataset.id));
-    i++;
+  while (i < todo.length) {
+    finish(todo[i++]);
     if (performance.now() - t0 > budget) break;
   }
-  if (i < stubs.length) scheduleMount();
+  if (i < todo.length) scheduleMount();
 }
 
 /* ---- zoomed far out ----
@@ -336,7 +335,11 @@ function fillStubs(ids, R) {
 
    Only on a board that is already over the culling threshold — zooming out on
    twenty notes costs nothing, and having them turn into blanks would just look
-   broken. */
+   broken.
+
+   Since 2.11 "out of the layout" means out of the document: below FAR_Z the
+   notes and the ropes are drawn on one canvas (far.js) and syncMounted()
+   unmounts their elements. */
 // and drop the text sooner too — the same reasoning, one zoom level earlier
 const FAR_Z = { full: 0.34, balanced: 0.42, lite: 0.5 };
 let farMode = false;
@@ -346,12 +349,11 @@ function applyFarMode() {
   if (far === farMode) return;
   farMode = far;
   document.body.classList.toggle('far-zoom', far);
-  /* Filling the stubs back in is deliberately **not** done here. Leaving far
-     zoom means going from the whole board on screen to a screenful of it, so
-     almost every mounted stub is about to be culled — finishing them all first
-     was 600ms of building notes to throw most of them away on the very next
-     line. syncMounted() does it instead, after the cull, to the handful that
-     survive. Every path that changes the zoom already ends there. */
+  /* Mounting the notes back in is deliberately **not** done here. Leaving far
+     zoom means going from the whole board on screen to a screenful of it, and
+     building all of it first was 600ms of notes thrown away on the very next
+     line. syncMounted() does it instead, after the cull, a few a frame
+     (mountSome). Every path that changes the zoom already ends there. */
 }
 
 /* Adding or deleting can carry a board across the threshold in either
@@ -381,6 +383,7 @@ function render() {
   // the ropes are their own layer and their own map; empty both or a board
   // switch leaves the previous board's ropes attached under the new one
   resetLinks();
+  farRopes.clear();            // and the canvas's copies of them (far.js)
   culling = (state.notes.length + state.frames.length) > cullMin();
   document.body.classList.toggle('big-board', culling);
   syncMounted();
