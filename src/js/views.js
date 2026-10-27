@@ -19,6 +19,7 @@
 const titleCache = new Map();
 function noteTitle(n) {
   if (n.sketch) return n.sketch.title || t('sketch.untitled');
+  if (n.book) return n.book.title || t('book.untitled');
   const hit = titleCache.get(n.id);
   if (hit && hit.body === n.body) return hit.title;
   const d = document.createElement('div');

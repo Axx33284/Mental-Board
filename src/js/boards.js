@@ -526,12 +526,21 @@ let clipboard = [];
    none, so a note could not be carried across the board without being
    re-roped by hand. */
 let clipLinks = [];
-function copySelection(cut) {
+function copySelection(cut, asItem) {
   const items = selectedItems();
   if (!items.length) return;
   clipboard = items.map((it) => ({ frame: isFrame(it.id), data: JSON.parse(JSON.stringify(it)) }));
   const ids = new Set(items.map((it) => it.id));
   clipLinks = state.links.filter((l) => ids.has(l.from) || ids.has(l.to)).map((l) => ({ from: l.from, to: l.to, color: l.color }));
+  /* One picture on its own is copied as the picture (3.0), so it pastes into
+     Word, Paint or a chat as an image — the internal copy is still made, and
+     Ctrl+V on the board still duplicates the note (the paste listener, init.js). */
+  const lone = !cut && !asItem && items.length === 1 && !isFrame(items[0].id) ? items[0] : null;
+  if (lone && (lone.pic || lone.sketch)) {
+    markInternalCopy('board');
+    if (lone.sketch) copySketchOut(lone); else copyPictureOut(notePictureSrc(lone));
+    return;
+  }
   /* The internal clipboard above is what Ctrl+V on the canvas pastes, and it is
      unchanged. This is the *other* half, added because "copy what this note
      says and put it in an email" had no answer at all: the same selection also

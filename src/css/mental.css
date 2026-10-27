@@ -2157,3 +2157,339 @@ body.bh-dragging #blockHandle { pointer-events: none; opacity: .4; }
    units every frame it is drawn. It never takes the pointer: init.js asks it
    what is under a press (farNoteAt, farRopeAt). */
 #farCanvas { position: absolute; pointer-events: none; }
+
+/* ─────────────── 83. a drawing's paper, and ink that keeps its colour (3.0, js/sketch.js SK_PAPERS) ───────────────
+   On Light or Dark paper the ink is picked against the paper, not the theme:
+   the variables inkColorCss() reads are fixed here, on the editor and on the
+   note, so black stays black when the app goes dark. The same values are in
+   SK_PAPERS for the board picture — change one, change both. 'note' paper sets
+   nothing and the theme decides, as before 3.0. */
+body[data-skpaper="light"] :is(#sketchDlg, .note.sketch) {
+  --ink-text: #1c1c1c;
+  --c-default-c: #8a90a5; --c-red-c: #d64545; --c-orange-c: #d67c2d; --c-amber-c: #b8901e; --c-green-c: #2d9655;
+  --c-teal-c: #18968c; --c-blue-c: #3c78dc; --c-violet-c: #8250dc; --c-pink-c: #d64696;
+  --sk-paper: #fbfaf6; --sk-paper-dim: #8a8780;
+}
+body[data-skpaper="dark"] :is(#sketchDlg, .note.sketch) {
+  --ink-text: #ededea;
+  --c-default-c: #6d7288; --c-red-c: #ff7b7b; --c-orange-c: #ffa65a; --c-amber-c: #f0cc5a; --c-green-c: #69de8e;
+  --c-teal-c: #5adcd6; --c-blue-c: #72afff; --c-violet-c: #b48cff; --c-pink-c: #ff8ccd;
+  --sk-paper: #17181b; --sk-paper-dim: #8d8c88;
+}
+/* the note on the board is the paper; its own colour stays on its edge */
+body:is([data-skpaper="light"], [data-skpaper="dark"]) .note.sketch { background: var(--sk-paper); border-color: var(--nc); }
+body:is([data-skpaper="light"], [data-skpaper="dark"]) .note.sketch .sk-title { color: var(--ink-text); }
+body:is([data-skpaper="light"], [data-skpaper="dark"]) .note.sketch .sk-title.empty { color: var(--sk-paper-dim); }
+body:is([data-skpaper="light"], [data-skpaper="dark"]) .sk-stage {
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--ink-text) 16%, transparent) 1px, transparent 1.4px);
+}
+
+/* ─────────────── 85. a live wallpaper behind the board (3.0, js/wallpaper.js) ───────────────
+   The first layer in #viewport, so the board's own picture, the paper and
+   everything on the board are over it. The veil is the board's own background
+   colour laid back over the wallpaper — Settings ▸ Wallpaper ▸ Darken — which
+   is what keeps the notes and the ropes readable on a busy video. */
+#wallpaper { position: absolute; inset: 0; overflow: hidden; pointer-events: none; opacity: var(--wp-opacity, 1); }
+#wallpaper.hidden { display: none; }
+#wpCanvas { position: absolute; inset: 0; display: none; filter: blur(var(--wp-blur, 0px)); }
+#wallpaper:is([data-kind="rain"], [data-kind="snow"]) #wpCanvas { display: block; }
+/* a video covers the window whatever its shape, as a wallpaper does: 16:9, scaled until both sides are filled */
+#wpFrame {
+  position: absolute; left: 50%; top: 50%; border: 0; display: none; pointer-events: none;
+  width: max(100%, 177.78vh); height: max(100%, 56.25vw); transform: translate(-50%, -50%);
+  filter: blur(var(--wp-blur, 0px));
+}
+#wallpaper[data-kind="youtube"] #wpFrame { display: block; }
+.wp-veil { position: absolute; inset: 0; background: var(--bg); opacity: var(--wp-dim, .25); }
+body.wp-nogrid #grid { display: none; }
+
+/* ─────────────── 86. Handwrite it (3.0, js/handwrite.js) ───────────────
+   Its menu, what it is doing, and a line it has to say — all inside the
+   drawing editor, which may be the only thing on the screen. */
+#skMenu {
+  position: fixed; z-index: 6; min-width: 230px; max-width: 300px; padding: 4px 0 6px;
+  border-radius: var(--r); background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--shadow);
+}
+#skMenu.hidden, #skBusy.hidden, #skNote.hidden { display: none; }
+#skMenu .cm-hint { margin: 0; padding: 2px 12px 6px 37px; font-size: 11.5px; line-height: 1.4; color: var(--dimmer); }
+#skBusy, #skNote {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 4;
+  padding: 9px 16px; border: 1px solid var(--line-2); border-radius: var(--r);
+  background: var(--surface); color: var(--text); font-size: 13px; box-shadow: var(--shadow); pointer-events: none;
+}
+#skBusy::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-inline-end: 10px; vertical-align: -1px;
+  border: 2px solid var(--dimmer); border-top-color: var(--accent); border-radius: 50%; animation: hw-spin .8s linear infinite;
+}
+@keyframes hw-spin { to { transform: rotate(360deg); } }
+#skNote { bottom: 70px; }
+
+/* ─────────────── 87. a book (3.0, js/book.js) ───────────────
+   On the board: its cover (page one, or a plain notebook cover in the note's
+   colour, with a band) over its title and page count. Open: the drawing
+   note's full-screen frame, a desk, and the pages on it — a spread with a
+   leaf that turns, or one long column. The pages are white paper, so the ink
+   on them keeps the Light paper's fixed colours (§83). */
+.note.book { overflow: hidden; }
+.bk-face { display: flex; flex-direction: column; height: 100%; }
+.bk-cover {
+  position: relative; flex: 1 1 auto; min-height: 0; margin: 10px 12px 0;
+  display: grid; place-items: center;
+}
+.bk-cover img {
+  max-width: 100%; max-height: 100%; display: block; background: #fff;
+  /* the edges of the pages under the cover */
+  box-shadow: 1px 1px 0 #e9e6df, 2px 2px 0 #d6d2c8, 3px 3px 0 #e9e6df, 4px 4px 0 #cfcac0, 0 6px 14px rgba(0,0,0,.22);
+}
+.bk-cover.blank {
+  margin: 10px 14px 0; border-radius: 3px 9px 9px 3px;
+  background: linear-gradient(90deg, rgba(0,0,0,.28) 0 7%, rgba(255,255,255,.06) 7.5% 8.5%, transparent 9%), var(--nc);
+  box-shadow: 2px 2px 0 #ece8df, 4px 4px 0 #d8d3c8, 0 8px 18px rgba(0,0,0,.28);
+}
+.bk-band { position: absolute; top: 0; bottom: 0; right: 15%; width: 7px; background: rgba(0,0,0,.55); box-shadow: inset 1px 0 rgba(255,255,255,.18); }
+.bk-cover-title {
+  position: absolute; left: 16%; right: 24%; top: 18%; padding: 6px 8px;
+  background: #f4f0e6; color: #232323; font-family: var(--face-type); font-size: 12px; font-weight: 700; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 2px;
+}
+.bk-cover-title:empty { display: none; }
+.bk-meta { flex: 0 0 auto; display: flex; flex-direction: column; gap: 1px; padding: 8px 14px 9px; min-width: 0; }
+.bk-title { font-weight: 650; font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-title.empty { color: var(--dimmer); font-weight: 500; }
+.bk-count { font-size: 11.5px; color: var(--dimmer); font-family: var(--face-label); letter-spacing: .05em; }
+
+#bookDlg {
+  position: fixed; inset: 0; z-index: 99; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+  --ink-text: #1c1c1c;
+  --c-default-c: #8a90a5; --c-red-c: #d64545; --c-orange-c: #d67c2d; --c-amber-c: #b8901e; --c-green-c: #2d9655;
+  --c-teal-c: #18968c; --c-blue-c: #3c78dc; --c-violet-c: #8250dc; --c-pink-c: #d64696;
+}
+#bookDlg.hidden { display: none; }
+#bkTitle {
+  flex: 1 1 200px; min-width: 140px; height: 36px; padding: 0 12px;
+  font: inherit; font-size: 15px; font-weight: 650; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); outline: none;
+}
+.bk-views { display: inline-flex; gap: 2px; }
+.bk-view { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 2px; color: var(--dim); font-size: 12px; }
+.bk-view .mi { width: 17px; height: 17px; }
+.bk-view.on { background: var(--text); color: var(--bg); }
+.bk-at { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.bk-at input { width: 54px; height: 28px; padding: 0 6px; text-align: center; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 2px; }
+.bk-stage {
+  position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; display: flex;   /* margin: auto centres the spread and still lets a zoomed one scroll */
+  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--surface) 70%, var(--bg)), var(--bg) 75%);
+  touch-action: none; cursor: crosshair;
+}
+#bookDlg.bk-hand .bk-stage { cursor: default; }
+#bookDlg.bk-hand .bk-side.right .bk-page, #bookDlg.bk-hand .bk-side.one .bk-page { cursor: e-resize; }
+#bookDlg.bk-hand .bk-side.left .bk-page { cursor: w-resize; }
+.bk-stage[data-view="scroll"] { display: block; }
+.bk-spread { position: relative; display: flex; margin: auto; padding: 24px; perspective: 2800px; }
+.bk-spread.hidden, .bk-scroll.hidden, #bkNote.hidden { display: none; }
+.bk-side { position: relative; width: var(--pw); height: var(--ph); }
+/* the spine: each page darkens towards the fold */
+.bk-side.left .bk-page::after, .bk-side.right .bk-page::after { content: ""; position: absolute; top: 0; bottom: 0; width: 9%; pointer-events: none; }
+.bk-side.left .bk-page::after { right: 0; background: linear-gradient(90deg, transparent, rgba(0,0,0,.16)); }
+.bk-side.right .bk-page::after { left: 0; background: linear-gradient(270deg, transparent, rgba(0,0,0,.16)); }
+.bk-page {
+  position: relative; overflow: hidden; background-color: #fff; color: #1c1c1c;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 12px 34px rgba(0,0,0,.28);
+}
+.bk-pdf, .bk-ink { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bk-ink { overflow: visible; }
+.bk-no { position: absolute; bottom: calc(var(--u, 1px) * 16); left: 0; right: 0; text-align: center; font-size: 11px; color: #9a9890; pointer-events: none; font-variant-numeric: tabular-nums; }
+/* a notebook's paper, in page units so it scales with the page */
+#bookDlg[data-paper="ruled"] .bk-page {
+  background-image: linear-gradient(90deg, transparent calc(var(--u) * 110), rgba(220, 70, 70, .45) calc(var(--u) * 110) calc(var(--u) * 112), transparent calc(var(--u) * 112)),
+                    linear-gradient(transparent calc(var(--u) * 44 - 1px), rgba(70, 120, 200, .28) calc(var(--u) * 44 - 1px));
+  background-size: 100% 100%, 100% calc(var(--u) * 44);
+  background-position: 0 0, 0 calc(var(--u) * 120);
+  background-repeat: no-repeat, repeat-y;
+}
+#bookDlg[data-paper="dots"] .bk-page { background-image: radial-gradient(rgba(0,0,0,.22) calc(var(--u) * 2.4), transparent calc(var(--u) * 2.6)); background-size: calc(var(--u) * 40) calc(var(--u) * 40); }
+#bookDlg[data-paper="grid"] .bk-page {
+  background-image: linear-gradient(rgba(70,120,200,.2) 1px, transparent 1px), linear-gradient(90deg, rgba(70,120,200,.2) 1px, transparent 1px);
+  background-size: calc(var(--u) * 40) calc(var(--u) * 40);
+}
+/* the leaf: the page being turned on its front, the page behind it on its back */
+.bk-leaf { position: absolute; top: 24px; width: var(--pw); height: var(--ph); transform-style: preserve-3d; z-index: 2; }
+.bk-leaf.fwd { left: calc(24px + var(--pw)); transform-origin: left center; animation: bk-fwd .62s cubic-bezier(.45, .05, .35, 1) forwards; }
+.bk-leaf.back { left: 24px; transform-origin: right center; animation: bk-back .62s cubic-bezier(.45, .05, .35, 1) forwards; }
+.bk-leaf.one.fwd { left: 24px; }   /* top and left: inside the spread's 24px padding */
+.bk-leaf > div { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.bk-face-back { transform: rotateY(180deg); }
+.bk-leaf.one .bk-face-back { display: none; }
+/* the light across the page as it lifts */
+.bk-leaf > div::after { content: ""; position: absolute; inset: 0; pointer-events: none; animation: bk-shade .62s ease-in-out forwards; }
+.bk-leaf.fwd .bk-face-front::after { background: linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,.35)); }
+.bk-leaf.fwd .bk-face-back::after { background: linear-gradient(270deg, rgba(0,0,0,0), rgba(0,0,0,.3)); }
+.bk-leaf.back .bk-face-front::after { background: linear-gradient(270deg, rgba(0,0,0,0), rgba(0,0,0,.35)); }
+.bk-leaf.back .bk-face-back::after { background: linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,.3)); }
+@keyframes bk-fwd { from { transform: rotateY(0deg); } to { transform: rotateY(-180deg); } }
+@keyframes bk-back { from { transform: rotateY(0deg); } to { transform: rotateY(180deg); } }
+@keyframes bk-shade { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+.bk-scroll { position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 28px 0 60px; }
+.bk-slot { flex: none; position: relative; }
+.bk-slot > .bk-page { position: absolute; inset: 0; }
+#bkNote {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 4;
+  padding: 9px 16px; border: 1px solid var(--line-2); border-radius: var(--r);
+  background: var(--surface); color: var(--text); font-size: 13px; box-shadow: var(--shadow); pointer-events: none;
+}
+
+/* ─────────────── 84. the app's face (3.0) ───────────────
+   ITC American Typewriter for English and Neue Frutiger for Arabic — the
+   reference's own pair — through to the notes' default face. Both are
+   licensed, so they come from Windows when it has them (the two local()
+   families below) or from files the user owns (Settings ▸ Appearance,
+   registered by loadUiFont() as "MB UI Latin" / "MB UI Arabic"); until then
+   Cutive (bundled, OFL) stands in for the typewriter and Noto Sans Arabic for
+   Frutiger. Each Arabic family carries only the Arabic range, so a Latin
+   letter never falls into it, and the order below is the whole decision. */
+@font-face {
+  font-family: "MB Typewriter Local"; font-weight: 400;
+  src: local("ITC American Typewriter"), local("ITC American Typewriter Medium"), local("American Typewriter"),
+       local("AmericanTypewriter"), local("ITC American Typewriter Std Medium"), local("AmericanTypewriterStd-Med");
+  unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF;
+}
+@font-face {
+  font-family: "MB Typewriter Local"; font-weight: 700;
+  src: local("ITC American Typewriter Bold"), local("American Typewriter Bold"), local("AmericanTypewriter-Bold"),
+       local("ITC American Typewriter Std Bold"), local("AmericanTypewriterStd-Bold");
+  unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF;
+}
+@font-face {
+  font-family: "MB Frutiger Local";
+  src: local("Neue Frutiger Arabic"), local("Neue Frutiger Arabic Regular"), local("NeueFrutigerArabic-Regular"),
+       local("Neue Frutiger World"), local("Neue Frutiger World Regular"), local("NeueFrutigerWorld-Regular"), local("Frutiger Arabic");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF;
+}
+:root {
+  --face-ui: "MB UI Latin", "MB Typewriter Local", "MB UI Arabic", "MB Frutiger Local", "Cutive",
+             "Noto Sans Arabic", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+body[data-uifont="typewriter"],
+body[data-uifont="typewriter"] :is(button, input, textarea, select, .frame-title) {
+  font-family: var(--face-ui);
+}
+body[data-uifont="typewriter"] {
+  --face-label: var(--face-ui);
+  --face-type: var(--face-ui);
+  --label-track: .06em;
+}
+/* the notes' default face: the same pair, in any interface face */
+body[data-notefont="typewriter"] .note-body, body[data-notefont="typewriter"] #fontEg,
+.pm-font[data-face="typewriter"] .pm-ag { font-family: var(--face-ui); }
+/* a typewriter face is wider and sits higher than Segoe at the same size; labels lose a little tracking */
+body[data-uifont="typewriter"] .set-tab { letter-spacing: .07em; }
+body[data-uifont="typewriter"] .tb-title { letter-spacing: .14em; }
+
+/* ─────────────── 88. the options screen (3.0) ───────────────
+   Settings is now the whole window under the titlebar, the way the
+   reference's options are the whole screen: the title top left, the tabs
+   across the top with hairlines between them and a lit line under the open
+   one, the rows on the left with ‹ value › and a bar per option under it, the
+   highlighted row a bar of light with a bright edge, and the description in a
+   column on the right — the row's name, what it does, and "(Default: …)".
+   Escape opens it (init.js) as a game's pause menu does, and closes it.
+   No controller glyphs: this is an app, and the keys are the keys. */
+#settings.overlay { top: 38px; display: block; background: var(--bg); backdrop-filter: none; animation: fade .12s ease-out; }
+#settings .set-sheet {
+  width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 18% 0%, color-mix(in srgb, var(--text) 6%, transparent), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 100% 100%, color-mix(in srgb, var(--text) 4%, transparent), transparent 70%),
+    var(--bg);
+}
+#settings .sheet-head { padding: 26px clamp(20px, 4vw, 64px) 14px; align-items: flex-end; }
+#settings .sheet-head h2 { font-size: clamp(24px, 2.4vw, 34px); letter-spacing: .08em; font-weight: 700; line-height: 1; }
+#settings .set-find { width: 260px; }
+#settings .sheet-x { align-self: flex-start; }
+#settings .set-nav {
+  padding: 0 clamp(20px, 4vw, 64px); border-bottom: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  justify-content: flex-start;
+}
+/* hairlines between the tabs, short ones, as "| CONTROLS | CAMERA |" */
+#settings .set-tab {
+  flex: 1 1 0; min-width: max-content; padding: 13px 16px 14px; text-align: center; justify-content: center;
+  border-inline-end: 0; font-size: 12.5px; text-transform: uppercase; color: var(--dim);
+}
+#settings .set-tab + .set-tab::before {
+  content: ""; display: block !important; position: absolute; inset-inline-start: 0; top: 30%; bottom: 30%; width: 1px; height: auto;
+  margin: 0; background: color-mix(in srgb, var(--text) 26%, transparent);
+}
+#settings .set-tab.on { color: var(--text); text-shadow: 0 0 14px color-mix(in srgb, var(--text) 55%, transparent); }
+#settings .set-tab.on::after { left: 22%; right: 22%; height: 2px; bottom: -1px; }
+#settings .set-shell { padding: 0 clamp(20px, 4vw, 64px); gap: clamp(20px, 3vw, 48px); }
+#settings .set-panes { flex: 0 1 820px; padding: 14px 6px 40px; }
+/* the description: the right-hand column, sentence case, a name over it */
+#settings .set-desc {
+  flex: 1 1 340px; max-width: 520px; border-inline-start: 0; padding: 48px 0 24px;
+  font-size: 14px; line-height: 1.6; color: var(--dim); white-space: normal;
+}
+#settings .set-desc .sd-name { display: block; margin-bottom: 14px; color: var(--text); font-size: 16px; font-weight: 700; }
+#settings .set-desc .sd-text { display: block; }
+#settings .set-desc .sd-def { display: block; margin-top: 16px; color: var(--text); }
+/* the slanted section tab, wider, in sentence case as "Shared Settings" */
+#settings .set-panes .set-sec h3, #settings .set-panes .set-sub-h {
+  min-width: 46%; padding: 6px 42px 6px 12px; text-transform: none; letter-spacing: .02em;
+  font-size: 13px !important; color: var(--dim) !important;
+  background: linear-gradient(to right, color-mix(in srgb, var(--text) 14%, transparent), color-mix(in srgb, var(--text) 6%, transparent));
+}
+/* a row: the name on the left, the value in a fixed column on the right */
+#settings .set-panes .set-row, #settings .set-panes .set-check {
+  min-height: 56px; padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid color-mix(in srgb, var(--text) 13%, transparent);
+  outline: none; box-sizing: border-box;
+}
+#settings .set-panes .set-row > label, #settings .set-panes .set-check { font-size: 15px; }
+#settings .set-panes .set-row.sub > label, #settings .set-panes .set-check.sub { color: var(--dim); }
+/* the highlighted row: a bar of light, brightest at the leading edge, with a bright rim — the text stays white */
+#settings .set-panes .set-row:hover, #settings .set-panes .set-check:hover,
+#settings .set-panes .set-row:focus-visible, #settings .set-panes .set-row:focus-within, #settings .set-panes .set-check:focus-within {
+  background: linear-gradient(to right, color-mix(in srgb, var(--text) 30%, transparent), color-mix(in srgb, var(--text) 12%, transparent) 60%, color-mix(in srgb, var(--text) 6%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 75%, transparent), 0 0 18px color-mix(in srgb, var(--text) 10%, transparent);
+}
+html[dir="rtl"] #settings .set-panes .set-row:hover, html[dir="rtl"] #settings .set-panes .set-check:hover {
+  background: linear-gradient(to left, color-mix(in srgb, var(--text) 30%, transparent), color-mix(in srgb, var(--text) 12%, transparent) 60%, color-mix(in srgb, var(--text) 6%, transparent));
+}
+/* ‹ value ›, a bar per option under it, the chosen one lit (settings.js stepperize) */
+.seg-under { display: none !important; }
+.stp {
+  flex: 0 0 auto; width: 300px; display: grid; grid-template-columns: 34px 1fr 34px; grid-template-rows: auto 6px;
+  align-items: center; column-gap: 4px; row-gap: 5px; margin-inline-start: auto; user-select: none;
+}
+.stp-a { grid-row: 1; display: grid; place-items: center; height: 26px; padding: 0; color: var(--dim); border-radius: 0; background: none; cursor: pointer; }
+.stp-a .mi { width: 18px; height: 18px; }
+.stp-a:hover { color: var(--text); }
+.stp-a.off { opacity: .25; pointer-events: none; }
+.stp-v { grid-row: 1; grid-column: 2; text-align: center; font-size: 15px; color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stp-ticks { grid-row: 2; grid-column: 2; display: flex; justify-content: center; gap: 4px; }
+.stp-ticks b { width: 30px; height: 3px; background: color-mix(in srgb, var(--text) 26%, transparent); }
+.stp-ticks b.on { background: var(--text); box-shadow: 0 0 6px color-mix(in srgb, var(--text) 50%, transparent); }
+/* a check box is a two-option row: the box is still there, under the value, for the keyboard */
+#settings .set-panes .set-check { display: flex; align-items: center; gap: 12px; }
+#settings .set-panes .set-check > input[type="checkbox"] { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+#settings .set-panes .set-check > .row-ic { display: none; }
+/* sliders: a hairline track and a small lit square */
+#settings .set-panes input[type="range"] { width: 300px; flex: 0 0 300px; margin-inline-start: auto; accent-color: var(--text); }
+#settings .set-panes .set-row > label .set-val { margin-inline-start: 8px; }
+#settings .set-panes .set-row .sel-wrap, #settings .set-panes .set-row > .set-btns, #settings .set-panes .set-txt { margin-inline-start: auto; }
+#settings .set-panes .set-row .sel-wrap { width: 300px; }
+#settings .set-panes .set-row .sel-wrap .sel { width: 100%; }
+#settings .set-panes .row-ic { display: none; }
+.set-txt {
+  width: 300px; height: 32px; padding: 0 10px; font: inherit; font-size: 13px; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 2px; outline: none;
+}
+.set-txt:focus { border-color: var(--text); }
+#wpUrlRow.bad .set-txt { border-color: var(--danger); }
+#settings .set-foot { padding: 12px clamp(20px, 4vw, 64px) 18px; border-top: 1px solid color-mix(in srgb, var(--text) 13%, transparent); }
+/* a narrow window: the description goes under the rows, as one column */
+@media (max-width: 980px) {
+  #settings .set-shell { flex-direction: column; }
+  #settings .set-panes { flex: 1 1 auto; }
+  #settings .set-desc { flex: 0 0 auto; max-width: none; padding: 12px 0; border-top: 1px solid var(--line); min-height: 90px; }
+  .stp, #settings .set-panes input[type="range"], #settings .set-panes .set-row .sel-wrap, .set-txt { width: 220px; flex-basis: 220px; }
+}
+#settings .set-panes { overflow-x: hidden; }

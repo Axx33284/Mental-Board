@@ -69,9 +69,9 @@ function wireSettingsDesc() {
   const panes = $('setPanes'), desc = $('setDesc');
   if (!panes || !desc) return;
   const show = (el) => {
-    const text = settingsHintFor(el);
-    desc.textContent = text;
-    desc.classList.toggle('on', !!text);
+    const html = settingsDescHtml(el);      // the name, what it does, and its default (3.0)
+    desc.innerHTML = html;
+    desc.classList.toggle('on', !!html);
   };
   panes.addEventListener('mouseover', (e) => show(e.target));
   panes.addEventListener('mouseleave', () => show(null));
@@ -308,6 +308,8 @@ function wireSetTabs() {
      lands on the tab that was just asked for. */
   nav.querySelectorAll('.set-tab').forEach((b) => b.addEventListener('click', () => {
     setTab = b.dataset.tab;
+    const desc = $('setDesc');
+    if (desc) { desc.innerHTML = ''; desc.classList.remove('on'); }    // a row on the last tab is not described on this one
     const box = $('setSearch');
     if (box && box.value) { box.value = ''; clearSettingsFilter(); return; }
     showSetTab(b.dataset.tab);
@@ -650,6 +652,7 @@ function syncSettingsUI() {
     $('setVersion').textContent = '';
   }
   $('setSafety').textContent = t('set.safety');
+  syncSettings30();
 }
 
 /* The picker lists every catalogue registered in assets/lang, by its own name
@@ -1843,4 +1846,260 @@ async function importBoard() {
   if (!looksLikeBoards(parsed)) { toast(t('msg.notOurFile')); return; }
   closeSettings();
   await importBoardsFrom(parsed, r.beside || '', '');
+}
+
+/* ─── 3.0. the options screen: wallpaper, drawing, the app's face, and every choice as ‹ value › ───
+   Settings ▸ Wallpaper (js/wallpaper.js), Settings ▸ Drawing (the paper,
+   Handwrite it, js/sketch.js and js/handwrite.js) and the interface font with
+   the font files behind it (main.js font:pick). Wired once by
+   wireSettings30(), painted by syncSettings30() from syncSettingsUI(). */
+function wireSettings30() {
+  const s = () => state.settings;
+  const seg = (id, attr, key, after) => $(id).querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    const v = b.dataset[attr];
+    s()[key] = v;
+    applySettings(); if (after) after(v);
+    syncSettingsUI(); saveSoon();
+  }));
+  seg('uiFontSeg', 'uifont', 'uiFont');
+  seg('skPaperSeg', 'skpaper', 'sketchPaper', () => { if (sk) { buildSketchBar(); $('sketchDlg').style.setProperty('--sk-bg', sketchPaper(sk.n)); } });
+  seg('hwHandSeg', 'hwhand', 'hwHand', () => hwGlyphCache.clear());
+  seg('wpKindSeg', 'wp', 'wpKind');
+  const check = (id, key) => $(id).addEventListener('change', () => { s()[key] = $(id).checked; applySettings(); syncSettingsUI(); saveSoon(); });
+  check('setHwAnimate', 'hwAnimate');
+  check('setHwKeep', 'hwKeep');
+  check('setWpSound', 'wpSound');
+  check('setWpGrid', 'wpGrid');
+  // the sliders paint as they move and the wallpaper follows, without a full repaint of the panel
+  const range = (id, key, fmt) => $(id).addEventListener('input', () => {
+    s()[key] = +$(id).value;
+    $(id + 'Val').textContent = fmt(s()[key]);
+    applyWallpaper(); saveSoon();
+  });
+  range('wpOpacity', 'wpOpacity', pct);
+  range('wpDim', 'wpDim', pct);
+  range('wpBlur', 'wpBlur', (v) => num(v) + ' px');
+  range('wpAmount', 'wpAmount', pct);
+  // a link is kept as it is typed, and the video changes once it is a link to one
+  $('wpUrl').addEventListener('input', () => {
+    s().wpUrl = $('wpUrl').value.trim().slice(0, 500);
+    if (s().wpKind === 'youtube') applyWallpaper();
+    paintWpUrlHint(); saveSoon();
+  });
+  $('wpUrl').addEventListener('keydown', (e) => e.stopPropagation());
+  $('hwLang').addEventListener('change', () => { s().hwLang = $('hwLang').value; saveSoon(); });
+  // the face from a file the user owns
+  for (const kind of ['latin', 'arabic']) {
+    const K = kind === 'latin' ? 'Latin' : 'Arabic';
+    $('font' + K + 'Pick').addEventListener('click', async () => {
+      if (!FILES || !FILES.pickFont) return;
+      const r = await FILES.pickFont(kind);
+      if (!r) return;
+      if (r.error) { toast(t('set.fontFailed')); return; }
+      s().uiFontNames = Object.assign({}, s().uiFontNames, { [kind]: r.name });
+      await loadUiFont(kind);
+      syncSettingsUI(); saveSoon();
+      toast(t('set.fontLoaded', { name: r.name }));
+    });
+    $('font' + K + 'Forget').addEventListener('click', async () => {
+      if (FILES && FILES.forgetFont) await FILES.forgetFont(kind);
+      s().uiFontNames = Object.assign({}, s().uiFontNames, { [kind]: '' });
+      for (const f of [...document.fonts]) if (f.family === UI_FONT_FAMILY[kind]) document.fonts.delete(f);
+      syncSettingsUI(); saveSoon();
+    });
+  }
+  stepperize();
+}
+function paintWpUrlHint() {
+  const s = state.settings, bad = s.wpKind === 'youtube' && s.wpUrl && !(videoOf(s.wpUrl) || {}).kind;
+  $('wpUrlHint').textContent = t(bad ? 'set.wpUrlBad' : 'set.wpUrlHint');
+  $('wpUrlRow').classList.toggle('bad', !!bad);
+}
+function syncSettings30() {
+  const s = state.settings;
+  const on = (id, attr, v) => $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset[attr] === String(v)));
+  on('uiFontSeg', 'uifont', s.uiFont);
+  on('skPaperSeg', 'skpaper', s.sketchPaper);
+  on('hwHandSeg', 'hwhand', s.hwHand);
+  on('wpKindSeg', 'wp', s.wpKind);
+  $('setHwAnimate').checked = !!s.hwAnimate;
+  $('setHwKeep').checked = !!s.hwKeep;
+  $('setWpSound').checked = !!s.wpSound;
+  $('setWpGrid').checked = !!s.wpGrid;
+  for (const [id, fmt] of [['wpOpacity', pct], ['wpDim', pct], ['wpBlur', (v) => num(v) + ' px'], ['wpAmount', pct]]) {
+    $(id).value = s[id];
+    $(id + 'Val').textContent = fmt(s[id]);
+  }
+  if (document.activeElement !== $('wpUrl')) $('wpUrl').value = s.wpUrl;
+  const vid = s.wpKind === 'youtube', live = s.wpKind === 'rain' || s.wpKind === 'snow';
+  $('wpUrlRow').classList.toggle('hidden', !vid);
+  $('wpUrlHint').classList.toggle('hidden', !vid);
+  $('wpSoundRow').classList.toggle('hidden', !vid);
+  $('wpAmountRow').classList.toggle('hidden', !live);
+  paintWpUrlHint();
+  paintHwLangs();
+  const names = s.uiFontNames || {};
+  for (const kind of ['latin', 'arabic']) {
+    const K = kind === 'latin' ? 'Latin' : 'Arabic';
+    $('font' + K + 'Name').textContent = names[kind] || t('set.fontNone');
+    $('font' + K + 'Forget').classList.toggle('hidden', !names[kind]);
+  }
+  syncSteppers();
+}
+/* The languages Windows can read, asked for once (it starts PowerShell, so
+   not on every repaint) and kept; the setting's own value is always listed,
+   so a language removed from Windows still shows what was chosen. */
+let hwLangs = null;
+function paintHwLangs() {
+  const sel = $('hwLang'), cur = state.settings.hwLang;
+  const list = (hwLangs || []).slice();
+  if (cur !== 'auto' && !list.includes(cur)) list.push(cur);
+  const name = (tag) => { try { return new Intl.DisplayNames([state.settings.lang === 'ar' ? 'ar' : 'en'], { type: 'language' }).of(tag) || tag; } catch (_) { return tag; } };
+  sel.innerHTML = `<option value="auto">${te('set.hwLangAuto')}</option>` + list.map((tag) => `<option value="${esc(tag)}">${esc(name(tag))}</option>`).join('');
+  sel.value = cur;
+  if (hwLangs === null && FILES && FILES.ocrLangs) {
+    hwLangs = [];
+    FILES.ocrLangs().then((r) => { hwLangs = (r && Array.isArray(r.langs)) ? r.langs.filter((x) => typeof x === 'string') : []; paintHwLangs(); }).catch(() => {});
+  }
+}
+
+/* ---- the app's face from a file ----
+   Registered under a name of its own, and an Arabic face only for Arabic
+   letters, so the typewriter face keeps every Latin letter whichever was
+   loaded first (mental.css §84 lists the families in order). */
+const UI_FONT_FAMILY = { latin: 'MB UI Latin', arabic: 'MB UI Arabic' };
+const UI_ARABIC_RANGE = 'U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF';
+async function loadUiFont(kind) {
+  if (!FILES || !FILES.readFont) return false;
+  try {
+    const r = await FILES.readFont(kind);
+    if (!r || !r.bytes) return false;
+    for (const f of [...document.fonts]) if (f.family === UI_FONT_FAMILY[kind]) document.fonts.delete(f);
+    const face = new FontFace(UI_FONT_FAMILY[kind], r.bytes, kind === 'arabic' ? { unicodeRange: UI_ARABIC_RANGE } : {});
+    await face.load();
+    document.fonts.add(face);
+    return true;
+  } catch (err) { console.warn('the font file would not load', err); return false; }
+}
+function loadUiFonts() {
+  const names = state.settings.uiFontNames || {};
+  for (const kind of ['latin', 'arabic']) if (names[kind]) loadUiFont(kind);
+}
+
+/* ---- every choice as ‹ value › ----
+   The reference's options rows: the value between two arrows, and a short
+   bar per option under it with the chosen one lit. Built over the existing
+   controls rather than instead of them — a row of .seg buttons stays in the
+   document (hidden) and is still what every handler and syncSettingsUI()
+   talk to; the arrows press its buttons, and a check box is a two-option row
+   whose arrows click the box. So nothing that wires or reads a setting
+   changed, and the search still finds the words on the buttons. */
+function stepperize() {
+  const panes = $('setPanes');
+  panes.querySelectorAll('.set-row > .seg:not(.small)').forEach((seg) => {
+    if (seg.nextElementSibling && seg.nextElementSibling.classList.contains('stp')) return;
+    seg.classList.add('seg-under');
+    const stp = document.createElement('div');
+    stp.className = 'stp';
+    stp.innerHTML = `<button class="stp-a" data-d="-1" tabindex="-1" aria-hidden="true">${icon('chevron_left')}</button>` +
+      `<span class="stp-v"></span><button class="stp-a" data-d="1" tabindex="-1" aria-hidden="true">${icon('chevron_right')}</button><i class="stp-ticks"></i>`;
+    seg.after(stp);
+    stp._seg = seg;
+    const step = (d) => {
+      const bs = [...seg.querySelectorAll('button')];
+      const i = bs.findIndex((b) => b.classList.contains('on'));
+      const j = clamp((i < 0 ? 0 : i) + d, 0, bs.length - 1);
+      if (j !== i) bs[j].click();
+    };
+    stp.querySelectorAll('.stp-a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); step(rtlFlip(+a.dataset.d)); }));
+    stp.querySelector('.stp-v').addEventListener('click', () => {
+      const bs = [...seg.querySelectorAll('button')], i = bs.findIndex((b) => b.classList.contains('on'));
+      bs[(i + 1) % bs.length].click();
+    });
+    // the row answers the arrow keys, as an options screen does
+    const row = seg.closest('.set-row');
+    row.tabIndex = 0;
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(rtlFlip(e.key === 'ArrowRight' ? 1 : -1)); }
+    });
+    new MutationObserver(() => paintStepper(stp)).observe(seg, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  });
+  panes.querySelectorAll('label.set-check').forEach((lab) => {
+    if (lab.querySelector('.stp')) return;
+    const box = lab.querySelector('input[type="checkbox"]');
+    if (!box) return;
+    const stp = document.createElement('span');
+    stp.className = 'stp stp-check';
+    stp.innerHTML = `<span class="stp-a" aria-hidden="true">${icon('chevron_left')}</span><span class="stp-v"></span>` +
+      `<span class="stp-a" aria-hidden="true">${icon('chevron_right')}</span><i class="stp-ticks"><b></b><b></b></i>`;
+    lab.appendChild(stp);
+    stp._box = box;
+    box.addEventListener('change', () => paintStepper(stp));
+    lab.addEventListener('keydown', (e) => {
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target === box) {
+        e.preventDefault();
+        const want = rtlFlip(e.key === 'ArrowRight' ? 1 : -1) > 0;
+        if (box.checked !== want) box.click();
+      }
+    });
+  });
+  syncSteppers();
+}
+// in an Arabic window the arrows point the other way, and so do the keys
+const rtlFlip = (d) => (document.documentElement.dir === 'rtl' ? -d : d);
+function paintStepper(stp) {
+  if (stp._seg) {
+    const bs = [...stp._seg.querySelectorAll('button')];
+    const i = bs.findIndex((b) => b.classList.contains('on'));
+    stp.querySelector('.stp-v').textContent = i >= 0 ? bs[i].textContent.trim() : '';
+    const ticks = stp.querySelector('.stp-ticks');
+    if (ticks.childElementCount !== bs.length) ticks.innerHTML = '<b></b>'.repeat(bs.length);
+    [...ticks.children].forEach((b, k) => b.classList.toggle('on', k === i));
+    stp.querySelector('[data-d="-1"]').classList.toggle('off', i <= 0);
+    stp.querySelector('[data-d="1"]').classList.toggle('off', i >= bs.length - 1);
+  } else if (stp._box) {
+    const v = stp._box.checked;
+    stp.querySelector('.stp-v').textContent = t(v ? 'set.on' : 'set.off');
+    const [a, b] = stp.querySelectorAll('.stp-ticks b');
+    a.classList.toggle('on', !v); b.classList.toggle('on', v);
+  }
+}
+function syncSteppers() { document.querySelectorAll('#setPanes .stp').forEach(paintStepper); }
+
+/* ---- what the description column says ----
+   The row's name, what it does, and — as the reference ends every one —
+   what it was when the app arrived. The defaults come from defaults(), so
+   they cannot drift from what Restore default settings puts back. */
+const SET_KEYS = {
+  themeModeSeg: 'themeMode', motionSeg: 'motion', wheelSeg: 'wheel', perfSeg: 'perf', railSeg: 'railMode',
+  shapeSeg: 'noteShape', densitySeg: 'noteDensity', fontSeg: 'noteFont', shadowSeg: 'noteShadow',
+  linkStyleSeg: 'linkStyle', linkAnchorSeg: 'linkAnchor', autosaveSeg: 'autosaveMin', corkSeg: 'cork',
+  uiFontSeg: 'uiFont', skPaperSeg: 'sketchPaper', hwHandSeg: 'hwHand', wpKindSeg: 'wpKind',
+  setEmbeds: 'embeds', setGuides: 'guides', setFocusMode: 'focusMode', setSounds: 'sounds', setSoftware: 'softwareRender',
+  setSnap: 'snap', setCompass: 'compass', setMinimap: 'minimap', setSpell: 'spell', setConfirmDelete: 'confirmDelete',
+  setShowArchived: 'showArchived', setBackupAuto: 'backupAuto', setBackground: 'background', setCapture: 'capture',
+  setDaily: 'daily', setHwAnimate: 'hwAnimate', setHwKeep: 'hwKeep', setWpSound: 'wpSound', setWpGrid: 'wpGrid'
+};
+function settingDefaultText(unit) {
+  const d = defaults().settings;
+  const seg = unit.querySelector('.seg[id]');
+  if (seg && SET_KEYS[seg.id]) {
+    const v = String(d[SET_KEYS[seg.id]]);
+    const b = [...seg.querySelectorAll('button')].find((x) => Object.values(x.dataset).some((y) => y === v));
+    return b ? b.textContent.trim() : '';
+  }
+  const box = unit.querySelector('input[type="checkbox"][id]');
+  if (box && SET_KEYS[box.id]) return t(d[SET_KEYS[box.id]] ? 'set.on' : 'set.off');
+  return '';
+}
+function settingsDescHtml(el) {
+  const unit = el && el.closest ? el.closest(DESC_UNIT) : null;
+  if (!unit) return '';
+  const hint = settingsHintFor(el);
+  const lab = unit.querySelector(':scope > label, :scope > span:not(.stp), :scope > .set-row > label') || (unit.matches('label') ? unit : null);
+  const name = lab ? [...lab.childNodes].filter((n) => !(n.classList && (n.classList.contains('stp') || n.classList.contains('set-val') || n.classList.contains('row-ic')))).map((n) => n.textContent).join(' ').replace(/\s+/g, ' ').trim() : '';
+  const def = settingDefaultText(unit);
+  if (!hint && !def) return '';
+  return (name ? `<b class="sd-name">${esc(name)}</b>` : '') + (hint ? `<span class="sd-text">${esc(hint)}</span>` : '') +
+    (def ? `<span class="sd-def">${esc(t('set.default', { v: def }))}</span>` : '');
 }

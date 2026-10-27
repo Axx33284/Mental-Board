@@ -188,7 +188,7 @@ function defaults() {
       accent: 'mono',       // white on a dark theme, black on a light one — see ACCENTS
       /* What a note's text is set in. The UI keeps its own face whatever this
          says — this is about the writing, not about the app. See NOTE_FONTS. */
-      noteFont: 'system',
+      noteFont: 'typewriter',
       /* How a note sits on the canvas: the shadow under it. Presentation only,
          like shape and density. See NOTE_SHADOWS. */
       noteShadow: 'flat',
@@ -235,6 +235,24 @@ function defaults() {
       // the same, for drawing notes (2.5, js/sketch.js), and whether one opens full screen
       sketchPen: { tool: 'pen', color: 'text', size: 1 },
       sketchFull: true,
+      // the book reader's pen (3.0, js/book.js): the hand to read, or a pen, its colour and size
+      bookPen: { tool: 'hand', color: 'text', size: 1 },
+      /* What a drawing is drawn on (3.0): 'light' or 'dark' paper whose ink keeps
+         its colour whatever the theme, or 'note' — the note's colour and the
+         theme's ink, as before 3.0. See SK_PAPERS in sketch.js. */
+      sketchPaper: 'light',
+      /* Handwrite it (3.0, js/handwrite.js): the hand it writes in, the language
+         the picture is read in ('auto' tries every one Windows has), whether
+         it is written stroke by stroke, and whether what cannot be drawn stays. */
+      hwHand: 'ink', hwLang: 'auto', hwAnimate: true, hwKeep: true,
+      /* A live wallpaper behind the board (3.0, js/wallpaper.js): what it is,
+         a YouTube link for 'youtube', and how it sits — opacity, a darkening
+         veil, blur, how much rain or snow, and whether the video has sound. */
+      wpKind: 'none', wpUrl: '', wpOpacity: 100, wpDim: 25, wpBlur: 0, wpAmount: 60, wpSound: false, wpGrid: true,
+      // the face the app is set in (3.0): ITC American Typewriter / Neue Frutiger, or the system's
+      uiFont: 'typewriter',
+      // the names of the font files picked for it (main.js keeps the files in userDataonts)
+      uiFontNames: { latin: '', arabic: '' },
       // minutes between the saves that happen whatever else does (2.10) — one of AUTOSAVE_MINUTES
       autosaveMin: 5,
       // menu sounds (2.1, js/sound.js): off unless asked for, and how loud
@@ -342,7 +360,7 @@ function padPreset(p) {
    the only thing standing between an Arabic note and a system fallback that
    may not be installed. Drop it from one of these stacks and Arabic notes
    silently change face when the setting changes — see css/lang.css. */
-const NOTE_FONTS = ['system', 'serif', 'wide', 'mono', 'rounded', 'narrow', 'hand'];
+const NOTE_FONTS = ['typewriter', 'system', 'serif', 'wide', 'mono', 'rounded', 'narrow', 'hand'];
 /* The shadow under a note. `flat` is not "no shadow" — it is a hairline ring,
    because a note with neither a shadow nor an edge stops being an object on a
    surface and becomes a coloured patch of the surface. */
@@ -748,10 +766,11 @@ function adoptBoard(raw) {
        strokes. Absent on every other note; an older build reads one as an
        empty note. */
     sketch: n.pic ? undefined : okSketch(n.sketch),
-    form: n.pic || n.sketch ? undefined : okForm(n.form),
-    textAt: n.pic || n.sketch ? undefined : okTextAt(n.textAt),
-    tx: n.pic || n.sketch ? undefined : okNudge(n.tx),
-    ty: n.pic || n.sketch ? undefined : okNudge(n.ty),
+    book: n.pic || n.sketch ? undefined : okBook(n.book),      // a book (3.0, book.js)
+    form: n.pic || n.sketch || n.book ? undefined : okForm(n.form),
+    textAt: n.pic || n.sketch || n.book ? undefined : okTextAt(n.textAt),
+    tx: n.pic || n.sketch || n.book ? undefined : okNudge(n.tx),
+    ty: n.pic || n.sketch || n.book ? undefined : okNudge(n.ty),
     /* Only on something sitting in the trash: which board it came from, and
        when it went in. */
     trashedFrom: typeof n.trashedFrom === 'string' ? n.trashedFrom : undefined,
@@ -866,7 +885,10 @@ function adopt(raw, keepSettings) {
      preset it named, so nothing on the board moves. */
   st.notePad = healPad(rawSet.notePad || kept.notePad || null, st.noteDensity);
   st.noteDensity = padPreset(st.notePad);
-  if (!NOTE_FONTS.includes(st.noteFont)) st.noteFont = 'system';
+  if (!NOTE_FONTS.includes(st.noteFont)) st.noteFont = 'typewriter';
+  /* 3.0 made the typewriter face the default, and "the default" is what a
+     board that never chose kept as 'system'. Once, and marked done. */
+  if (!(st.fontV >= 3)) { if (st.noteFont === 'system') st.noteFont = 'typewriter'; st.fontV = 3; }
   if (!NOTE_SHADOWS.includes(st.noteShadow)) st.noteShadow = 'flat';
   if (!MOTION_MODES.includes(st.motion)) st.motion = 'auto';
   st.zoomSpeed = clamp(Math.round(+st.zoomSpeed || 100), 40, 220);
@@ -875,6 +897,22 @@ function adopt(raw, keepSettings) {
   st.pen = healPen(st.pen);
   st.sketchPen = healSketchPen(st.sketchPen);
   st.sketchFull = st.sketchFull !== false;
+  { const bp = st.bookPen || {}; st.bookPen = { tool: ['hand', 'pen', 'marker', 'brush', 'eraser'].includes(bp.tool) ? bp.tool : 'hand', color: inkColorOk(bp.color) ? bp.color : 'text', size: [0, 1, 2].includes(bp.size) ? bp.size : 1 }; }
+  if (!SK_PAPER_KINDS.includes(st.sketchPaper)) st.sketchPaper = 'light';
+  if (!HW_HANDS.includes(st.hwHand)) st.hwHand = 'ink';
+  st.hwLang = /^(auto|[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*)$/.test(String(st.hwLang)) ? String(st.hwLang) : 'auto';
+  st.hwAnimate = st.hwAnimate !== false;
+  st.hwKeep = st.hwKeep !== false;
+  if (!WP_KINDS.includes(st.wpKind)) st.wpKind = 'none';
+  st.wpUrl = typeof st.wpUrl === 'string' ? st.wpUrl.slice(0, 500) : '';
+  st.wpOpacity = clamp(Math.round(+st.wpOpacity || 0), 10, 100);
+  st.wpDim = clamp(Math.round(+st.wpDim || 0), 0, 90);
+  st.wpBlur = clamp(Math.round(+st.wpBlur || 0), 0, 20);
+  st.wpAmount = clamp(Math.round(+st.wpAmount || 0), 5, 100);
+  st.wpSound = !!st.wpSound;
+  st.wpGrid = st.wpGrid !== false;
+  if (!['typewriter', 'system'].includes(st.uiFont)) st.uiFont = 'typewriter';
+  { const fn = st.uiFontNames || {}; st.uiFontNames = { latin: typeof fn.latin === 'string' ? fn.latin.slice(0, 200) : '', arabic: typeof fn.arabic === 'string' ? fn.arabic.slice(0, 200) : '' }; }
   st.autosaveMin = AUTOSAVE_MINUTES.includes(+st.autosaveMin) ? +st.autosaveMin : 5;
   st.sounds = !!st.sounds;
   st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);

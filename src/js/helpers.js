@@ -158,11 +158,11 @@ const textCache = new Map();
 function noteText(n) {
   if (!n) return '';
   // a drawing note's text is its title and the words typed on it (sketch.js), keyed so a change is seen
-  const words = n.sketch ? [n.sketch.title || ''].concat((n.sketch.texts || []).map((x) => x.text)).filter(Boolean).join('\n') : '';
-  const src = n.sketch ? '\u0001' + words : n.body;
+  const words = n.sketch ? [n.sketch.title || ''].concat((n.sketch.texts || []).map((x) => x.text)).filter(Boolean).join('\n') : n.book ? n.book.title || '' : '';
+  const src = n.sketch || n.book ? '\u0001' + words : n.body;
   const hit = textCache.get(n.id);
   if (hit && hit.body === src) return hit.text;
-  const text = n.sketch ? words : stripHtml(n.body);
+  const text = n.sketch || n.book ? words : stripHtml(n.body);
   if (textCache.size > TEXT_CACHE_MAX) textCache.clear();
   textCache.set(n.id, { body: src, text, folded: foldSearch(text) });
   return text;

@@ -105,7 +105,17 @@ contextBridge.exposeInMainWorld('mbFiles', {
      origin taints a canvas, and a tainted canvas refuses toDataURL(). */
   readImage: (url) => ipcRenderer.sendSync('files:read-image', url),
   // pictures and PDFs to draw over (2.7): [{ name, kind: 'image'|'pdf', ext, bytes | error }]
-  pickDrawing: () => ipcRenderer.invoke('files:pick-drawing')
+  pickDrawing: () => ipcRenderer.invoke('files:pick-drawing'),
+  /* Handwrite it (3.0): the words in a PNG, read by Windows' own OCR —
+     { profile, results: [{ lang, angle, lines: [{ text, words: [{ t, x, y, w, h }] }] }] } or { error } */
+  ocr: (dataUrl, lang) => ipcRenderer.invoke('ocr:read', String(dataUrl || ''), String(lang || '')),
+  ocrLangs: () => ipcRenderer.invoke('ocr:langs'),
+  // a book (3.0): one PDF, picked; its path goes to attach() like any other file
+  pickBook: () => ipcRenderer.invoke('files:pick-book'),
+  // the app's face from a font file the user owns (3.0): 'latin' or 'arabic'
+  pickFont: (kind) => ipcRenderer.invoke('font:pick', String(kind || '')),
+  readFont: (kind) => ipcRenderer.invoke('font:read', String(kind || '')),
+  forgetFont: (kind) => ipcRenderer.invoke('font:forget', String(kind || ''))
 });
 
 contextBridge.exposeInMainWorld('mbWin', {

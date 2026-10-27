@@ -461,9 +461,15 @@ function createWindow() {
 const http = require('http');
 const crypto = require('crypto');
 
+/* `ytbg` / `ytbgs` are the live wallpaper (3.0, js/wallpaper.js): the same
+   player, looped, with no controls, muted or with its sound. */
+const YT_BG = (id, mute) => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=${mute}&loop=1&playlist=${id}` +
+  '&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&rel=0&playsinline=1';
 const PLAYER_FRAME = {
   yt: (id) => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&modestbranding=1`,
-  vimeo: (id) => `https://player.vimeo.com/video/${id}?autoplay=1`
+  vimeo: (id) => `https://player.vimeo.com/video/${id}?autoplay=1`,
+  ytbg: (id) => YT_BG(id, 1),
+  ytbgs: (id) => YT_BG(id, 0)
 };
 /* The page holds one iframe and a style block, so it needs nothing else.
 
@@ -494,7 +500,7 @@ function startPlayerServer() {
   if (playerServer) return Promise.resolve(playerPort);
   return new Promise((done) => {
     const srv = http.createServer((req, res) => {
-      const m = new RegExp(`^/p/${playerToken}/(yt|vimeo)/([\\w-]{1,20})$`).exec((req.url || '').split('?')[0]);
+      const m = new RegExp(`^/p/${playerToken}/(yt|vimeo|ytbgs?)/([\\w-]{1,20})$`).exec((req.url || '').split('?')[0]);
       if (!m || !PLAYER_FRAME[m[1]]) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         return res.end('no');
@@ -520,6 +526,82 @@ ipcMain.handle('embed:player-url', async (_e, kind, id) => {
   const port = await startPlayerServer();
   if (!port) return null;
   return `http://127.0.0.1:${port}/p/${playerToken}/${kind}/${id}`;
+});
+
+/* ---------- reading the words in a picture (3.0, js/handwrite.js) ----------
+   Handwrite it reads the picture with the OCR Windows 10 and 11 ship
+   (Windows.Media.Ocr) — no download, no network, the languages are the ones
+   installed in Windows ▸ Language. There is no way into WinRT from Node
+   without a native module, so PowerShell asks it: one fixed script, passed as
+   -EncodedCommand (which no execution policy applies to), the picture's path
+   in an environment variable rather than in the script, and the answer as
+   JSON on stdout. The renderer sends the picture as a PNG at the size it
+   analyses it at, so the boxes come back in its own pixels; the file is a
+   temporary one and is removed when the answer is in.
+
+   `langs` is '' for every recognizer Windows has, or one BCP-47 tag. Every
+   one asked for is run and all the answers returned; the renderer picks. */
+const OCR_PS = String.raw`
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
+$null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
+$null = [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime]
+$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation` + '`' + String.raw`1' })[0]
+function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(-1) | Out-Null; $task.Result }
+$tags = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag })
+if ($env:MB_OCR_LIST -eq '1') { @{ langs = $tags } | ConvertTo-Json -Compress; exit }
+$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($env:MB_OCR_PATH)) ([Windows.Storage.StorageFile])
+$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+$dec = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+$bmp = Await ($dec.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+$want = if ($env:MB_OCR_LANGS) { @($env:MB_OCR_LANGS) } else { $tags }
+$prof = ''
+try { $prof = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages().RecognizerLanguage.LanguageTag } catch {}
+$out = foreach ($tag in $want) {
+  $eng = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new($tag))
+  if (-not $eng) { continue }
+  $res = Await ($eng.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])
+  $lines = foreach ($l in $res.Lines) {
+    @{ text = $l.Text; words = @(foreach ($w in $l.Words) { $r = $w.BoundingRect; @{ t = $w.Text; x = $r.X; y = $r.Y; w = $r.Width; h = $r.Height } }) }
+  }
+  @{ lang = $tag; angle = $res.TextAngle; lines = @($lines) }
+}
+$stream.Dispose()
+@{ profile = $prof; results = @($out) } | ConvertTo-Json -Depth 7 -Compress
+`;
+function runOcr(env) {
+  return new Promise((done) => {
+    if (process.platform !== 'win32') return done({ error: 'no-ocr' });
+    const { spawn } = require('child_process');
+    let out = '', err = '';
+    let ps;
+    try {
+      ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(OCR_PS, 'utf16le').toString('base64')],
+        { windowsHide: true, env: Object.assign({}, process.env, env) });
+    } catch (e) { return done({ error: errText(e) }); }
+    const timer = setTimeout(() => { try { ps.kill(); } catch (_) {} done({ error: 'timeout' }); }, 90000);
+    ps.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    ps.stderr.on('data', (d) => { err += d.toString('utf8'); });
+    ps.on('error', (e) => { clearTimeout(timer); done({ error: errText(e) }); });
+    ps.on('close', () => {
+      clearTimeout(timer);
+      try { done(JSON.parse(out.trim() || 'null') || { error: err.trim().slice(0, 300) || 'no answer' }); }
+      catch (_) { done({ error: (err || out).trim().slice(0, 300) || 'unreadable answer' }); }
+    });
+  });
+}
+ipcMain.handle('ocr:langs', () => runOcr({ MB_OCR_LIST: '1' }));
+ipcMain.handle('ocr:read', async (_e, dataUrl, lang) => {
+  const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  if (!m) return { error: 'not a png data url' };
+  const tag = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(String(lang || '')) ? String(lang) : '';
+  const file = path.join(app.getPath('temp'), `mb-ocr-${process.pid}-${crypto.randomBytes(6).toString('hex')}.png`);
+  try { fs.writeFileSync(file, Buffer.from(m[1], 'base64')); } catch (e) { return { error: errText(e) }; }
+  try { return await runOcr({ MB_OCR_PATH: file, MB_OCR_LANGS: tag }); }
+  finally { try { fs.unlinkSync(file); } catch (_) {} }
 });
 
 /* ---------- a phone as a drawing tablet (2.2) ----------
@@ -1000,6 +1082,67 @@ ipcMain.handle('files:pick-drawing', async (e) => {
     } catch (err) { out.push({ name: path.basename(p), kind, error: errText(err) }); }
   }
   return out;
+});
+
+/* A book (3.0, js/book.js): one PDF, any size the disk will take. Only its
+   path comes back — files:attach copies it into the board's folder, and the
+   reader reads it from there through mbf://. Main never parses a PDF. */
+ipcMain.handle('files:pick-book', async (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t('main.pickBook'), properties: ['openFile'],
+    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  });
+  if (canceled || !filePaths.length) return null;
+  const p = filePaths[0];
+  try { return { path: p, name: path.basename(p), size: fs.statSync(p).size }; } catch (err) { return { error: errText(err) }; }
+});
+
+/* The app's own face from a file the user owns (3.0, Settings ▸ Appearance):
+   ITC American Typewriter and Neue Frutiger are licensed fonts, so the app
+   cannot ship them. A picked file is copied into userData\fonts as
+   ui-latin.<ext> or ui-arabic.<ext> (one of each, a new pick replaces the old)
+   and its bytes are handed to the page, which registers it with FontFace — no
+   URL, so the page's CSP never sees it. */
+const UI_FONT_DIR = () => path.join(app.getPath('userData'), 'fonts');
+const UI_FONT_EXT = ['ttf', 'otf', 'woff', 'woff2'];
+const uiFontFile = (kind) => {
+  try { return fs.readdirSync(UI_FONT_DIR()).find((f) => f.startsWith('ui-' + kind + '.')) || ''; } catch (_) { return ''; }
+};
+const okFontKind = (k) => (k === 'latin' || k === 'arabic' ? k : '');
+ipcMain.handle('font:pick', async (e, kind) => {
+  kind = okFontKind(kind);
+  if (!kind) return null;
+  const w = BrowserWindow.fromWebContents(e.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(w, {
+    title: t(kind === 'latin' ? 'main.pickFontLatin' : 'main.pickFontArabic'), properties: ['openFile'],
+    filters: [{ name: t('main.filterFont'), extensions: UI_FONT_EXT }]
+  });
+  if (canceled || !filePaths.length) return null;
+  const src = filePaths[0], ext = path.extname(src).slice(1).toLowerCase();
+  if (!UI_FONT_EXT.includes(ext)) return { error: 'not a font' };
+  try {
+    if (fs.statSync(src).size > 30 * 1024 * 1024) return { error: 'too-big' };
+    fs.mkdirSync(UI_FONT_DIR(), { recursive: true });
+    const old = uiFontFile(kind);
+    const to = path.join(UI_FONT_DIR(), `ui-${kind}.${ext}`);
+    fs.copyFileSync(src, to + '.tmp');
+    if (old) fs.rmSync(path.join(UI_FONT_DIR(), old), { force: true });
+    fs.renameSync(to + '.tmp', to);
+    return { name: path.basename(src) };
+  } catch (err) { return { error: errText(err) }; }
+});
+ipcMain.handle('font:read', (_e, kind) => {
+  kind = okFontKind(kind);
+  const f = kind && uiFontFile(kind);
+  if (!f) return null;
+  try { const b = fs.readFileSync(path.join(UI_FONT_DIR(), f)); return { bytes: new Uint8Array(b.buffer, b.byteOffset, b.length) }; } catch (_) { return null; }
+});
+ipcMain.handle('font:forget', (_e, kind) => {
+  kind = okFontKind(kind);
+  const f = kind && uiFontFile(kind);
+  if (f) { try { fs.rmSync(path.join(UI_FONT_DIR(), f), { force: true }); } catch (_) {} }
+  return true;
 });
 
 /* Save a board picture. Takes a data: URL because that is what a canvas

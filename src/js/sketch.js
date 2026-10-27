@@ -370,8 +370,33 @@ function openSketch(id) {
   if (state.settings.sketchFull !== false) enterSketchFull();
   requestAnimationFrame(() => requestAnimationFrame(() => { if (sk) fitSketchView(); padHostChanged(); }));
 }
-// the paper is the note's own colour, so the drawing looks the same open and closed
+/* The paper a drawing is on (3.0, Settings ▸ Drawing). Until 3.0 the paper was
+   the note's colour and the ink was picked against the app's theme, so black
+   ink turned white when the theme went dark and a drawing changed every evening.
+   Now the ink is picked against the paper: on Light paper (the default) black
+   is black and red is the same red whatever the theme, on Dark paper the other
+   way round, and the colours are these literal values — mental.css §83 sets
+   them on the editor and on the note, and the board picture reads this table.
+   'note' keeps the old way: the note's colour, the theme's ink. */
+const SK_PAPERS = {
+  light: { bg: '#fbfaf6', ink: '#1c1c1c', other: '#ffffff',
+    c: { default: '#8a90a5', red: '#d64545', orange: '#d67c2d', amber: '#b8901e', green: '#2d9655', teal: '#18968c', blue: '#3c78dc', violet: '#8250dc', pink: '#d64696' } },
+  dark: { bg: '#17181b', ink: '#ededea', other: '#111111',
+    c: { default: '#6d7288', red: '#ff7b7b', orange: '#ffa65a', amber: '#f0cc5a', green: '#69de8e', teal: '#5adcd6', blue: '#72afff', violet: '#b48cff', pink: '#ff8ccd' } }
+};
+const SK_PAPER_KINDS = ['light', 'dark', 'note'];
+const skPaper = () => SK_PAPERS[state.settings.sketchPaper] || null;
+// a stroke's colour on the fixed paper, as a literal; null when the theme decides ('note' paper)
+function sketchInkHex(c) {
+  const P = skPaper();
+  if (isHex(c)) return c;
+  if (!P) return null;
+  return c === 'text' ? P.ink : P.c[c] || P.ink;
+}
+// the paper is the fixed paper, or the note's own colour, so the drawing looks the same open and closed
 function sketchPaper(n) {
+  const P = skPaper();
+  if (P) return P.bg;
   const el = els.get(n.id);
   const bg = el ? getComputedStyle(el).getPropertyValue('--nb').trim() : '';
   return bg || 'var(--surface)';
@@ -531,7 +556,9 @@ function buildSketchBar() {
     [0, 1, 2].map((i) => `<button class="ik-size${p.size === i ? ' on' : ''}" data-size="${i}" title="${sizeTips[i]}"><i style="--d:${[4, 7, 11][i]}px"></i></button>`).join('') +
     `<span class="ik-sep"></span>` +
     ['text', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'].filter((c) => c === 'text' || COLORS.includes(c)).map(sw).join('') +
-    `<label class="ik-custom${isHex(p.color) ? ' on' : ''}" title="${te('ink.custom')}" style="--sw:${custom}"><input type="color" value="${custom}"></label>` +
+    // on a fixed paper, the colour that is not the ink: white on light paper, black on dark (3.0)
+    (skPaper() ? `<button class="ik-sw${p.color === skPaper().other ? ' on' : ''}" data-ink-color="${skPaper().other}" style="--sw:${skPaper().other}" title="${te(skPaper().other === '#ffffff' ? 'ink.white' : 'ink.black')}"></button>` : '') +
+    `<label class="ik-custom${isHex(p.color) && p.color !== (skPaper() || {}).other ? ' on' : ''}" title="${te('ink.custom')}" style="--sw:${custom}"><input type="color" value="${custom}"></label>` +
     `<span class="ik-sep"></span>` +
     btn('zout', 'zoom_out', te('zoom.out')) +
     `<button class="ik-btn sk-pct" data-sk="pct" title="${te('zoom.reset')}"></button>` +
@@ -1215,8 +1242,8 @@ async function sketchClipImage(clip) {
     for (const x of clip.texts) paintSketchTextOnCanvas(g, x, colorOf(x.color));
     paintInkOnCanvas(g, clip.strokes, colorOf);
     const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
-    if (blob) await toSystemClipboardImage(blob);
-  } catch (err) { console.warn('drawing note: the copy did not reach the system clipboard', err); }
+    return !!blob && await toSystemClipboardImage(blob);
+  } catch (err) { console.warn('drawing note: the copy did not reach the system clipboard', err); return false; }
 }
 
 /* ---- a picture under the drawing, edited (2.10) ----
@@ -1539,7 +1566,7 @@ function wireSketch() {
 function paintSketchOnCanvas(ctx, n, pal, inkColor, font, pictures) {
   const s = n.sketch;
   ctx.save();
-  ctx.fillStyle = pal.noteInk(n.color);
+  ctx.fillStyle = skPaper() ? skPaper().ink : pal.noteInk(n.color);
   ctx.font = `600 15px ${font}`;
   ctx.textBaseline = 'middle';
   ctx.fillText(s.title || t('sketch.untitled'), n.x + 14, n.y + 34 / 2 + 2, n.w - 28);
@@ -1555,8 +1582,10 @@ function paintSketchOnCanvas(ctx, n, pal, inkColor, font, pictures) {
       const img = pictures && pictures.get(n.id + '#' + i);
       if (img) { try { ctx.drawImage(img, p.x, p.y, p.w, p.h); } catch (_) {} }
     });
-    for (const x of s.texts || []) paintSketchTextOnCanvas(ctx, x, inkColor(x.color));
-    paintInkOnCanvas(ctx, s.strokes, inkColor);
+    // on a fixed paper the ink is its literal colour, as on screen (3.0)
+    const ink = (c) => sketchInkHex(c) || inkColor(c);
+    for (const x of s.texts || []) paintSketchTextOnCanvas(ctx, x, ink(x.color));
+    paintInkOnCanvas(ctx, s.strokes, ink);
   }
   ctx.restore();
 }

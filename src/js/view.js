@@ -234,7 +234,7 @@ function syncMounted() {
   state.frames.forEach((f) => { if (inRect(f, R)) want.add(f.id); });
   /* Below FAR_Z the notes are drawn on the canvas (far.js), so only what the
      canvas does not draw is mounted: a picture, a drawing note. */
-  state.notes.forEach((n) => { if (inRect(n, R) && (!farMode || n.pic || n.sketch)) want.add(n.id); });
+  state.notes.forEach((n) => { if (inRect(n, R) && (!farMode || n.pic || n.sketch || n.book)) want.add(n.id); });
   if (editNote) want.add(editNote.id);                       // never pull the caret out
   /* What a gesture holds stays in the document — but in far zoom a note is not
      mounted just because it is held: a drag that began on the canvas moves the

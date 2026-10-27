@@ -128,7 +128,8 @@ function bodyHtml(body) {
 function enterEdit(n) {
   if (!canEditHere()) return;
   if (n && n.pic) { editPicture(n.id); return; }     // a picture has no text; its editor is the studio
-  if (n && n.sketch) { openSketch(n.id); return; }   // nor has a drawing note; its editor is full screen (sketch.js)
+  if (n && n.sketch) { openSketch(n.id); return; }
+  if (n && n.book) { openBook(n.id); return; }         // and a book opens its reader (book.js)   // nor has a drawing note; its editor is full screen (sketch.js)
   // the note may be culled — flying to it and opening it are one gesture
   const el = ensureMounted(n.id);
   if (!el) return;

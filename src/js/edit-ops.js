@@ -34,6 +34,7 @@ function addNote(worldPt, opts) {
   if (o.pic) { n.pic = true; n.ar = +o.ar > 0 ? +o.ar : w / h; }
   // a drawing note — see sketch.js
   if (o.sketch) n.sketch = okSketch(o.sketch);
+  if (o.book) n.book = okBook(o.book);           // a book — see book.js
   state.notes.push(n);
   const el = makeNote(n);
   $('notesLayer').appendChild(el);
@@ -41,7 +42,7 @@ function addNote(worldPt, opts) {
   updateCulling();
   updateEmpty(); refreshFrameCounts(); save();
   setSelection([n.id], false);
-  if (!n.pic && !n.sketch && (!opts || opts.edit !== false)) setTimeout(() => enterEdit(n), 20);
+  if (!n.pic && !n.sketch && !n.book && (!opts || opts.edit !== false)) setTimeout(() => enterEdit(n), 20);
   return n;
 }
 
@@ -574,6 +575,38 @@ async function toSystemClipboard(text, html) {
 async function toSystemClipboardImage(blob) {
   try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); return true; } catch (_) { return false; }
 }
+/* A picture on the board, out of the app (3.0): onto the system clipboard as a
+   PNG, which is the one image type Chromium will put there — so a JPEG, a WebP
+   or an SVG is drawn once and goes out as a PNG. Read through toDataUrl()
+   (media.js), because an mbf:// picture would taint the canvas. */
+async function copyPictureOut(src) {
+  let ok = false;
+  try {
+    const img = new Image();
+    img.src = await toDataUrl(src);
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || 1; c.height = img.naturalHeight || 1;
+    c.getContext('2d').drawImage(img, 0, 0);
+    const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+    ok = !!blob && await toSystemClipboardImage(blob);
+  } catch (_) { ok = false; }
+  toast(t(ok ? 'msg.picCopied' : 'msg.picNotCopied'));
+  return ok;
+}
+// the picture a note shows: a picture note's, else the first one in its body
+function notePictureSrc(n) {
+  if (!n || !n.body || n.sketch) return '';
+  const m = /<img\b[^>]*\bsrc="([^"]+)"/i.exec(n.body);
+  return m ? m[1].replace(/&amp;/g, '&') : '';
+}
+// a drawing note on the board, out as the picture it is
+async function copySketchOut(n) {
+  if (!n || !n.sketch) return false;
+  const ok = await sketchClipImage({ strokes: n.sketch.strokes || [], pics: sketchPicsOf(n), texts: n.sketch.texts || [] });
+  toast(t(ok ? 'msg.picCopied' : 'msg.picNotCopied'));
+  return ok;
+}
 
 /* --- the board as a picture ---------------------------------------------
    Everything on the board is already in world coordinates with a known
@@ -733,7 +766,7 @@ async function loadExportPictures(board) {
     try { await img.decode(); out.set(key, img); } catch (_) {}
   };
   for (const n of board.notes || []) {
-    if (n.pic) await read(n.id, picSrc(n));
+    if (n.pic || n.book) await read(n.id, picSrc(n));        // a book's cover is its first <img> (book.js)
     // a drawing note's pictures under the ink (sketch.js), as `<id>#<index>`
     if (n.sketch && n.sketch.pics) {
       const files = sketchPicFiles(n);
@@ -837,10 +870,12 @@ function paintBoardCanvas(board, scale, pictures) {
     const form = okForm(n.form);
     const shape = form ? formPath2D(n, form) : null;
     const box = form ? formBox(n, form) : { x: n.x, y: n.y, w: n.w, h: n.h };
-    ctx.fillStyle = pal.noteBg(n.color);
+    ctx.fillStyle = n.sketch && skPaper() ? skPaper().bg : pal.noteBg(n.color);   // a drawing on fixed paper (sketch.js SK_PAPERS)
     if (shape) ctx.fill(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.fill(); }
     ctx.strokeStyle = pal.noteLine(n.color); ctx.lineWidth = 1.5;
     if (shape) ctx.stroke(shape); else { roundRectPath(ctx, n.x, n.y, n.w, n.h, 14); ctx.stroke(); }
+    // a book: its cover and its title (book.js)
+    if (n.book) { paintBookOnCanvas(ctx, n, pal, FONT, pictures); ctx.restore(); return; }
     // a drawing note: its title and its drawing, in the note's own ink (sketch.js)
     if (n.sketch) {
       paintSketchOnCanvas(ctx, n, pal, (c) => (c === 'text' ? pal.noteInk(n.color) : inkColor(c)), FONT, pictures);

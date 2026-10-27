@@ -94,13 +94,16 @@ function openCtxMenu(clientX, clientY, id, spell) {
     html += `<div class="cm-label">${icon('image')}<span>${te('menu.picture')}</span></div>`;
     html += item('editPic', 'brush', te('menu.editPicture'), te('menu.dblclick'));
     html += item('drawOn', 'draw_abstract', te('menu.drawOnPicture'));
+    html += item('handwrite', 'history_edu', te('hw.menu'));
     html += item('replacePic', 'image', te('menu.replacePicture'));
     html += item('link', 'link', te('menu.link'), 'L');
     if (n0 && firstFileUrl(n0)) html += item('whereFile', 'folder_open', te('menu.whereFile'));
     html += `<p class="cm-hint">${te('menu.pictureHint')}</p>`;
     html += `<div class="cm-sep"></div>`;
     if (onTrashBoard()) html += item('putBack', 'undo', te('menu.putBack'));
-    html += item('copy', 'content_copy', te('menu.copy'), 'Ctrl C');
+    // Ctrl+C on a lone picture puts the picture itself on the system clipboard (3.0, copySelection)
+    html += item('copyPic', 'content_copy', te('menu.copyPicture'), 'Ctrl C');
+    html += item('copy', 'library_add', te('menu.copyItem'));
     html += item('cut', 'content_cut', te('menu.cut'), 'Ctrl X');
     html += item('dup', 'library_add', te('menu.duplicate'), 'Ctrl D');
     html += item('front', 'arrow_upward', te('menu.front'));
@@ -157,7 +160,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
     if (targets.length === 1 && !oneSketch) html += item('icon', 'mood', te('menu.icon'));
     /* A note's shape (2.4) — a panel of its own rather than more rows here,
        because it carries a grid of shapes, a place picker and two sliders. */
-    if (noteTargets.some((tid) => { const x = state.notes.find((y) => y.id === tid) || {}; return !x.pic && !x.sketch; })) html += item('shape', 'category', te('menu.shape'));
+    if (noteTargets.some((tid) => { const x = state.notes.find((y) => y.id === tid) || {}; return !x.pic && !x.sketch && !x.book; })) html += item('shape', 'category', te('menu.shape'));
     if (first) html += item('focus', 'filter_alt', te('menu.focusColour'));
     /* "Show me everything that is blocked" was the one question a board full of
        people could not answer. Only on a note — a workflow frame has no status
@@ -172,6 +175,9 @@ function openCtxMenu(clientX, clientY, id, spell) {
     if (targets.length === 1 && !isFrame(targets[0])) {
       html += oneSketch ? item('edit', 'draw_abstract', te('sketch.edit'), te('menu.dblclick')) : item('edit', 'edit', te('menu.edit'), te('menu.dblclick'));
       if (oneSketch) html += item('renameSketch', 'edit', te('menu.rename'));
+      // out of the app as a picture (3.0): a drawing as it looks, a note's first picture as it is
+      if (oneSketch) html += item('copySketch', 'content_copy', te('menu.copyAsPicture'));
+      else if (notePictureSrc(state.notes.find((x) => x.id === targets[0]))) html += item('copyPic', 'content_copy', te('menu.copyPicture'));
       html += item('link', 'link', te('menu.link'), 'L');
       /* Where this note's ropes go, one row per note at the other end. This is
          what the backlink badge in the old note head was for, and more: it
@@ -242,6 +248,8 @@ function openCtxMenu(clientX, clientY, id, spell) {
     html += item('newNote', 'sticky_note_2', te('menu.newNote'), 'N');
     html += item('newFrame', 'select_all', te('menu.newFrame'), 'G');
     html += item('newSketch', 'draw_abstract', te('menu.newSketch'));
+    html += item('newNotebook', 'auto_stories', te('menu.newNotebook'));
+    html += item('newBook', 'menu_book', te('menu.newBook'));
     html += item('addPicture', 'image', te('menu.addPicture'));
     html += item('addVideo', 'movie', te('menu.addVideo'));
     if (clipboard.length) html += item('paste', 'content_paste', te('menu.paste', { n: clipboard.length }), 'Ctrl V');
@@ -359,6 +367,7 @@ function openCtxMenu(clientX, clientY, id, spell) {
       case 'shape': openShapeMenu(clientX, clientY, targets.filter((tid) => !isFrame(tid))); break;
       case 'editPic': editPicture(targets[0]); break;
       case 'drawOn': pictureToSketch(targets[0]); break;
+      case 'handwrite': handwritePictureNote(targets[0]); break;
       case 'replacePic': replacePicture(targets[0]); break;
       case 'newNoteHere': addNote(worldPt); break;
       case 'edit': { const n = state.notes.find((x) => x.id === targets[0]); if (n) enterEdit(n); break; }
@@ -369,7 +378,9 @@ function openCtxMenu(clientX, clientY, id, spell) {
       case 'flyHere': { const f = state.frames.find((x) => x.id === targets[0]); if (f) fitTo([f]); break; }
       case 'group': groupSelection(); break;
       case 'dup': duplicate(targets); break;
-      case 'copy': copySelection(false); break;
+      case 'copy': copySelection(false, true); break;
+      case 'copyPic': copyPictureOut(notePictureSrc(state.notes.find((x) => x.id === targets[0]))); break;
+      case 'copySketch': copySketchOut(state.notes.find((x) => x.id === targets[0])); break;
       case 'cut': copySelection(true); break;
       case 'goNote': goToNote(b.dataset.note); break;
       case 'unlink': pushUndo(); unlinkNote(targets[0]); break;
@@ -393,6 +404,8 @@ function openCtxMenu(clientX, clientY, id, spell) {
       case 'newNote': addNote(worldPt); break;
       case 'newFrame': addFrame(worldPt); break;
       case 'newSketch': addSketch(worldPt); break;
+      case 'newNotebook': addNotebook(worldPt); break;
+      case 'newBook': addBookFromPdf(worldPt); break;
       case 'addPicture': addMediaFromPicker('image', worldPt); break;
       case 'addVideo': addMediaFromPicker('video', worldPt); break;
       case 'paste': pasteClipboard(worldPt); break;

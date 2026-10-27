@@ -15,7 +15,7 @@
      Nothing is contacted until the play button on a card is pressed. See
      js/embeds.js and the player server in main.js. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob: file: mbf:; media-src 'self' data: blob: file: mbf:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; frame-src http://127.0.0.1:*">
+      content="default-src 'self'; img-src 'self' data: blob: file: mbf:; media-src 'self' data: blob: file: mbf:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'self' mbf:; frame-src http://127.0.0.1:*">
 <title>Mental Board</title>
 <link rel="stylesheet" href="assets/fonts.css">
 <!-- maths and chemistry in a note (2.3): KaTeX and its mhchem extension, MIT,
@@ -83,6 +83,9 @@
     <!-- A board's own background picture, if it chose one — see page.js. Under
          the paper and fixed to the viewport, so panning costs nothing: it is
          one composited layer that never repaints. -->
+    <!-- A live wallpaper (3.0, js/wallpaper.js): rain, snow or a video, under
+         everything else on the board and never taking the pointer. -->
+    <div id="wallpaper" class="hidden" aria-hidden="true"><canvas id="wpCanvas"></canvas><iframe id="wpFrame" tabindex="-1" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe><div class="wp-veil"></div></div>
     <div id="bgImage" class="hidden" aria-hidden="true"></div>
     <div id="grid" aria-hidden="true"></div>
     <div id="world">
@@ -152,6 +155,8 @@
       <button class="fab-item" data-new="video" data-icon="movie"><span class="fi-ic"></span><span><span data-t="fab.video"></span></span></button>
       <button class="fab-item" data-new="sketch" data-icon="draw_abstract"><span class="fi-ic"></span><span><span data-t="fab.sketch"></span></span></button>
       <button class="fab-item" data-new="sketchFile" data-icon="image"><span class="fi-ic"></span><span><span data-t="fab.sketchFile"></span></span></button>
+      <button class="fab-item" data-new="book" data-icon="menu_book"><span class="fi-ic"></span><span><span data-t="fab.book"></span></span></button>
+      <button class="fab-item" data-new="notebook" data-icon="auto_stories"><span class="fi-ic"></span><span><span data-t="fab.notebook"></span></span></button>
       <button class="fab-item" data-new="draw" data-icon="draw"><span class="fi-ic"></span><span><span data-t="fab.draw"></span><em>P</em></span></button>
       <button class="fab-item" data-new="link" data-icon="link"><span class="fi-ic"></span><span><span data-t="fab.link"></span><em>L</em></span></button>
     </div>
@@ -317,8 +322,10 @@
          switching only toggles a class. -->
     <nav class="set-nav" id="setNav" role="tablist">
         <button class="set-tab on" data-tab="appearance" role="tab"><span class="tab-ic"></span><span data-t="set.appearance"></span></button>
+        <button class="set-tab" data-tab="wallpaper" role="tab"><span class="tab-ic"></span><span data-t="set.wallpaper"></span></button>
         <button class="set-tab" data-tab="canvas" role="tab"><span class="tab-ic"></span><span data-t="set.canvas"></span></button>
         <button class="set-tab" data-tab="notes" role="tab"><span class="tab-ic"></span><span data-t="set.notes"></span></button>
+        <button class="set-tab" data-tab="drawing" role="tab"><span class="tab-ic"></span><span data-t="set.drawing"></span></button>
         <button class="set-tab" data-tab="links" role="tab"><span class="tab-ic"></span><span data-t="set.links"></span></button>
         <button class="set-tab" data-tab="statuses" role="tab"><span class="tab-ic"></span><span data-t="set.statuses"></span></button>
         <button class="set-tab" data-tab="templates" role="tab"><span class="tab-ic"></span><span data-t="set.templates"></span></button>
@@ -437,6 +444,71 @@
           </div>
           <p class="set-note dim sub" data-t="set.motionHint"></p>
 
+          <!-- The face the app is set in (3.0, mental.css §84): ITC American
+               Typewriter for English, Neue Frutiger for Arabic. Both are
+               licensed fonts, so they are used when Windows has them, or from
+               files the user owns (main.js font:pick); until then a free
+               typewriter face stands in. -->
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.typeHead"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.uiFont"></span></label>
+            <div class="seg" id="uiFontSeg">
+              <button data-uifont="typewriter" data-t="set.uiFontType"></button>
+              <button data-uifont="system" data-t="set.uiFontSystem"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.uiFontHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.fontLatin"></span> <span class="set-val" id="fontLatinName"></span></label>
+            <div class="set-btns"><button class="btn small" id="fontLatinPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontLatinForget"><span data-t="set.fontForget"></span></button></div>
+          </div>
+          <div class="set-row">
+            <label><span data-t="set.fontArabic"></span> <span class="set-val" id="fontArabicName"></span></label>
+            <div class="set-btns"><button class="btn small" id="fontArabicPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontArabicForget"><span data-t="set.fontForget"></span></button></div>
+          </div>
+          <p class="set-note dim sub" data-t="set.fontFilesHint"></p>
+
+        </section>
+
+        <!-- A live wallpaper behind the board (3.0, js/wallpaper.js). -->
+        <section class="set-sec" data-pane="wallpaper">
+          <h3><span class="sec-ic"></span><span data-t="set.wallpaper"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.wpKind"></span></label>
+            <div class="seg" id="wpKindSeg">
+              <button data-wp="none" data-t="set.wpNone"></button>
+              <button data-wp="rain" data-t="set.wpRain"></button>
+              <button data-wp="snow" data-t="set.wpSnow"></button>
+              <button data-wp="youtube" data-t="set.wpYoutube"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.wpKindHint"></p>
+          <div class="set-row sub" id="wpUrlRow">
+            <label for="wpUrl"><span data-t="set.wpUrl"></span></label>
+            <input type="text" id="wpUrl" class="set-txt" spellcheck="false" placeholder="https://youtube.com/watch?v=" data-t-aria="set.wpUrl">
+          </div>
+          <p class="set-note dim sub" id="wpUrlHint" data-t="set.wpUrlHint"></p>
+          <label class="set-check sub" id="wpSoundRow"><input type="checkbox" id="setWpSound"><span data-t="set.wpSound"></span></label>
+          <div class="set-row sub" id="wpAmountRow">
+            <label><span data-t="set.wpAmount"></span> <span class="set-val" id="wpAmountVal"></span></label>
+            <input type="range" id="wpAmount" min="5" max="100" step="5" data-t-aria="set.wpAmount">
+          </div>
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.wpHow"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.wpOpacity"></span> <span class="set-val" id="wpOpacityVal"></span></label>
+            <input type="range" id="wpOpacity" min="10" max="100" step="5" data-t-aria="set.wpOpacity">
+          </div>
+          <div class="set-row">
+            <label><span data-t="set.wpDim"></span> <span class="set-val" id="wpDimVal"></span></label>
+            <input type="range" id="wpDim" min="0" max="90" step="5" data-t-aria="set.wpDim">
+          </div>
+          <p class="set-note dim sub" data-t="set.wpDimHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.wpBlur"></span> <span class="set-val" id="wpBlurVal"></span></label>
+            <input type="range" id="wpBlur" min="0" max="20" step="1" data-t-aria="set.wpBlur">
+          </div>
+          <label class="set-check"><input type="checkbox" id="setWpGrid"><span data-t="set.wpGrid"></span></label>
+          <p class="set-note dim sub" data-t="set.wpGridHint"></p>
         </section>
 
         <section class="set-sec" data-pane="canvas">
@@ -557,6 +629,7 @@
           <div class="set-row">
             <label><span class="row-ic"></span><span data-t="set.noteFont"></span></label>
             <div class="seg wrap" id="fontSeg">
+              <button data-font="typewriter" data-t="set.fontType"></button>
               <button data-font="system" data-t="set.fontSystem"></button>
               <button data-font="serif" data-t="set.fontSerif"></button>
               <button data-font="wide" data-t="set.fontWide"></button>
@@ -604,6 +677,38 @@
              about connections, and both are pure presentation — no rope stores
              a colour of its own, so changing any of this restyles every board at
              once and cannot move anything. -->
+        <!-- Drawing notes, Handwrite it and books (3.0). -->
+        <section class="set-sec" data-pane="drawing">
+          <h3><span class="sec-ic"></span><span data-t="set.drawing"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.skPaper"></span></label>
+            <div class="seg" id="skPaperSeg">
+              <button data-skpaper="light" data-t="set.skPaperLight"></button>
+              <button data-skpaper="dark" data-t="set.skPaperDark"></button>
+              <button data-skpaper="note" data-t="set.skPaperNote"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.skPaperHint"></p>
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.hwHead"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.hwHand"></span></label>
+            <div class="seg" id="hwHandSeg">
+              <button data-hwhand="ink" data-t="set.hwHandInk"></button>
+              <button data-hwhand="print" data-t="set.hwHandPrint"></button>
+              <button data-hwhand="script" data-t="set.hwHandScript"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.hwHandHint"></p>
+          <div class="set-row">
+            <label for="hwLang"><span data-t="set.hwLang"></span></label>
+            <span class="sel-wrap"><select id="hwLang" class="sel" data-t-aria="set.hwLang"></select><span class="sel-chev"></span></span>
+          </div>
+          <p class="set-note dim sub" data-t="set.hwLangHint"></p>
+          <label class="set-check"><input type="checkbox" id="setHwAnimate"><span data-t="set.hwAnimate"></span></label>
+          <label class="set-check"><input type="checkbox" id="setHwKeep"><span data-t="set.hwKeep"></span></label>
+          <p class="set-note dim sub" data-t="set.hwKeepHint"></p>
+        </section>
+
         <section class="set-sec" data-pane="links">
           <h3><span class="sec-ic"></span><span data-t="set.links"></span></h3>
           <div class="set-row">
@@ -973,6 +1078,28 @@
   </header>
   <div class="sk-stage" id="skStage">
     <svg id="skSvg" xmlns="http://www.w3.org/2000/svg"><g id="skWorld"></g></svg>
+    <!-- Handwrite it (3.0, js/handwrite.js): what it is doing, and a line it
+         has to say — inside the editor, because a toast is outside the full
+         screen element and would never be seen. -->
+    <div id="skBusy" class="hidden" role="status"></div>
+    <div id="skNote" class="hidden" role="status"></div>
+  </div>
+  <!-- the right button on a picture in the drawing (js/handwrite.js) -->
+  <div id="skMenu" class="hidden" role="menu"></div>
+</div>
+
+<!-- ───────────────────────── a book (3.0, js/book.js) ─────────────────────────
+     Full screen like a drawing note: a PDF or a notebook, as a spread that
+     turns its pages (#bkSpread) or as one long scroll (#bkScroll). -->
+<div id="bookDlg" class="hidden" role="dialog" data-t-aria="book.reader">
+  <header class="sk-head bk-head">
+    <input type="text" id="bkTitle" dir="auto" maxlength="120" spellcheck="false" data-t-ph="book.titlePh" data-t-aria="book.titlePh">
+    <div class="sk-bar" id="bkBar"></div>
+  </header>
+  <div class="bk-stage" id="bkStage">
+    <div class="bk-spread" id="bkSpread"></div>
+    <div class="bk-scroll hidden" id="bkScroll"></div>
+    <div id="bkNote" class="hidden" role="status"></div>
   </div>
 </div>
 
@@ -1236,6 +1363,8 @@
 <script src="js/pictures.js"></script>
 <script src="js/shapes.js"></script>
 <script src="js/sketch.js"></script>
+<script src="js/handwrite.js"></script>
+<script src="js/book.js"></script>
 <script src="js/menus.js"></script>
 <script src="js/edit-ops.js"></script>
 <script src="js/boards.js"></script>
@@ -1244,6 +1373,7 @@
 <script src="js/canvas.js"></script>
 <script src="js/samsung.js"></script>
 <script src="js/views.js"></script>
+<script src="js/wallpaper.js"></script>
 <script src="js/tablet.js"></script>
 <script src="js/init.js"></script>
 </body>

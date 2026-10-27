@@ -2,7 +2,7 @@
 
 A map of this repo for whoever (human or model) works on it next. **Read this
 before opening `src/js/` or `src/css/`** — this file tells you which of the
-twenty-eight scripts or nine sheets holds the thing you are after, so you never
+thirty-one scripts or nine sheets holds the thing you are after, so you never
 have to read your way in.
 
 Keep it current: if you move a region or add a feature, update the tables here
@@ -17,7 +17,7 @@ resize, colour, rope together and corral into titled **workflows**. Each board
 is an infinite canvas; the rail down the left edge switches between them. There
 are no modes — the canvas is the whole app.
 
-Plain HTML + CSS + twenty-eight ordinary `<script>` tags. No framework, no
+Plain HTML + CSS + thirty-one ordinary `<script>` tags. No framework, no
 bundler, no build step, no modules — every file shares one global scope.
 
 **2.0 in one paragraph.** Every board is now a folder in `Documents\My Boards`
@@ -225,7 +225,7 @@ is gone; `@electron/packager` writes `App/` and that is the only copy. See §6.
 ## 3. Architecture in one paragraph
 
 `index.html` declares the canvas and every overlay up front, and lists the
-twenty-eight scripts that follow. Between them they hold one mutable `state`,
+thirty-one scripts that follow. Between them they hold one mutable `state`,
 render it into that fixed DOM, and write it to `Documents\My Boards` — one
 `settings.json`, and a folder per board. There is no virtual DOM and no
 reactivity: **you change `state`, then call the matching render function
@@ -628,10 +628,10 @@ Two traps that are already handled:
 
 ---
 
-## 4. `src/js/` — the app, in twenty-eight files
+## 4. `src/js/` — the app, in thirty-one files
 
 One `renderer.js` of 7,862 lines became fifteen scripts; 2.0 added two
-(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) 2.8 one (`database.js`, after `embeds.js`) and 2.9 one (`blocks.js`, after `toolbars.js`), and 2.11 one (`far.js`, after `links.js`). Nothing about how the
+(`pictures.js`, `page.js`) and 2.1 four more (`canvas.js`, `views.js`, `sound.js`, `ink.js`), 2.2 two (`samsung.js`, `tablet.js`), 2.4 one (`shapes.js`), 2.5 one (`sketch.js`, after `shapes.js`) 2.8 one (`database.js`, after `embeds.js`) and 2.9 one (`blocks.js`, after `toolbars.js`), 2.11 one (`far.js`, after `links.js`), and 3.0 three (`handwrite.js` and `book.js` after `sketch.js`, `wallpaper.js` after `views.js`). Nothing about how the
 code works changed: they are **plain scripts, not modules**, so they share one
 global scope exactly as the single file did. There is no `import`, no `export`,
 no bundler and no build step — the only thing joining them is the order
@@ -655,6 +655,8 @@ no bundler and no build step — the only thing joining them is the order
 | `toolbars.js` | ~800 | The floating selection toolbar (`applyFontPx` sizes text runs, never blocks — `textRunsIn`), `BLOCKS` and the slash menu — Notion's sections (`BLOCK_SECTIONS`), keywords (`kw`), ranked by `blockRank` when something is typed — and the picture beside it (`peekSlash` `blockPeek`, §4z6): the chrome that sits over the editor. |
 | `media.js` | ~900 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — zoomable, with a pen's pressure, highlighter, eraser and its own undo since 2.6, §4z3: `ST.view` `setStudioView` `studioStep`/`studioUndo` `markNear` `onStudioKey` `wireStudioSurface` — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
 | `sketch.js` | ~470 | **The zoomable surface** both drawing editors use (`zoomPanSurface`, §4z3), and **a drawing note** (2.5; no page since 2.6): `okSketch` (healing), `sketchBounds` `fitSketchNote`, `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
+| `handwrite.js` | ~780 | **Handwrite it** (3.0): `handwriteSketchPic` / `handwritePictureNote`, the OCR reading (`hwRead` `hwBestReading`, main.js `ocr:read`), the picture taken apart (`hwAnalyse`: `hwBackground` `hwClusters` `hwDistance` `hwComponents` `hwThin` `hwTrace` `hwSmooth` `hwSimplify` `hwCutout`), a word in a hand (`hwGlyph` `hwWordStrokes`), the writing-out (`hwWriteOut`), and the editor's right-click menu on a picture (`openSketchPicMenu`). See §4z9. |
+| `book.js` | ~640 | **A book** (3.0): `okBook` `bookFiles` `bookBody`, making one (`addNotebook` `addBookFromPdf` `bookFromFile` `bookOpenPdf`), its face on the board (`fillBook` `paintBook` `paintBookOnCanvas`), the reader (`openBook` `closeBook` `commitBook` `buildBookBar` `bookLayout` `bookPaintSpread` `bookFillNear` `bookPageEl` `bookRenderPage`), turning (`bookGo` `bookGoTo` `bookTurn` `bookZoom`), ink (`onBookDown` → `onBookMove` → `endBookStroke`, `bookEraseAt`, `bookUndo`), `onBookKey`, `wireBook`. See §4z9. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
 | `menus.js` | ~660 | The right-click menu (spelling suggestions on top — `awaitSpellMenu` `answerSpell` `wordRangeAt` `fixSpelling`, §4z1; colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
@@ -664,6 +666,7 @@ no bundler and no build step — the only thing joining them is the order
 | `page.js` | ~345 | **The page menu** at the top right, **the workflows list** beside it (`paintFlowsBtn` `openFlowsMenu`, §4z), and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
+| `wallpaper.js` | ~310 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`. See §4z9. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
 | `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
@@ -2906,6 +2909,191 @@ Escape, undo); the autosave setting on disk; a pan writing no rope; the ring
 hidden during a capture. **Only the real phone can confirm** how the S Pen and
 `getPredictedEvents()` feel there.
 
+## 4z9. Mental Board 3.0 — Handwrite it, books, a live wallpaper, ink that keeps its colour, the options screen
+
+### Escape opens Settings (init.js `onKeyDown`)
+
+Escape still backs out of whatever is open, in the order it always did — a
+menu, a dialog, the pen, editing, the selection, the + dial. When there is
+nothing left to back out of, it opens Settings, as a game's pause menu does,
+and the next Escape closes it. Not while typing, not on a held key.
+
+### A picture out of the app (edit-ops.js `copyPictureOut`, `copySketchOut`)
+
+Right-click a picture ▸ **Copy picture** (a picture note, the first picture of
+a text note, a picture in a drawing), a drawing note ▸ **Copy as a picture**,
+Ctrl+C on one picture or drawing note on its own, or Ctrl+C on a picture
+selected inside a note. All of them put a **PNG** on the system clipboard —
+the one image type Chromium writes — read through `toDataUrl()` so an mbf://
+picture does not taint the canvas. Ctrl+C on a lone picture still makes the
+board's own copy too (`markInternalCopy('board')`), and the paste listener
+(init.js) prefers that copy when it is newer than anything the system
+clipboard could have got since (`lastCopy.board > sysClipAt`, sketch.js), so
+Ctrl+V on the board still duplicates the note rather than importing the PNG.
+"Copy to paste on a board" is the old Copy, by name.
+
+### A drawing's paper, and ink that keeps its colour (sketch.js `SK_PAPERS`, mental.css §83)
+
+Until 3.0 a drawing note was drawn on the note's colour with the theme's ink:
+`'text'` ink was `var(--text)` and the named colours were each mode's
+`--c-*-c`, so black ink turned white every evening. Settings ▸ Drawing ▸
+**Paper** (`settings.sketchPaper`): **Light** (the default) or **Dark** paper
+fixes `--ink-text` and every `--c-*-c` on `#sketchDlg` and `.note.sketch`
+(`body[data-skpaper]`, mental.css §83), so a stroke is the same colour in
+every theme; **The note's colour** is the old behaviour. The board picture and
+the copy-as-picture read the same values from `SK_PAPERS` (`sketchInkHex`) —
+the CSS and the table are one set of numbers in two places; change both. On a
+fixed paper the bar has one more swatch, the paper's other extreme (white on
+Light, black on Dark). Books always draw on white pages with the Light values
+(§87).
+
+### Handwrite it (`js/handwrite.js`, after `sketch.js`)
+
+Right-click a picture in a drawing note ▸ **Handwrite it** (the editor's own
+menu, `#skMenu` — the pen's barrel button still erases, so a pen never opens
+it), or a picture on the board ▸ **Handwrite it**, which makes it a drawing
+note first (`pictureToSketch`). The picture is replaced by ink:
+
+1. **The words are read by Windows' own OCR** (`Windows.Media.Ocr`): main.js
+   `ocr:read` writes the picture (as analysed, so the boxes are in its pixels)
+   to a temp file and runs one fixed PowerShell script as `-EncodedCommand` —
+   no execution policy applies to that, and the path goes in an environment
+   variable, never into the script. Every recognizer Windows has is run unless
+   Settings ▸ Drawing names one (`settings.hwLang`); `hwBestReading` keeps the
+   one with the most letters and the least junk. No OCR (another OS, an error)
+   is not a failure: the words are then drawn as lines, and it says so.
+2. **The background** is the median colour of the picture's edge
+   (`hwBackground`); a pixel is ink when it is `HW_FG` (24) from it — low on
+   purpose, a pastel fill is ~30.
+3. **Colours** (`hwClusters`, k-means on "flat" pixels only — two neighbours
+   of nearly the same colour — so the soft edge of a line is never a colour of
+   its own) decide **what is a fill**: a piece of one colour whose area over
+   its edge (half its width, for a line) is above `thin` (0.65% of the long
+   side) cannot be drawn with a pen. Fills are kept as one picture with the
+   background cut away and a 2 px soft edge (`hwCutout`), unless
+   `settings.hwKeep` is off.
+4. **Everything else is drawn as one mask** — whatever its colours — thinned
+   (`hwThin`, Zhang–Suen plus a staircase pass) and traced (`hwTrace`) into
+   lines that take the colour running down their middle and the width of the
+   shape they came from. One mask because a line and its anti-aliased rim, or
+   a wall's outline and its paler inside, are one stroke to a hand: thinned
+   colour by colour they came out as two lines side by side. The mask is cut
+   only where two colours that really differ meet (another hue, or grey/black
+   against a strong colour — `apart`, `sure`, `between`), so a purple base on
+   a brown shelf stays two lines.
+5. **Each word is written** (`hwGlyph` → `hwWordStrokes`): set in Ink Free,
+   Segoe Print or Segoe Script (`settings.hwHand`; Sakkal Majalla for Arabic),
+   thinned and traced the same way, scaled to the line's height, as wide as
+   the word's box give or take a fifth, tilted a hair, and with a pen as heavy
+   as the original's strokes over the line's height (bold reads as bold).
+   Black or white text becomes `'text'` ink, so it reads on either paper.
+6. **Written out** (`hwWriteOut`): everything is in the drawing and saved at
+   once, one undo step; the animation only uncovers each path along its own
+   length (stroke-dasharray), in reading order, a steady ~1,100 screen px a
+   second, 1.5–9 s. Any redraw just shows the rest.
+
+`hwSimplify` (RDP) splits a closed line at its farthest point first — measured
+against a line of no length every point of a loop is "on it", and the bowl of
+every 'a' vanished.
+
+Test: **3.0** in `tools/test-app-features.js` (a synthetic picture: background,
+a black line and a blue curve drawn, a pale fill kept, a word written in its
+box, the OCR reading chosen). The real OCR is not in the suite — it depends on
+the languages installed in Windows.
+
+### A book (`js/book.js`, after `handwrite.js`)
+
++ ▸ **Book from a PDF** / **Notebook**, or the canvas's right-click menu. A
+note `{ book: { title, kind: 'pdf'|'blank', pages, ar, paper, view, at, ink } }`
+— like a drawing note, it is a note to the gesture engine, undo, the
+clipboard, the bin and the save path, and the places that check are the
+drawing note's (`|| n.book` beside `n.sketch` in items.js, view.js, far.js,
+editor.js, shapes.js, menus.js, helpers.js `noteText`, views.js `noteTitle`,
+canvas.js, edit-ops.js `addNote` and the board picture, state.js `adoptBoard`
+with `okBook`). Its files are in its **body** (`bookBody`): the cover `<img>`
+and the PDF as `<a class="mb-file" href>` — every file-keeping pass reads
+`src`/`href`, so they are kept, carried and relinked unchanged.
+
+- **A PDF** is copied into the board's folder (`files:pick-book` → `attach`),
+  measured and given a cover (page one at 480 px) once, at most
+  `BOOK_PAGES_MAX` pages. The reader fetches the file through mbf:// and hands
+  pdf.js the bytes — **pdf.js streams only http(s)**; on any other scheme it
+  uses XMLHttpRequest, which reads mbf:// as status 0 — so the page's CSP now
+  has `connect-src 'self' mbf:`. Pages are drawn as they are shown, at the
+  screen's density, and the last dozen kept (`bk.cache`).
+- **Book view**: a spread, the first page alone on the right; a turn is a leaf
+  (`.bk-leaf`, mental.css §87) with the page being turned on its front and the
+  one behind it on its back, swinging about the spine over a spread that is
+  already half the new one. One page at a time on a narrow window. A click on
+  the outer part of a page with the hand, the arrows, PageUp/Down, Space, the
+  wheel, or the page number typed.
+- **Scroll view**: a placeholder per page; only those near the screen are
+  filled (`bookFillNear`), the current page follows the scroll.
+- **Ink**: per page, in page units (a page is `BOOK_U` = 1000 wide), with the
+  board pen's tools and ink.js's drawing — pressure, coalesced events, the
+  eraser by whole strokes, the pen's eraser end. The hand (H) reads; **a pen
+  always writes**, whatever the tool. Its own undo; saved as it lands
+  (`commitBook`), one board undo step a visit. A notebook can add pages.
+
+`bookRenderPage` yields once before it looks at its canvas — the page is put
+in the document after it is called, in the same task — and checks the reader
+is still open after every await.
+
+### The live wallpaper (`js/wallpaper.js`, after `views.js`)
+
+`#wallpaper`, the first layer in `#viewport`. **Rain on glass**: an
+out-of-focus city (seeded, so the same window gives the same city) and an
+upside-down sharper copy of it (`wp.lens`) that each drop shows magnified —
+a drop of water is a lens; small drops gather and dry, big ones slide, eat
+the small ones in their way and leave a trail. **Snow** on three depths in a
+slowly changing wind. **YouTube**: main.js `PLAYER_FRAME` has `ytbg`/`ytbgs`,
+the same player looped with no controls, muted or not, through the same
+127.0.0.1 page the note embeds use; nothing is contacted until it is the
+wallpaper. Settings ▸ Wallpaper: what, the link, its sound, how much rain or
+snow, opacity, a veil of the board's own background (`wpDim`), blur, and
+whether the paper's pattern is drawn over it. 30 frames a second (20 on
+Light), stopped while the window is hidden, one still frame under reduced
+motion. A board's own background picture is still drawn over it.
+
+In the sandbox, YouTube answered "This video is unavailable" to every embed,
+the note player's too — that is YouTube refusing that machine or profile, not
+these parameters.
+
+### The options screen, and the face (settings.js §3.0, mental.css §84 and §88)
+
+Settings is the whole window under the titlebar, after the reference's
+options screen (§5c): the title top left, tabs across the top with hairlines
+between them and a lit line under the open one, the slanted section tabs, the
+highlighted row a gradient bar with a bright rim, and the description column
+— now the row's **name, what it does and "(Default: …)"**, the default read
+from `defaults()` through `SET_KEYS` (`settingsDescHtml`). Every `.seg` row
+and every check box is shown as **‹ value ›** with a bar per option under it
+(`stepperize`): built over the existing controls, which stay in the document
+(`.seg-under`, hidden) and are still what every handler and
+`syncSettingsUI()` talk to — the arrows press their buttons, a check box's
+arrows click it, a MutationObserver repaints a stepper when its seg's `.on`
+moves, and `syncSteppers()` runs at the end of every sync (a `checked` set in
+code fires no event). Rows take ←/→. No controller glyphs.
+
+The face is **ITC American Typewriter** for English and **Neue Frutiger** for
+Arabic, across the app and as the notes' new default face (`noteFont:
+'typewriter'`; a store that never chose — `'system'` — moves to it once,
+`fontV`). Both are licensed, so: Windows' own copies when installed (the
+`local()` families in §84), or files the user owns (Settings ▸ Appearance ▸
+Choose file…, main.js `font:pick` copies one of each into `userData\fonts`,
+`font:read` hands the bytes to `loadUiFont()`, which registers them with
+`FontFace` — no URL, so the CSP never sees them), else **Cutive** (bundled,
+OFL, `npm run fonts`) and Noto Sans Arabic. Each Arabic family carries only
+the Arabic range, so a Latin letter never falls into it; the order of
+`--face-ui` is the whole decision. `settings.uiFont` = 'system' puts the old
+faces back.
+
+Tests: **3.0** in `tools/test-app-features.js` — Escape, the three ways a
+picture goes out (the clipboard writer stubbed), Light paper's ink in a light
+and a dark theme, Handwrite it on a synthetic picture, a notebook written in
+and round-tripped, a PDF book drawn and laid out, the wallpaper's three kinds,
+a stepper stepped and its description's default.
+
 ## 4o. Lining a note up with its neighbours
 
 `guideCandidates()` / `guideFit()` / `drawGuides()` in `items.js`, drawn into
@@ -3477,7 +3665,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line; and **2.11**: §82 the far-zoom canvas (§4c). Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line; and **2.11**: §82 the far-zoom canvas (§4c); and **3.0** (§4z9): §83 a drawing's paper and its fixed ink, §84 the app's face, §85 the live wallpaper, §86 Handwrite it, §87 a book, §88 the options screen. Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
@@ -3991,6 +4179,21 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+Three from 3.0 first (§4z9):
+
+- **pdf.js streams only http(s).** Given an mbf:// URL it falls back to
+  XMLHttpRequest, which reads the custom scheme as status 0, and the PDF
+  "cannot be opened". Fetch the bytes and pass `data` (book.js `bookOpenPdf`) —
+  and fetch needs `connect-src 'self' mbf:` in the page's CSP, which 3.0 added.
+- **A function handed an element before it is in the document must yield
+  before it checks `isConnected`.** `bookRenderPage` is called from
+  `bookPageEl`, which returns the page to be appended; with the PDF already
+  open there was no await on the way, so every page after the first load drew
+  nothing.
+- **A loop has no length.** Douglas–Peucker measured against a closed line
+  keeps only its ends: every 'o' and the bowl of every 'a' Handwrite it
+  wrote disappeared. `hwSimplify` splits a loop at its farthest point first.
 
 Six from 2.2's phone-as-tablet first (§4x):
 

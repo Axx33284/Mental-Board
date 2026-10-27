@@ -413,7 +413,7 @@ function drawFar() {
   const list = [];
   for (const n of state.notes) {
     if (n.x - m > V.x1 || n.x + n.w + m < V.x0 || n.y - m > V.y1 || n.y + n.h + m < V.y0) continue;
-    if (n.pic || n.sketch || els.has(n.id)) continue;     // an element draws itself
+    if (n.pic || n.sketch || n.book || els.has(n.id)) continue;     // an element draws itself
     list.push(n);
   }
   const ropes = farMode && state.links.length > 0;
@@ -476,7 +476,7 @@ function farNoteAt(clientX, clientY) {
   let best = null;
   for (const n of state.notes) {
     if (p.x < n.x || p.x > n.x + n.w || p.y < n.y || p.y > n.y + n.h) continue;
-    if (n.pic || n.sketch || els.has(n.id)) continue;
+    if (n.pic || n.sketch || n.book || els.has(n.id)) continue;
     if (!best || (n.z || 0) >= (best.z || 0)) best = n;
   }
   return best;

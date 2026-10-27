@@ -2259,5 +2259,196 @@ module.exports = [
       ok(!r.liteAbove.far, 'Light: and not above it');
       ok(!r.small.culling && !r.small.far && !r.small.shown && r.small.notes === 8, 'small board as before: ' + JSON.stringify(r.small));
     });
+  },
+  /* ---- 3.0: Escape, pictures out, stable ink, Handwrite it, books, the wallpaper, the options screen ---- */
+  async ({ page, test, ok }) => {
+    await page(() => { if (sketchOpen()) closeSketch(); if (bookOpen()) closeBook(); closeSettings(); clearSelection(); });
+
+    await test('3.0 Escape with nothing to back out of opens Settings, and the next closes it', async () => {
+      const r = await page(async () => {
+        const esc = () => $('viewport').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        $('viewport').focus();
+        esc();
+        const opened = !$('settings').classList.contains('hidden');
+        esc();
+        const closed = $('settings').classList.contains('hidden');
+        // a selection is let go first, as before
+        const n = addNote({ x: 9400, y: 9400 }, { edit: false });
+        setSelection([n.id], false);
+        esc();
+        const keptShut = $('settings').classList.contains('hidden') && !selection.size;
+        return { opened, closed, keptShut };
+      });
+      ok(r.opened && r.closed && r.keptShut, JSON.stringify(r));
+    });
+
+    await test('3.0 a picture goes out as a PNG: the menu row, Ctrl+C on a lone picture, and a drawing as itself', async () => {
+      const r = await page(async (png) => {
+        const real = toSystemClipboardImage;
+        const got = [];
+        toSystemClipboardImage = async (blob) => { got.push(blob.type + ':' + blob.size); return true; };     // never the real clipboard
+        try {
+          const n = addNote({ x: 9600, y: 9600 }, { pic: true, ar: 1, body: picBody(png, 'dot.png'), w: 80, h: 80, edit: false });
+          const viaMenu = await copyPictureOut(notePictureSrc(n));
+          setSelection([n.id], false);
+          copySelection(false);
+          await new Promise((res) => setTimeout(res, 200));
+          const internal = clipboard.length === 1 && lastCopy.board > sysClipAt;
+          const s = addNote({ x: 9800, y: 9600 }, { sketch: { title: 'out', strokes: [{ id: 'o1', tool: 'pen', color: 'red', size: 3, pts: [0, 0, 40, 40] }] }, w: 200, h: 160, edit: false });
+          const viaSketch = await copySketchOut(s);
+          openCtxMenu(100, 100, n.id);
+          const row = !!document.querySelector('#ctxMenu [data-act="copyPic"]');
+          closeCtxMenu();
+          return { viaMenu, viaSketch, got, internal, row };
+        } finally { toSystemClipboardImage = real; }
+      }, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+      ok(r.viaMenu && r.viaSketch && r.row, 'copied: ' + JSON.stringify(r));
+      ok(r.got.length === 3 && r.got.every((x) => x.startsWith('image/png:')), 'three PNGs to the clipboard: ' + r.got);
+      ok(r.internal, 'the board still has its own copy, and it is the newer one');
+    });
+
+    await test('3.0 on Light paper the ink keeps its colour when the theme turns dark', async () => {
+      const r = await page(async () => {
+        const was = state.settings.theme, paper = state.settings.sketchPaper;
+        const n = addNote({ x: 10000, y: 9600 }, { sketch: { title: 'ink', strokes: [{ id: 'k1', tool: 'pen', color: 'text', size: 3, pts: [0, 0, 40, 40] }, { id: 'k2', tool: 'pen', color: 'red', size: 3, pts: [0, 40, 40, 0] }] }, w: 200, h: 160, edit: false });
+        const read = () => { const el = ensureMounted(n.id); return [...el.querySelectorAll('.ink')].map((p) => getComputedStyle(p).stroke); };
+        const out = {};
+        for (const paperKind of ['light', 'note']) {
+          state.settings.sketchPaper = paperKind;
+          pickTheme('paper'); applySettings(); const day = read();
+          pickTheme('dark'); applySettings(); const night = read();
+          out[paperKind] = { day, night };
+        }
+        state.settings.sketchPaper = paper; pickTheme(was); applySettings();
+        return Object.assign(out, { hex: [sketchInkHex('text'), sketchInkHex('red')] });
+      });
+      ok(r.light.day.join() === r.light.night.join(), 'Light paper: the same in both themes: ' + JSON.stringify(r.light));
+      ok(r.light.day[0] === 'rgb(28, 28, 28)', 'black is black: ' + r.light.day[0]);
+      ok(r.note.day[0] !== r.note.night[0], '"the note\'s colour" still lets the theme decide: ' + JSON.stringify(r.note));
+    });
+
+    await test('3.0 Handwrite it: the background goes, a line is drawn, a fill is kept, a word is written in a hand', async () => {
+      const r = await page(async () => {
+        // a white picture with a thin black line, a thin blue curve, and a big pale fill
+        const W = 400, H = 300, c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+        g.strokeStyle = '#111'; g.lineWidth = 3; g.beginPath(); g.moveTo(20, 40); g.lineTo(380, 40); g.stroke();
+        g.strokeStyle = '#2050d0'; g.beginPath(); g.arc(80, 200, 40, 0, Math.PI); g.stroke();
+        g.fillStyle = '#f6dce8'; g.fillRect(200, 120, 160, 150);
+        const A = hwAnalyse(g.getImageData(0, 0, W, H), W, H, []);
+        const black = A.paths.find((p) => p.color === 'text' && p.w < 6);
+        const blue = A.paths.find((p) => /^#/.test(p.color) && parseInt(p.color.slice(5, 7), 16) > 150);
+        // a word, traced in the hand and placed in its box
+        const strokes = hwWordStrokes({ t: 'hello', box: { x: 10, y: 10, w: 120, h: 40 }, color: [20, 20, 20], stroke: 4 }, { h: 40, rtl: false }, 1, (x, y) => [x, y]);
+        let x0 = Infinity, x1 = -Infinity;
+        for (const s of strokes) for (let i = 0; i < s.pts.length; i += 2) { x0 = Math.min(x0, s.pts[i]); x1 = Math.max(x1, s.pts[i]); }
+        const pick = hwBestReading([{ lang: 'en-US', lines: [{ words: [{ t: 'Özd#' }, { t: 'swilar' }] }] }, { lang: 'tr', lines: [{ words: [{ t: 'Özdeş' }, { t: 'sıvılar' }] }] }], 'en-US');
+        return { bg: A.bg.slice(0, 3), paths: A.paths.length, black: !!black, blue: !!blue, cut: A.cut && [A.cut.x, A.cut.y, A.cut.w, A.cut.h], words: strokes.length, x0, x1, ink: strokes[0] && strokes[0].color, lang: pick.lang };
+      });
+      ok(r.bg.join() === '255,255,255', 'the background is the edge colour: ' + r.bg);
+      ok(r.black && r.blue, 'the black line and the blue curve are drawn, in their colours: ' + JSON.stringify(r));
+      ok(r.cut && Math.abs(r.cut[0] - 200) < 6 && Math.abs(r.cut[2] - 160) < 10, 'the pale fill is kept, cut to itself: ' + r.cut);
+      ok(r.words > 2 && r.x0 >= 8 && r.x1 <= 10 + 120 * 1.25, 'the word is written where it was: ' + JSON.stringify(r));
+      ok(r.ink === 'text', 'black text becomes the paper\'s ink');
+      ok(r.lang === 'tr', 'the reading with real letters wins: ' + r.lang);
+    });
+
+    await test('3.0 a book: a notebook made, written in, a page added, kept through a save and a reload', async () => {
+      const r = await page(async () => {
+        const n = addNotebook({ x: 10400, y: 9600 });
+        // the reader lays itself out two frames after it opens, once the window has its size
+        for (let i = 0; i < 4; i++) await new Promise((res) => requestAnimationFrame(res));
+        const open = bookOpen() && !!document.querySelector('#bkSpread .bk-page');
+        // a stroke on the first page through the reader's own pointer path
+        bk.tool = 'pen';
+        const pg = document.querySelector('#bkSpread .bk-page');
+        const R = pg.getBoundingClientRect();
+        const at = (fx, fy, type, buttons) => new PointerEvent(type, { bubbles: true, clientX: R.left + R.width * fx, clientY: R.top + R.height * fy, pointerId: 31, pointerType: 'mouse', button: 0, buttons });
+        pg.dispatchEvent(at(0.2, 0.2, 'pointerdown', 1));
+        for (let i = 1; i < 12; i++) window.dispatchEvent(at(0.2 + i * 0.03, 0.2 + i * 0.01, 'pointermove', 1));
+        window.dispatchEvent(at(0.55, 0.3, 'pointerup', 0));
+        bookAddPage();
+        const pages = n.book.pages, at0 = bk.at;
+        bookGo(-1);
+        closeBook();
+        const healed = okBook(JSON.parse(JSON.stringify(n.book)));
+        syncActiveBoard();
+        const board = adoptBoard(JSON.parse(JSON.stringify(boardPayload(activeBoard()))));
+        const back = board.notes.find((x) => x.id === n.id);
+        return { open, ink: (n.book.ink[0] || []).length, pages, at0, kept: back && back.book && back.book.pages, keptInk: back && (back.book.ink[0] || []).length, healed: healed.pages, title: noteTitle(n) };
+      });
+      ok(r.open, 'it opens on a page');
+      ok(r.ink === 1 && r.keptInk === 1, 'the stroke is on page one, and survives the round trip: ' + JSON.stringify(r));
+      ok(r.pages === 13 && r.at0 === 12 && r.kept === 13 && r.healed === 13, 'a page added and kept: ' + JSON.stringify(r));
+    });
+
+    await test('3.0 a book from a PDF: the file in the board, its pages counted, a page drawn when shown', async () => {
+      const r = await page(async (b64) => {
+        const att = await FILES.attachBytes('data:application/pdf;base64,' + b64, state.activeBoard, 'worksheet.pdf');
+        const doc = await bookOpenPdf(att.url);
+        const pages = doc.numPages;
+        doc.destroy();
+        const n = addNote({ x: 10800, y: 9600 }, { book: { title: 'worksheet', kind: 'pdf', pages, ar: 792 / 612, paper: 'plain' }, body: bookBody('', att.url, 'worksheet.pdf'), w: 220, h: 330, edit: false });
+        const inBody = notesFileUrls([n]).includes(att.url);
+        openBook(n.id);
+        for (let i = 0; i < 60 && !(bk.cache && bk.cache.size); i++) await new Promise((res) => setTimeout(res, 100));
+        const c = document.querySelector('#bkSpread canvas');
+        const px = c ? c.getContext('2d').getImageData(0, 0, c.width, c.height).data : [];
+        let dark = 0;
+        for (let i = 0; i < px.length; i += 4) if (px[i] < 100) dark++;
+        bk.view = 'scroll'; bookLayout();
+        const slots = document.querySelectorAll('#bkScroll .bk-slot').length;
+        closeBook();
+        return { pages, inBody, dark, slots };
+      }, require('./fake-pdf.js')().toString('base64'));
+      ok(r.pages === 2 && r.inBody, 'two pages, and the PDF is one of the board\'s files: ' + JSON.stringify(r));
+      ok(r.dark > 50, 'page one was drawn: ' + r.dark);
+      ok(r.slots === 2, 'the scroll view lays out every page');
+    });
+
+    await test('3.0 the wallpaper: rain and snow draw, a YouTube link waits for a link, none clears it', async () => {
+      const r = await page(async () => {
+        const was = { kind: state.settings.wpKind, url: state.settings.wpUrl };
+        const out = {};
+        state.settings.wpKind = 'rain'; applySettings();
+        await new Promise((res) => setTimeout(res, 300));
+        out.rain = { shown: !$('wallpaper').classList.contains('hidden'), drops: wp.drops.length };
+        state.settings.wpKind = 'snow'; applySettings();
+        await new Promise((res) => setTimeout(res, 300));
+        out.snow = { flakes: wp.flakes.length };
+        state.settings.wpKind = 'youtube'; state.settings.wpUrl = 'not a link'; applySettings();
+        out.badLink = !$('wallpaper').classList.contains('hidden');
+        state.settings.wpKind = 'none'; applySettings();
+        out.none = $('wallpaper').classList.contains('hidden') && !wp.raf;
+        state.settings.wpKind = was.kind; state.settings.wpUrl = was.url; applySettings();
+        return out;
+      });
+      ok(r.rain.shown && r.rain.drops > 0 && r.snow.flakes > 0, 'it draws: ' + JSON.stringify(r));
+      ok(!r.badLink && r.none, 'a non-link shows nothing, and none stops the loop');
+    });
+
+    await test('3.0 the options screen: every choice is ‹ value ›, the arrows change it, the description names its default', async () => {
+      const r = await page(async () => {
+        openSettings();
+        const stp = document.querySelector('.set-row:has(#motionSeg) .stp');
+        const before = state.settings.motion;
+        stp.querySelector('[data-d="1"]').click();
+        const after = state.settings.motion;
+        const shown = stp.querySelector('.stp-v').textContent;
+        stp.querySelector('[data-d="-1"]').click();
+        const row = document.querySelector('.set-row:has(#motionSeg)');
+        row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        const desc = $('setDesc').textContent;
+        const checks = document.querySelectorAll('#setPanes label.set-check .stp').length === document.querySelectorAll('#setPanes label.set-check').length;
+        closeSettings();
+        return { before, after, shown, back: state.settings.motion, desc, checks, face: document.body.dataset.uifont };
+      });
+      ok(r.after !== r.before && r.back === r.before, 'the arrow steps through the options and back: ' + JSON.stringify(r));
+      ok(r.shown.length > 0 && r.checks, 'the value is shown, and every check box is a two-option row');
+      ok(/\(.+\)/.test(r.desc) && r.desc.length > 30, 'the description, ending in its default: ' + r.desc);
+      ok(r.face === 'typewriter', 'the app is set in the typewriter face');
+    });
   }
 ];

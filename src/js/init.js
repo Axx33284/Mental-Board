@@ -235,7 +235,8 @@ function onKeyDown(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeStudio(); return; }
     onStudioKey(e); return;
   }
-  if (sketchOpen()) { onSketchKey(e); return; }    // a drawing note open full screen has every key (sketch.js)
+  if (sketchOpen()) { onSketchKey(e); return; }
+  if (bookOpen()) { onBookKey(e); return; }        // and so has a book (book.js)    // a drawing note open full screen has every key (sketch.js)
   if (!$('studio').classList.contains('hidden') && onStudioKey(e)) return;   // and so has the picture editor (media.js)
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
 
@@ -276,7 +277,9 @@ function onKeyDown(e) {
     if (!$('findBar').classList.contains('hidden')) { closeFind(); return; }
     if (editing) { exitEdit(); return; }
     if (selection.size) { clearSelection(); return; }
-    document.body.classList.remove('fab-open');
+    if (document.body.classList.contains('fab-open')) { document.body.classList.remove('fab-open'); return; }
+    // nothing left to back out of: Escape is the way into Settings, as a game's pause menu (3.0)
+    if (!typing && !e.repeat) { e.preventDefault(); openSettings(); }
     return;
   }
 
@@ -298,6 +301,9 @@ function onKeyDown(e) {
   // Ctrl+P works while typing too — jumping somewhere else is a thing you do
   // mid-sentence, and nothing in a note needs that chord
   if (ctrl && key === 'p') { e.preventDefault(); openPalette(); return; }
+
+  // a picture selected inside a note goes out as the picture, not as markup pointing at mbf:// (3.0)
+  if (ctrl && key === 'c' && !e.shiftKey && selImg && selImg.isConnected) { e.preventDefault(); copyPictureOut(selImg.getAttribute('src') || ''); return; }
 
   if (typing) return;   // everything below is canvas-level
 
@@ -730,10 +736,13 @@ function init() {
     if (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
     // into an open drawing note, never onto the board behind it (sketch.js)
     if (sketchOpen()) { if ($('studio').classList.contains('hidden')) onSketchPaste(e); return; }
+    if (bookOpen()) return;                                // a book takes no paste
     if (editing) return;
     if (!$('settings').classList.contains('hidden')) return;
     pasteSeen = true; clearTimeout(pasteTimer);
     if (pasteGhost) { e.preventDefault(); return; }       // a held Ctrl+V repeats
+    // a picture copied out of the app is on the system clipboard too; the app's own copy is newer, so it is the paste
+    if (clipboard.length && lastCopy.board > sysClipAt) { e.preventDefault(); beginPasteGhost(); return; }
     if (pasteAnything(e, lastCanvasPoint || viewCenterWorld())) return;
     if (clipboard.length) { e.preventDefault(); beginPasteGhost(); }
   });
@@ -767,6 +776,8 @@ function init() {
     const what = b.dataset.new;
     if (what === 'note') addNote();
     if (what === 'frame') selection.size ? groupSelection() : addFrame();
+    if (what === 'book') addBookFromPdf();
+    if (what === 'notebook') addNotebook();
     if (what === 'picture') addMediaFromPicker('image');
     if (what === 'video') addMediaFromPicker('video');
     if (what === 'draw') toggleInk(true);
@@ -786,6 +797,7 @@ function init() {
   $('btnAgenda').addEventListener('click', openAgenda);
   $('btnKanban').addEventListener('click', openKanban);
   wireMinimap();
+  wireWallpaper();         // the live wallpaper behind the board (wallpaper.js)
   window.addEventListener('resize', scheduleMinimap);
   // the two views close on their X, on Escape (onKeyDown), and on the backdrop
   $('agendaClose').addEventListener('click', closeAgenda);
@@ -1104,6 +1116,8 @@ function init() {
   wireImgBar();
   wirePageMenu();
   wireSettingsDesc();
+  wireSettings30();         // wallpaper, drawing, the face, and every row as ‹ value › (settings.js)
+  loadUiFonts();            // the app's face from a font file the user owns
   wirePadStudio();
   wireTableBar();
   wireColsBar();
@@ -1113,6 +1127,8 @@ function init() {
   wireKeySounds();
   wirePad();
   wireSketch();
+  wireHandwrite();
+  wireBook();              // the book reader (book.js)         // a picture in a drawing, written out by hand (handwrite.js)
   startAutosave();
   watchVpRect();
   wireExtras();

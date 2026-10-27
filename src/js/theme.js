@@ -332,6 +332,9 @@ function applySettings() {
   applyNotePad();
   document.body.dataset.notefont = s.noteFont;   // applyBoardLook() below lets the board override it
   document.body.dataset.noteshadow = s.noteShadow;
+  document.body.dataset.skpaper = s.sketchPaper;  // a drawing's paper and its fixed ink (mental.css §83, sketch.js SK_PAPERS)
+  document.body.dataset.uifont = s.uiFont;        // the app's own face (mental.css §84)
+  if (typeof applyWallpaper === 'function') applyWallpaper();   // js/wallpaper.js, further down the load order
   /* 'auto' deliberately writes *nothing*. The stylesheet already answers it
      with an ordinary `@media (prefers-reduced-motion: reduce)` block, which is
      the operating system's own answer — resolving it here instead would mean
