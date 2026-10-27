@@ -2448,7 +2448,7 @@ module.exports = [
       ok(r.after !== r.before && r.back === r.before, 'the arrow steps through the options and back: ' + JSON.stringify(r));
       ok(r.shown.length > 0 && r.checks, 'the value is shown, and every check box is a two-option row');
       ok(/\(.+\)/.test(r.desc) && r.desc.length > 30, 'the description, ending in its default: ' + r.desc);
-      ok(r.face === 'typewriter', 'the app is set in the typewriter face');
+      ok(r.face === 'clean', 'the app is set in the clean face (Frutiger, Univers Condensed): ' + r.face);
     });
   }
 ];

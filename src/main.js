@@ -1098,24 +1098,29 @@ ipcMain.handle('files:pick-book', async (e) => {
   try { return { path: p, name: path.basename(p), size: fs.statSync(p).size }; } catch (err) { return { error: errText(err) }; }
 });
 
-/* The app's own face from a file the user owns (3.0, Settings ▸ Appearance):
-   ITC American Typewriter and Neue Frutiger are licensed fonts, so the app
-   cannot ship them. A picked file is copied into userData\fonts as
-   ui-latin.<ext> or ui-arabic.<ext> (one of each, a new pick replaces the old)
+/* The app's faces from files the user owns (3.0.1, Settings ▸ Appearance):
+   Neue Frutiger, Univers Condensed and ITC American Typewriter are licensed
+   fonts, so the app cannot ship them. A picked file is copied into
+   userData\fonts as ui-<kind>.<ext> (one of each, a new pick replaces the old)
    and its bytes are handed to the page, which registers it with FontFace — no
-   URL, so the page's CSP never sees it. */
+   URL, so the page's CSP never sees it. 3.0.0 called the typewriter file
+   ui-latin and the Frutiger file ui-arabic; those are still found. */
 const UI_FONT_DIR = () => path.join(app.getPath('userData'), 'fonts');
 const UI_FONT_EXT = ['ttf', 'otf', 'woff', 'woff2'];
+const UI_FONT_OLD = { typewriter: 'latin', frutiger: 'arabic' };
 const uiFontFile = (kind) => {
-  try { return fs.readdirSync(UI_FONT_DIR()).find((f) => f.startsWith('ui-' + kind + '.')) || ''; } catch (_) { return ''; }
+  try {
+    const all = fs.readdirSync(UI_FONT_DIR());
+    return all.find((f) => f.startsWith('ui-' + kind + '.')) || (UI_FONT_OLD[kind] && all.find((f) => f.startsWith('ui-' + UI_FONT_OLD[kind] + '.'))) || '';
+  } catch (_) { return ''; }
 };
-const okFontKind = (k) => (k === 'latin' || k === 'arabic' ? k : '');
+const okFontKind = (k) => (['frutiger', 'condensed', 'typewriter'].includes(k) ? k : '');
 ipcMain.handle('font:pick', async (e, kind) => {
   kind = okFontKind(kind);
   if (!kind) return null;
   const w = BrowserWindow.fromWebContents(e.sender);
   const { canceled, filePaths } = await dialog.showOpenDialog(w, {
-    title: t(kind === 'latin' ? 'main.pickFontLatin' : 'main.pickFontArabic'), properties: ['openFile'],
+    title: t(kind === 'frutiger' ? 'main.pickFontFrutiger' : kind === 'condensed' ? 'main.pickFontCondensed' : 'main.pickFontTypewriter'), properties: ['openFile'],
     filters: [{ name: t('main.filterFont'), extensions: UI_FONT_EXT }]
   });
   if (canceled || !filePaths.length) return null;

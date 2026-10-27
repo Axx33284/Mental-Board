@@ -2338,15 +2338,44 @@ body.wp-nogrid #grid { display: none; }
   background: var(--surface); color: var(--text); font-size: 13px; box-shadow: var(--shadow); pointer-events: none;
 }
 
-/* ─────────────── 84. the app's face (3.0) ───────────────
-   ITC American Typewriter for English and Neue Frutiger for Arabic — the
-   reference's own pair — through to the notes' default face. Both are
-   licensed, so they come from Windows when it has them (the two local()
-   families below) or from files the user owns (Settings ▸ Appearance,
-   registered by loadUiFont() as "MB UI Latin" / "MB UI Arabic"); until then
-   Cutive (bundled, OFL) stands in for the typewriter and Noto Sans Arabic for
-   Frutiger. Each Arabic family carries only the Arabic range, so a Latin
-   letter never falls into it, and the order below is the whole decision. */
+/* ─────────────── 84. the app's face (3.0.1) ───────────────
+   The faces of the reference's options screen: Neue Frutiger for everything
+   you read (the rows, the values, the descriptions) and Univers Condensed in
+   capitals for the title and the tabs. (ITC American Typewriter is the
+   game's title and save screens, not its options; 3.0.0 set the whole app in
+   it and it read as a costume. It is still here, as the Typewriter face.)
+   All three are licensed, so each comes, in order, from a file the user owns
+   (Settings ▸ Appearance, loadUiFont() — "MB UI …"), from Windows when it has
+   it (the local() families below), or from the nearest face every Windows 10
+   and 11 already has: Segoe UI Variable for Frutiger (the same humanist
+   lineage) and Bahnschrift Condensed for Univers Condensed. Arabic is Neue
+   Frutiger Arabic when there is one, else the bundled Noto Sans Arabic — the
+   Arabic families carry only the Arabic range, so a Latin letter never falls
+   into them. Nothing is downloaded. */
+@font-face {
+  font-family: "MB Frutiger Local"; font-weight: 400;
+  src: local("Neue Frutiger"), local("Neue Frutiger W1G"), local("Neue Frutiger Pro"), local("NeueFrutigerPro-Regular"),
+       local("Neue Frutiger World"), local("NeueFrutigerWorld-Regular"), local("Frutiger Next"), local("Frutiger LT Std");
+  unicode-range: U+0000-024F, U+0370-03FF, U+0400-04FF, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF;
+}
+@font-face {
+  font-family: "MB Frutiger Local"; font-weight: 700;
+  src: local("Neue Frutiger Bold"), local("Neue Frutiger W1G Bold"), local("NeueFrutigerPro-Bold"),
+       local("Neue Frutiger World Bold"), local("NeueFrutigerWorld-Bold"), local("Frutiger Next Bold");
+  unicode-range: U+0000-024F, U+0370-03FF, U+0400-04FF, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF;
+}
+@font-face {
+  font-family: "MB Frutiger Arabic Local";
+  src: local("Neue Frutiger Arabic"), local("Neue Frutiger Arabic Regular"), local("NeueFrutigerArabic-Regular"),
+       local("Neue Frutiger World"), local("NeueFrutigerWorld-Regular"), local("Frutiger Arabic");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF;
+}
+@font-face {
+  font-family: "MB Condensed Local";
+  src: local("Univers Condensed"), local("Univers 57 Condensed"), local("Univers LT Std 57 Condensed"), local("UniversLTStd-Cn"),
+       local("Univers Next Pro Condensed"), local("UniversNextPro-Condensed");
+  unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F;
+}
 @font-face {
   font-family: "MB Typewriter Local"; font-weight: 400;
   src: local("ITC American Typewriter"), local("ITC American Typewriter Medium"), local("American Typewriter"),
@@ -2359,137 +2388,184 @@ body.wp-nogrid #grid { display: none; }
        local("ITC American Typewriter Std Bold"), local("AmericanTypewriterStd-Bold");
   unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF;
 }
-@font-face {
-  font-family: "MB Frutiger Local";
-  src: local("Neue Frutiger Arabic"), local("Neue Frutiger Arabic Regular"), local("NeueFrutigerArabic-Regular"),
-       local("Neue Frutiger World"), local("Neue Frutiger World Regular"), local("NeueFrutigerWorld-Regular"), local("Frutiger Arabic");
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF;
-}
 :root {
-  --face-ui: "MB UI Latin", "MB Typewriter Local", "MB UI Arabic", "MB Frutiger Local", "Cutive",
-             "Noto Sans Arabic", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --face-text: "MB UI Frutiger", "MB Frutiger Local", "MB Frutiger Arabic Local", "Noto Sans Arabic",
+               "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --face-cond: "MB UI Condensed", "MB Condensed Local", "Bahnschrift Condensed", "Arial Narrow",
+               "MB Frutiger Arabic Local", "Noto Sans Arabic", sans-serif;
+  --face-typewriter: "MB UI Typewriter", "MB Typewriter Local", "Cutive", "MB Frutiger Arabic Local", "Noto Sans Arabic",
+                     "Segoe UI", sans-serif;
 }
+/* Clean: the reference's pair. Labels — tabs, headings, the titlebar, a
+   board's name — are the condensed face in capitals, everything else is read
+   in Frutiger. */
+body[data-uifont="clean"],
+body[data-uifont="clean"] :is(button, input, textarea, select, .frame-title) { font-family: var(--face-text); }
+body[data-uifont="clean"] { --face-label: var(--face-cond); --face-type: var(--face-cond); --label-track: .04em; }
+body[data-uifont="clean"] .tb-title { letter-spacing: .12em; font-weight: 600; font-size: 13px; }
+body[data-uifont="clean"] :is(.pg-btn .pg-name, .pm-title, .br-name, .br-trash .br-name, .eh-card h2, .pal-tx b) { font-weight: 600; letter-spacing: .02em; }
+/* Typewriter: the 3.0.0 look, for whoever wants it */
 body[data-uifont="typewriter"],
-body[data-uifont="typewriter"] :is(button, input, textarea, select, .frame-title) {
-  font-family: var(--face-ui);
-}
-body[data-uifont="typewriter"] {
-  --face-label: var(--face-ui);
-  --face-type: var(--face-ui);
-  --label-track: .06em;
-}
-/* the notes' default face: the same pair, in any interface face */
-body[data-notefont="typewriter"] .note-body, body[data-notefont="typewriter"] #fontEg,
-.pm-font[data-face="typewriter"] .pm-ag { font-family: var(--face-ui); }
-/* a typewriter face is wider and sits higher than Segoe at the same size; labels lose a little tracking */
-body[data-uifont="typewriter"] .set-tab { letter-spacing: .07em; }
-body[data-uifont="typewriter"] .tb-title { letter-spacing: .14em; }
+body[data-uifont="typewriter"] :is(button, input, textarea, select, .frame-title) { font-family: var(--face-typewriter); }
+body[data-uifont="typewriter"] { --face-label: var(--face-typewriter); --face-type: var(--face-typewriter); --label-track: .06em; }
+/* the notes' faces */
+body[data-notefont="frutiger"] .note-body, body[data-notefont="frutiger"] #fontEg, .pm-font[data-face="frutiger"] .pm-ag { font-family: var(--face-text); }
+body[data-notefont="typewriter"] .note-body, body[data-notefont="typewriter"] #fontEg, .pm-font[data-face="typewriter"] .pm-ag { font-family: var(--face-typewriter); }
 
-/* ─────────────── 88. the options screen (3.0) ───────────────
-   Settings is now the whole window under the titlebar, the way the
-   reference's options are the whole screen: the title top left, the tabs
-   across the top with hairlines between them and a lit line under the open
-   one, the rows on the left with ‹ value › and a bar per option under it, the
-   highlighted row a bar of light with a bright edge, and the description in a
-   column on the right — the row's name, what it does, and "(Default: …)".
-   Escape opens it (init.js) as a game's pause menu does, and closes it.
-   No controller glyphs: this is an app, and the keys are the keys. */
-#settings.overlay { top: 38px; display: block; background: var(--bg); backdrop-filter: none; animation: fade .12s ease-out; }
+/* ─────────────── 88. the options screen (3.0, redrawn in 3.0.1) ───────────────
+   Measured off the reference (Settings is the whole window under the
+   titlebar, as its options are the whole screen):
+   - flat near-black, no texture, no vignette;
+   - the title top left in condensed capitals; a row of tabs in condensed
+     capitals across the top, a hairline under the row, tall thin lines
+     between the tabs, the open one white with a soft bloom of light under it;
+   - the rows a column on the left: the name indented in sentence case, the
+     value in a fixed column as ‹ value › with a short bar per option under it
+     and the chosen one lit, a hairline between rows;
+   - the highlighted row a grey bar, lighter at its leading edge and at its
+     top, with a bright 1–2 px rim — the text stays white;
+   - section headings a filled grey tab with a slanted end;
+   - a thin scroll track between the rows and the description;
+   - the description a plain column of sentence-case text, then "(Default: …)".
+   No controller glyphs (LB/RB, L1/R1): this is an app, and the keys are keys. */
+#settings {
+  --rq-bg: var(--bg);
+  --rq-line: color-mix(in srgb, var(--text) 17%, transparent);
+  --rq-dim: color-mix(in srgb, var(--text) 62%, transparent);
+  --rq-ink: color-mix(in srgb, var(--text) 92%, transparent);
+  --rq-pad: clamp(20px, 3.4vw, 64px);
+}
+html[data-mode="dark"] #settings { --rq-bg: color-mix(in srgb, var(--bg) 30%, #000); }
+#settings.overlay { top: 38px; display: block; background: var(--rq-bg); backdrop-filter: none; animation: fade .12s ease-out; }
 #settings .set-sheet {
-  width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none;
-  background:
-    radial-gradient(ellipse 70% 55% at 18% 0%, color-mix(in srgb, var(--text) 6%, transparent), transparent 70%),
-    radial-gradient(ellipse 60% 50% at 100% 100%, color-mix(in srgb, var(--text) 4%, transparent), transparent 70%),
-    var(--bg);
+  width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: var(--rq-bg);
 }
-#settings .sheet-head { padding: 26px clamp(20px, 4vw, 64px) 14px; align-items: flex-end; }
-#settings .sheet-head h2 { font-size: clamp(24px, 2.4vw, 34px); letter-spacing: .08em; font-weight: 700; line-height: 1; }
-#settings .set-find { width: 260px; }
-#settings .sheet-x { align-self: flex-start; }
+#settings .sheet-head { padding: 16px var(--rq-pad) 6px; align-items: flex-end; gap: 16px; border: 0; }
+#settings .sheet-head h2 {
+  font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase;
+  font-size: clamp(24px, 2.1vw, 32px); font-weight: 500; letter-spacing: .03em; line-height: 1; color: var(--text);
+}
+#settings .set-find { width: 240px; height: 30px; background: transparent; border: 0; border-bottom: 1px solid var(--rq-line); border-radius: 0; }
+#settings .sheet-x { align-self: center; }
 #settings .set-nav {
-  padding: 0 clamp(20px, 4vw, 64px); border-bottom: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
-  justify-content: flex-start;
+  margin: 4px var(--rq-pad) 0; padding: 0; border-bottom: 1px solid var(--rq-line); justify-content: flex-start;
 }
-/* hairlines between the tabs, short ones, as "| CONTROLS | CAMERA |" */
 #settings .set-tab {
-  flex: 1 1 0; min-width: max-content; padding: 13px 16px 14px; text-align: center; justify-content: center;
-  border-inline-end: 0; font-size: 12.5px; text-transform: uppercase; color: var(--dim);
+  flex: 1 1 0; min-width: max-content; padding: 12px 14px 14px; text-align: center; justify-content: center;
+  border: 0; font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase;
+  font-size: 17px; font-weight: 500; letter-spacing: .03em; color: var(--rq-dim);
 }
+#settings .set-tab:hover { color: var(--text); }
+/* tall thin lines between the tabs */
 #settings .set-tab + .set-tab::before {
-  content: ""; display: block !important; position: absolute; inset-inline-start: 0; top: 30%; bottom: 30%; width: 1px; height: auto;
-  margin: 0; background: color-mix(in srgb, var(--text) 26%, transparent);
+  content: ""; display: block !important; position: absolute; inset-inline-start: 0; top: 14%; bottom: 14%; width: 1px; height: auto;
+  margin: 0; background: color-mix(in srgb, var(--text) 32%, transparent);
 }
-#settings .set-tab.on { color: var(--text); text-shadow: 0 0 14px color-mix(in srgb, var(--text) 55%, transparent); }
-#settings .set-tab.on::after { left: 22%; right: 22%; height: 2px; bottom: -1px; }
-#settings .set-shell { padding: 0 clamp(20px, 4vw, 64px); gap: clamp(20px, 3vw, 48px); }
-#settings .set-panes { flex: 0 1 820px; padding: 14px 6px 40px; }
-/* the description: the right-hand column, sentence case, a name over it */
+#settings .set-tab.on { color: var(--text); text-shadow: none; }
+/* the open tab's bloom: a short bar of light, blurred, sitting on the hairline */
+#settings .set-tab.on::after {
+  left: 26%; right: 26%; height: 3px; bottom: -2px; border-radius: 3px; background: var(--text);
+  filter: blur(1.5px); box-shadow: 0 0 14px 4px color-mix(in srgb, var(--text) 40%, transparent);
+}
+#settings .set-shell { padding: 22px var(--rq-pad) 0; gap: clamp(24px, 3.4vw, 60px); }
+#settings .set-panes {
+  flex: 0 1 780px; padding: 0 14px 40px 0; overflow-x: hidden;
+}
+/* a thin track, as the reference's; no scrollbar-width here — in this Chromium it wins over the rules below and brings the arrows back */
+#settings .set-panes::-webkit-scrollbar { width: 4px; }
+#settings .set-panes::-webkit-scrollbar-track { background: color-mix(in srgb, var(--text) 8%, transparent); }
+#settings .set-panes::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 38%, transparent); border-radius: 0; }
+/* the description: sentence case, no heading, the default on its own line */
 #settings .set-desc {
-  flex: 1 1 340px; max-width: 520px; border-inline-start: 0; padding: 48px 0 24px;
-  font-size: 14px; line-height: 1.6; color: var(--dim); white-space: normal;
+  flex: 1 1 340px; max-width: 520px; border: 0; padding: 4px 0 24px;
+  font-size: 16px; line-height: 1.42; color: var(--rq-ink); white-space: normal;
 }
-#settings .set-desc .sd-name { display: block; margin-bottom: 14px; color: var(--text); font-size: 16px; font-weight: 700; }
 #settings .set-desc .sd-text { display: block; }
-#settings .set-desc .sd-def { display: block; margin-top: 16px; color: var(--text); }
-/* the slanted section tab, wider, in sentence case as "Shared Settings" */
+#settings .set-desc .sd-def { display: block; margin-top: 1.1em; color: var(--rq-ink); }
+#settings .set-desc:empty::after { font-family: var(--face-cond); font-stretch: condensed; font-size: 13px; letter-spacing: .08em; color: var(--rq-dim); }
+/* a section heading: a filled grey tab, its end slanted, in sentence case */
 #settings .set-panes .set-sec h3, #settings .set-panes .set-sub-h {
-  min-width: 46%; padding: 6px 42px 6px 12px; text-transform: none; letter-spacing: .02em;
-  font-size: 13px !important; color: var(--dim) !important;
-  background: linear-gradient(to right, color-mix(in srgb, var(--text) 14%, transparent), color-mix(in srgb, var(--text) 6%, transparent));
+  min-width: 46%; margin: 18px 0 0; padding: 7px 56px 7px 10px; border: 0;
+  font-family: var(--face-text); text-transform: none; letter-spacing: 0; font-weight: 400;
+  font-size: 15.5px !important; color: var(--rq-dim) !important;
+  background: linear-gradient(to right, color-mix(in srgb, var(--text) 17%, transparent), color-mix(in srgb, var(--text) 12%, transparent));
+  clip-path: polygon(0 0, calc(100% - 30px) 0, 100% 100%, 0 100%);
 }
-/* a row: the name on the left, the value in a fixed column on the right */
+html[dir="rtl"] #settings .set-panes .set-sec h3, html[dir="rtl"] #settings .set-panes .set-sub-h {
+  clip-path: polygon(30px 0, 100% 0, 100% 100%, 0 100%); padding: 7px 10px 7px 56px;
+  background: linear-gradient(to left, color-mix(in srgb, var(--text) 17%, transparent), color-mix(in srgb, var(--text) 12%, transparent));
+}
+#settings .set-panes .set-sec h3:first-child { margin-top: 0; }
+#settings .set-panes .set-sec h3 + *, #settings .set-panes .set-sub-h + * { border-top: 1px solid var(--rq-line); }
+/* a row: the name indented, the value in a fixed column */
 #settings .set-panes .set-row, #settings .set-panes .set-check {
-  min-height: 56px; padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid color-mix(in srgb, var(--text) 13%, transparent);
-  outline: none; box-sizing: border-box;
+  margin: 0; min-height: 58px; padding: 6px 24px 6px 26px; box-sizing: border-box; outline: none;
+  border-bottom: 1px solid var(--rq-line); background: none; box-shadow: none;
 }
-#settings .set-panes .set-row > label, #settings .set-panes .set-check { font-size: 15px; }
-#settings .set-panes .set-row.sub > label, #settings .set-panes .set-check.sub { color: var(--dim); }
-/* the highlighted row: a bar of light, brightest at the leading edge, with a bright rim — the text stays white */
+#settings .set-panes .set-row > label, #settings .set-panes .set-check {
+  font-size: 16.5px; font-weight: 500; color: var(--rq-ink);
+}
+#settings .set-panes .set-row.sub > label { padding-inline-start: 18px; color: var(--rq-dim); font-weight: 400; }
+#settings .set-panes .set-check.sub { padding-inline-start: 44px; color: var(--rq-dim); font-weight: 400; }
+#settings .set-panes .set-row > label .set-val { font-family: var(--face-text); font-size: 13px; letter-spacing: 0; color: var(--rq-dim); font-weight: 400; }
+/* the highlighted row: a grey bar, lighter at the leading edge and the top, a bright rim; the text stays white */
 #settings .set-panes .set-row:hover, #settings .set-panes .set-check:hover,
 #settings .set-panes .set-row:focus-visible, #settings .set-panes .set-row:focus-within, #settings .set-panes .set-check:focus-within {
-  background: linear-gradient(to right, color-mix(in srgb, var(--text) 30%, transparent), color-mix(in srgb, var(--text) 12%, transparent) 60%, color-mix(in srgb, var(--text) 6%, transparent));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 75%, transparent), 0 0 18px color-mix(in srgb, var(--text) 10%, transparent);
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--text) 8%, transparent), transparent 55%),
+    linear-gradient(to right, color-mix(in srgb, var(--text) 34%, transparent), color-mix(in srgb, var(--text) 20%, transparent) 45%, color-mix(in srgb, var(--text) 13%, transparent));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 82%, transparent), 0 0 12px color-mix(in srgb, var(--text) 12%, transparent);
 }
-html[dir="rtl"] #settings .set-panes .set-row:hover, html[dir="rtl"] #settings .set-panes .set-check:hover {
-  background: linear-gradient(to left, color-mix(in srgb, var(--text) 30%, transparent), color-mix(in srgb, var(--text) 12%, transparent) 60%, color-mix(in srgb, var(--text) 6%, transparent));
+html[dir="rtl"] #settings .set-panes :is(.set-row, .set-check):is(:hover, :focus-within) {
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--text) 8%, transparent), transparent 55%),
+    linear-gradient(to left, color-mix(in srgb, var(--text) 34%, transparent), color-mix(in srgb, var(--text) 20%, transparent) 45%, color-mix(in srgb, var(--text) 13%, transparent));
 }
+#settings .set-panes :is(.set-row, .set-check):is(:hover, :focus-within) > label,
+#settings .set-panes .set-check:is(:hover, :focus-within) { color: var(--text); }
 /* ‹ value ›, a bar per option under it, the chosen one lit (settings.js stepperize) */
 .seg-under { display: none !important; }
 .stp {
-  flex: 0 0 auto; width: 300px; display: grid; grid-template-columns: 34px 1fr 34px; grid-template-rows: auto 6px;
-  align-items: center; column-gap: 4px; row-gap: 5px; margin-inline-start: auto; user-select: none;
+  flex: 0 0 auto; width: 320px; display: grid; grid-template-columns: 30px 1fr 30px; grid-template-rows: auto 5px;
+  align-items: center; column-gap: 6px; row-gap: 6px; margin-inline-start: auto; user-select: none;
 }
-.stp-a { grid-row: 1; display: grid; place-items: center; height: 26px; padding: 0; color: var(--dim); border-radius: 0; background: none; cursor: pointer; }
-.stp-a .mi { width: 18px; height: 18px; }
+.stp-a { grid-row: 1; display: grid; place-items: center; height: 24px; padding: 0; color: var(--rq-dim, var(--dim)); border-radius: 0; background: none; cursor: pointer; }
+.stp-a .mi { width: 16px; height: 16px; }
 .stp-a:hover { color: var(--text); }
-.stp-a.off { opacity: .25; pointer-events: none; }
-.stp-v { grid-row: 1; grid-column: 2; text-align: center; font-size: 15px; color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stp-ticks { grid-row: 2; grid-column: 2; display: flex; justify-content: center; gap: 4px; }
-.stp-ticks b { width: 30px; height: 3px; background: color-mix(in srgb, var(--text) 26%, transparent); }
-.stp-ticks b.on { background: var(--text); box-shadow: 0 0 6px color-mix(in srgb, var(--text) 50%, transparent); }
-/* a check box is a two-option row: the box is still there, under the value, for the keyboard */
+.stp-a.off { opacity: .3; pointer-events: none; }
+.stp-v {
+  grid-row: 1; grid-column: 2; text-align: center; font-family: var(--face-text); font-size: 16.5px; font-weight: 500;
+  color: var(--text); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stp-ticks { grid-row: 2; grid-column: 2; display: flex; justify-content: center; gap: 3px; }
+.stp-ticks b { width: 30px; height: 3px; background: color-mix(in srgb, var(--text) 24%, transparent); }
+.stp-ticks b.on { background: var(--text); }
+/* a check box is a two-option row; the box stays, for the keyboard */
 #settings .set-panes .set-check { display: flex; align-items: center; gap: 12px; }
 #settings .set-panes .set-check > input[type="checkbox"] { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
-#settings .set-panes .set-check > .row-ic { display: none; }
-/* sliders: a hairline track and a small lit square */
-#settings .set-panes input[type="range"] { width: 300px; flex: 0 0 300px; margin-inline-start: auto; accent-color: var(--text); }
-#settings .set-panes .set-row > label .set-val { margin-inline-start: 8px; }
+#settings .set-panes .row-ic, #settings .set-panes .set-check > .row-ic { display: none; }
+/* sliders, a list, a field and buttons sit in the same value column */
+#settings .set-panes input[type="range"] { width: 320px; flex: 0 0 320px; margin-inline-start: auto; accent-color: var(--text); }
 #settings .set-panes .set-row .sel-wrap, #settings .set-panes .set-row > .set-btns, #settings .set-panes .set-txt { margin-inline-start: auto; }
-#settings .set-panes .set-row .sel-wrap { width: 300px; }
-#settings .set-panes .set-row .sel-wrap .sel { width: 100%; }
-#settings .set-panes .row-ic { display: none; }
+#settings .set-panes .set-row .sel-wrap { width: 320px; }
+#settings .set-panes .set-row .sel-wrap .sel { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--rq-line); border-radius: 0; text-align: center; font-size: 15.5px; }
+#settings .set-panes .set-row > .set-btns .btn { background: transparent; border: 1px solid var(--rq-line); border-radius: 0; }
 .set-txt {
-  width: 300px; height: 32px; padding: 0 10px; font: inherit; font-size: 13px; color: var(--text);
-  background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 2px; outline: none;
+  width: 320px; height: 32px; padding: 0 10px; font: inherit; font-size: 14px; color: var(--text);
+  background: transparent; border: 0; border-bottom: 1px solid var(--rq-line, var(--line-2)); border-radius: 0; outline: none;
 }
-.set-txt:focus { border-color: var(--text); }
-#wpUrlRow.bad .set-txt { border-color: var(--danger); }
-#settings .set-foot { padding: 12px clamp(20px, 4vw, 64px) 18px; border-top: 1px solid color-mix(in srgb, var(--text) 13%, transparent); }
-/* a narrow window: the description goes under the rows, as one column */
+.set-txt:focus { border-bottom-color: var(--text); }
+#wpUrlRow.bad .set-txt { border-bottom-color: var(--danger); }
+#settings .set-foot { padding: 10px var(--rq-pad) 16px; border-top: 1px solid var(--rq-line); background: none; }
+#settings .set-foot .btn {
+  background: transparent; border: 0; font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase;
+  font-size: 14px; letter-spacing: .04em; color: var(--rq-dim);
+}
+#settings .set-foot .btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 10%, transparent); }
+/* a narrow window: the description goes under the rows */
 @media (max-width: 980px) {
   #settings .set-shell { flex-direction: column; }
-  #settings .set-panes { flex: 1 1 auto; }
-  #settings .set-desc { flex: 0 0 auto; max-width: none; padding: 12px 0; border-top: 1px solid var(--line); min-height: 90px; }
+  #settings .set-panes { flex: 1 1 auto; padding-inline-end: 0; }
+  #settings .set-desc { flex: 0 0 auto; max-width: none; padding: 12px 0; border-top: 1px solid var(--rq-line); min-height: 90px; }
   .stp, #settings .set-panes input[type="range"], #settings .set-panes .set-row .sel-wrap, .set-txt { width: 220px; flex-basis: 220px; }
 }
-#settings .set-panes { overflow-x: hidden; }

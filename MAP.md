@@ -3065,7 +3065,7 @@ Settings is the whole window under the titlebar, after the reference's
 options screen (§5c): the title top left, tabs across the top with hairlines
 between them and a lit line under the open one, the slanted section tabs, the
 highlighted row a gradient bar with a bright rim, and the description column
-— now the row's **name, what it does and "(Default: …)"**, the default read
+— now what the row does and **"(Default: …)"**, the default read
 from `defaults()` through `SET_KEYS` (`settingsDescHtml`). Every `.seg` row
 and every check box is shown as **‹ value ›** with a bar per option under it
 (`stepperize`): built over the existing controls, which stay in the document
@@ -3075,18 +3075,38 @@ arrows click it, a MutationObserver repaints a stepper when its seg's `.on`
 moves, and `syncSteppers()` runs at the end of every sync (a `checked` set in
 code fires no event). Rows take ←/→. No controller glyphs.
 
-The face is **ITC American Typewriter** for English and **Neue Frutiger** for
-Arabic, across the app and as the notes' new default face (`noteFont:
-'typewriter'`; a store that never chose — `'system'` — moves to it once,
-`fontV`). Both are licensed, so: Windows' own copies when installed (the
-`local()` families in §84), or files the user owns (Settings ▸ Appearance ▸
-Choose file…, main.js `font:pick` copies one of each into `userData\fonts`,
-`font:read` hands the bytes to `loadUiFont()`, which registers them with
-`FontFace` — no URL, so the CSP never sees them), else **Cutive** (bundled,
-OFL, `npm run fonts`) and Noto Sans Arabic. Each Arabic family carries only
-the Arabic range, so a Latin letter never falls into it; the order of
-`--face-ui` is the whole decision. `settings.uiFont` = 'system' puts the old
-faces back.
+**The face (3.0.1).** The reference screen is set in **Neue Frutiger** (the
+rows, the values, the descriptions) with **Univers Condensed** in capitals for
+the title and the tabs; ITC American Typewriter is the game's title and save
+screens. 3.0.0 set the whole app in the typewriter (Cutive standing in) and it
+read as a costume, so 3.0.1 made **Clean** the default (`settings.uiFont:
+'clean'`): `--face-text` for reading and `--face-cond` for every label —
+tabs, headings, the titlebar, a board's name (`--face-label`, `--face-type`).
+**Typewriter** (`--face-typewriter`) and **System** (the pre-3.0 faces) are
+still there. The notes' default is `noteFont: 'frutiger'`. A store on either
+old default moves once (`fontV` 4).
+
+All three faces are licensed, so each comes, in order, from a file the user
+owns (Settings ▸ Appearance ▸ Choose file…, main.js `font:pick` keeps
+`ui-frutiger|condensed|typewriter.<ext>` in `userData\fonts` — 3.0.0's
+`ui-latin`/`ui-arabic` are still found — and `loadUiFont()` registers the
+bytes with `FontFace`, so the CSP never sees a URL), then Windows' own copy
+(the `local()` families in §84), then the nearest face every Windows 10 and 11
+has: **Segoe UI Variable** for Frutiger (the same humanist lineage) and
+**Bahnschrift Condensed** for Univers Condensed. Nothing is downloaded; Cutive
+(bundled) is only the typewriter's stand-in. The Arabic families carry only
+the Arabic range, so a Latin letter never falls into them: Neue Frutiger
+Arabic when there is one, else Noto Sans Arabic.
+
+The options screen was measured off the reference again in 3.0.1 (mental.css
+§88): flat near-black, the title and tabs condensed capitals with tall thin
+lines between the tabs and a blurred bar of light under the open one, the
+name of each row indented in sentence case, the highlighted row lighter at its
+leading edge and its top with a bright rim, a thin scroll track between the
+rows and the description, and the description plain text then
+"(Default: …)" — **no heading over it**, as the reference has none. The thin
+track is `::-webkit-scrollbar` only: in this Chromium `scrollbar-width` wins
+over it and brings the arrows back.
 
 Tests: **3.0** in `tools/test-app-features.js` — Escape, the three ways a
 picture goes out (the clipboard writer stubbed), Light paper's ink in a light

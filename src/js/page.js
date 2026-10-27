@@ -140,7 +140,7 @@ function closeFlowsMenu() {
 }
 
 /* ---- the menu ---- */
-const FONT_LABELS = { typewriter: 'set.fontType', system: 'set.fontSystem', serif: 'set.fontSerif', wide: 'set.fontWide', mono: 'set.fontMono',
+const FONT_LABELS = { frutiger: 'set.fontFrutiger', typewriter: 'set.fontType', system: 'set.fontSystem', serif: 'set.fontSerif', wide: 'set.fontWide', mono: 'set.fontMono',
                       rounded: 'set.fontRounded', narrow: 'set.fontNarrow', hand: 'set.fontHand' };
 
 function openPageMenu() {

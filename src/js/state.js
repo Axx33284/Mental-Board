@@ -188,7 +188,7 @@ function defaults() {
       accent: 'mono',       // white on a dark theme, black on a light one — see ACCENTS
       /* What a note's text is set in. The UI keeps its own face whatever this
          says — this is about the writing, not about the app. See NOTE_FONTS. */
-      noteFont: 'typewriter',
+      noteFont: 'frutiger',
       /* How a note sits on the canvas: the shadow under it. Presentation only,
          like shape and density. See NOTE_SHADOWS. */
       noteShadow: 'flat',
@@ -249,10 +249,11 @@ function defaults() {
          a YouTube link for 'youtube', and how it sits — opacity, a darkening
          veil, blur, how much rain or snow, and whether the video has sound. */
       wpKind: 'none', wpUrl: '', wpOpacity: 100, wpDim: 25, wpBlur: 0, wpAmount: 60, wpSound: false, wpGrid: true,
-      // the face the app is set in (3.0): ITC American Typewriter / Neue Frutiger, or the system's
-      uiFont: 'typewriter',
-      // the names of the font files picked for it (main.js keeps the files in userDataonts)
-      uiFontNames: { latin: '', arabic: '' },
+      /* the face the app is set in (3.0.1, mental.css §84): 'clean' — the
+         reference's Neue Frutiger and Univers Condensed — 'typewriter', or 'system' */
+      uiFont: 'clean',
+      // the names of the font files picked for each face (main.js keeps the files in userData\fonts)
+      uiFontNames: { frutiger: '', condensed: '', typewriter: '' },
       // minutes between the saves that happen whatever else does (2.10) — one of AUTOSAVE_MINUTES
       autosaveMin: 5,
       // menu sounds (2.1, js/sound.js): off unless asked for, and how loud
@@ -360,7 +361,7 @@ function padPreset(p) {
    the only thing standing between an Arabic note and a system fallback that
    may not be installed. Drop it from one of these stacks and Arabic notes
    silently change face when the setting changes — see css/lang.css. */
-const NOTE_FONTS = ['typewriter', 'system', 'serif', 'wide', 'mono', 'rounded', 'narrow', 'hand'];
+const NOTE_FONTS = ['frutiger', 'typewriter', 'system', 'serif', 'wide', 'mono', 'rounded', 'narrow', 'hand'];
 /* The shadow under a note. `flat` is not "no shadow" — it is a hairline ring,
    because a note with neither a shadow nor an edge stops being an object on a
    surface and becomes a coloured patch of the surface. */
@@ -885,10 +886,17 @@ function adopt(raw, keepSettings) {
      preset it named, so nothing on the board moves. */
   st.notePad = healPad(rawSet.notePad || kept.notePad || null, st.noteDensity);
   st.noteDensity = padPreset(st.notePad);
-  if (!NOTE_FONTS.includes(st.noteFont)) st.noteFont = 'typewriter';
-  /* 3.0 made the typewriter face the default, and "the default" is what a
-     board that never chose kept as 'system'. Once, and marked done. */
-  if (!(st.fontV >= 3)) { if (st.noteFont === 'system') st.noteFont = 'typewriter'; st.fontV = 3; }
+  if (!NOTE_FONTS.includes(st.noteFont)) st.noteFont = 'frutiger';
+  /* The default face has moved twice: 3.0.0 made it the typewriter (moving a
+     store that never chose — 'system' — onto it), and 3.0.1 made it the
+     reference's Frutiger, because the typewriter read as a costume. A store
+     on either old default moves once, and is marked. */
+  if (!(st.fontV >= 3)) { if (st.noteFont === 'system') st.noteFont = 'frutiger'; }
+  if (!(st.fontV >= 4)) {
+    if (st.noteFont === 'typewriter') st.noteFont = 'frutiger';
+    if (st.uiFont === 'typewriter') st.uiFont = 'clean';
+    st.fontV = 4;
+  }
   if (!NOTE_SHADOWS.includes(st.noteShadow)) st.noteShadow = 'flat';
   if (!MOTION_MODES.includes(st.motion)) st.motion = 'auto';
   st.zoomSpeed = clamp(Math.round(+st.zoomSpeed || 100), 40, 220);
@@ -911,8 +919,12 @@ function adopt(raw, keepSettings) {
   st.wpAmount = clamp(Math.round(+st.wpAmount || 0), 5, 100);
   st.wpSound = !!st.wpSound;
   st.wpGrid = st.wpGrid !== false;
-  if (!['typewriter', 'system'].includes(st.uiFont)) st.uiFont = 'typewriter';
-  { const fn = st.uiFontNames || {}; st.uiFontNames = { latin: typeof fn.latin === 'string' ? fn.latin.slice(0, 200) : '', arabic: typeof fn.arabic === 'string' ? fn.arabic.slice(0, 200) : '' }; }
+  if (!['clean', 'typewriter', 'system'].includes(st.uiFont)) st.uiFont = 'clean';
+  {
+    // 3.0.0 kept { latin, arabic }: the typewriter file and the Frutiger file
+    const fn = st.uiFontNames || {}, str = (v) => (typeof v === 'string' ? v.slice(0, 200) : '');
+    st.uiFontNames = { frutiger: str(fn.frutiger || fn.arabic), condensed: str(fn.condensed), typewriter: str(fn.typewriter || fn.latin) };
+  }
   st.autosaveMin = AUTOSAVE_MINUTES.includes(+st.autosaveMin) ? +st.autosaveMin : 5;
   st.sounds = !!st.sounds;
   st.soundVol = clamp(Math.round(+st.soundVol || 60), 5, 100);

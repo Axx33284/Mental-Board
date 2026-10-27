@@ -112,7 +112,7 @@ contextBridge.exposeInMainWorld('mbFiles', {
   ocrLangs: () => ipcRenderer.invoke('ocr:langs'),
   // a book (3.0): one PDF, picked; its path goes to attach() like any other file
   pickBook: () => ipcRenderer.invoke('files:pick-book'),
-  // the app's face from a font file the user owns (3.0): 'latin' or 'arabic'
+  // the app's faces from font files the user owns (3.0.1): 'frutiger', 'condensed' or 'typewriter'
   pickFont: (kind) => ipcRenderer.invoke('font:pick', String(kind || '')),
   readFont: (kind) => ipcRenderer.invoke('font:read', String(kind || '')),
   forgetFont: (kind) => ipcRenderer.invoke('font:forget', String(kind || ''))

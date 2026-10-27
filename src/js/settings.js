@@ -1848,7 +1848,7 @@ async function importBoard() {
   await importBoardsFrom(parsed, r.beside || '', '');
 }
 
-/* ─── 3.0. the options screen: wallpaper, drawing, the app's face, and every choice as ‹ value › ───
+/* ─── 3.0. the options screen: wallpaper, drawing, the app's faces, and every choice as ‹ value › ───
    Settings ▸ Wallpaper (js/wallpaper.js), Settings ▸ Drawing (the paper,
    Handwrite it, js/sketch.js and js/handwrite.js) and the interface font with
    the font files behind it (main.js font:pick). Wired once by
@@ -1889,8 +1889,8 @@ function wireSettings30() {
   $('wpUrl').addEventListener('keydown', (e) => e.stopPropagation());
   $('hwLang').addEventListener('change', () => { s().hwLang = $('hwLang').value; saveSoon(); });
   // the face from a file the user owns
-  for (const kind of ['latin', 'arabic']) {
-    const K = kind === 'latin' ? 'Latin' : 'Arabic';
+  for (const kind of UI_FONT_KINDS) {
+    const K = kind[0].toUpperCase() + kind.slice(1);
     $('font' + K + 'Pick').addEventListener('click', async () => {
       if (!FILES || !FILES.pickFont) return;
       const r = await FILES.pickFont(kind);
@@ -1939,8 +1939,8 @@ function syncSettings30() {
   paintWpUrlHint();
   paintHwLangs();
   const names = s.uiFontNames || {};
-  for (const kind of ['latin', 'arabic']) {
-    const K = kind === 'latin' ? 'Latin' : 'Arabic';
+  for (const kind of UI_FONT_KINDS) {
+    const K = kind[0].toUpperCase() + kind.slice(1);
     $('font' + K + 'Name').textContent = names[kind] || t('set.fontNone');
     $('font' + K + 'Forget').classList.toggle('hidden', !names[kind]);
   }
@@ -1963,19 +1963,19 @@ function paintHwLangs() {
   }
 }
 
-/* ---- the app's face from a file ----
-   Registered under a name of its own, and an Arabic face only for Arabic
-   letters, so the typewriter face keeps every Latin letter whichever was
-   loaded first (mental.css §84 lists the families in order). */
-const UI_FONT_FAMILY = { latin: 'MB UI Latin', arabic: 'MB UI Arabic' };
-const UI_ARABIC_RANGE = 'U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF';
+/* ---- the app's faces from files ----
+   Each registered under a name of its own, which mental.css §84 puts first in
+   its stack — so a file given always wins over Windows' copy and the
+   stand-in. A Neue Frutiger file covers Arabic as well when it has it. */
+const UI_FONT_KINDS = ['frutiger', 'condensed', 'typewriter'];
+const UI_FONT_FAMILY = { frutiger: 'MB UI Frutiger', condensed: 'MB UI Condensed', typewriter: 'MB UI Typewriter' };
 async function loadUiFont(kind) {
   if (!FILES || !FILES.readFont) return false;
   try {
     const r = await FILES.readFont(kind);
     if (!r || !r.bytes) return false;
     for (const f of [...document.fonts]) if (f.family === UI_FONT_FAMILY[kind]) document.fonts.delete(f);
-    const face = new FontFace(UI_FONT_FAMILY[kind], r.bytes, kind === 'arabic' ? { unicodeRange: UI_ARABIC_RANGE } : {});
+    const face = new FontFace(UI_FONT_FAMILY[kind], r.bytes);
     await face.load();
     document.fonts.add(face);
     return true;
@@ -1983,7 +1983,7 @@ async function loadUiFont(kind) {
 }
 function loadUiFonts() {
   const names = state.settings.uiFontNames || {};
-  for (const kind of ['latin', 'arabic']) if (names[kind]) loadUiFont(kind);
+  for (const kind of UI_FONT_KINDS) if (names[kind]) loadUiFont(kind);
 }
 
 /* ---- every choice as ‹ value › ----
@@ -2067,8 +2067,9 @@ function paintStepper(stp) {
 function syncSteppers() { document.querySelectorAll('#setPanes .stp').forEach(paintStepper); }
 
 /* ---- what the description column says ----
-   The row's name, what it does, and — as the reference ends every one —
-   what it was when the app arrived. The defaults come from defaults(), so
+   What the row does and — as the reference ends every one — what it was when
+   the app arrived. No heading over it: the reference has none, the row it
+   describes is lit beside it. The defaults come from defaults(), so
    they cannot drift from what Restore default settings puts back. */
 const SET_KEYS = {
   themeModeSeg: 'themeMode', motionSeg: 'motion', wheelSeg: 'wheel', perfSeg: 'perf', railSeg: 'railMode',
@@ -2096,10 +2097,8 @@ function settingsDescHtml(el) {
   const unit = el && el.closest ? el.closest(DESC_UNIT) : null;
   if (!unit) return '';
   const hint = settingsHintFor(el);
-  const lab = unit.querySelector(':scope > label, :scope > span:not(.stp), :scope > .set-row > label') || (unit.matches('label') ? unit : null);
-  const name = lab ? [...lab.childNodes].filter((n) => !(n.classList && (n.classList.contains('stp') || n.classList.contains('set-val') || n.classList.contains('row-ic')))).map((n) => n.textContent).join(' ').replace(/\s+/g, ' ').trim() : '';
   const def = settingDefaultText(unit);
   if (!hint && !def) return '';
-  return (name ? `<b class="sd-name">${esc(name)}</b>` : '') + (hint ? `<span class="sd-text">${esc(hint)}</span>` : '') +
+  return (hint ? `<span class="sd-text">${esc(hint)}</span>` : '') +
     (def ? `<span class="sd-def">${esc(t('set.default', { v: def }))}</span>` : '');
 }

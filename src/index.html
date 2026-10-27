@@ -444,27 +444,32 @@
           </div>
           <p class="set-note dim sub" data-t="set.motionHint"></p>
 
-          <!-- The face the app is set in (3.0, mental.css §84): ITC American
-               Typewriter for English, Neue Frutiger for Arabic. Both are
-               licensed fonts, so they are used when Windows has them, or from
-               files the user owns (main.js font:pick); until then a free
-               typewriter face stands in. -->
+          <!-- The face the app is set in (3.0.1, mental.css §84): the
+               reference's Neue Frutiger and Univers Condensed, or the
+               typewriter, or the system's. All three are licensed, so each is
+               used when Windows has it, or from a file the user owns
+               (main.js font:pick); until then Windows' own nearest stands in. -->
           <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.typeHead"></span></h3>
           <div class="set-row">
             <label><span data-t="set.uiFont"></span></label>
             <div class="seg" id="uiFontSeg">
+              <button data-uifont="clean" data-t="set.uiFontClean"></button>
               <button data-uifont="typewriter" data-t="set.uiFontType"></button>
               <button data-uifont="system" data-t="set.uiFontSystem"></button>
             </div>
           </div>
           <p class="set-note dim sub" data-t="set.uiFontHint"></p>
           <div class="set-row">
-            <label><span data-t="set.fontLatin"></span> <span class="set-val" id="fontLatinName"></span></label>
-            <div class="set-btns"><button class="btn small" id="fontLatinPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontLatinForget"><span data-t="set.fontForget"></span></button></div>
+            <label><span data-t="set.fontFrutiger"></span> <span class="set-val" id="fontFrutigerName"></span></label>
+            <div class="set-btns"><button class="btn small" id="fontFrutigerPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontFrutigerForget"><span data-t="set.fontForget"></span></button></div>
           </div>
           <div class="set-row">
-            <label><span data-t="set.fontArabic"></span> <span class="set-val" id="fontArabicName"></span></label>
-            <div class="set-btns"><button class="btn small" id="fontArabicPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontArabicForget"><span data-t="set.fontForget"></span></button></div>
+            <label><span data-t="set.fontCondensed"></span> <span class="set-val" id="fontCondensedName"></span></label>
+            <div class="set-btns"><button class="btn small" id="fontCondensedPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontCondensedForget"><span data-t="set.fontForget"></span></button></div>
+          </div>
+          <div class="set-row">
+            <label><span data-t="set.fontTypewriter"></span> <span class="set-val" id="fontTypewriterName"></span></label>
+            <div class="set-btns"><button class="btn small" id="fontTypewriterPick"><span data-t="set.fontPick"></span></button><button class="btn small hidden" id="fontTypewriterForget"><span data-t="set.fontForget"></span></button></div>
           </div>
           <p class="set-note dim sub" data-t="set.fontFilesHint"></p>
 
@@ -629,6 +634,7 @@
           <div class="set-row">
             <label><span class="row-ic"></span><span data-t="set.noteFont"></span></label>
             <div class="seg wrap" id="fontSeg">
+              <button data-font="frutiger" data-t="set.fontFrutiger"></button>
               <button data-font="typewriter" data-t="set.fontType"></button>
               <button data-font="system" data-t="set.fontSystem"></button>
               <button data-font="serif" data-t="set.fontSerif"></button>
