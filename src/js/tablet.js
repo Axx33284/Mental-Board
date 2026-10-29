@@ -142,7 +142,9 @@ function qrSvg(rows) {
    the same arithmetic on a different box. Before 2.6.2 the phone only ever
    knew the board: with a drawing note open, its pen drew on the board behind
    it, which is to say not where anybody was looking. `id` tells a stroke
-   whether what it began on is still open. */
+   whether what it began on is still open. A book (book.js, 3.0.2) is a
+   fourth: its camera has the same form, and a stroke lands on the page under
+   the pen. */
 function padHost() {
   // the picture editor first: since 2.10 it can be open over a drawing note
   if (ST.img && !$('studio').classList.contains('hidden')) {
@@ -152,6 +154,10 @@ function padHost() {
   if (typeof sketchOpen === 'function' && sketchOpen()) {
     const r = $('skStage').getBoundingClientRect();
     return { kind: 'sketch', id: sk.n.id, r, v: sk.view };
+  }
+  if (typeof bookOpen === 'function' && bookOpen()) {
+    const r = $('bkStage').getBoundingClientRect();
+    return { kind: 'book', id: bk.n.id, r, v: bk.cam };
   }
   return { kind: 'board', id: state.activeBoard, r: vpRect(), v: state.view };
 }
@@ -241,7 +247,7 @@ function sendPadView() {
   const kind = padHost().kind, board = kind === 'board';
   // how much is selected, where the phone is — its bin is lit by this
   const sel = board ? inkSel.size : kind === 'sketch' ? sk.sel.size : 0;
-  const m = { t: 'view', ro: board && !padCanDraw(), pal: padPalette(), sel, rw: padRect().w };
+  const m = { t: 'view', ro: board && !padCanDraw(), pal: padPalette(), sel, rw: padRect().w, book: kind === 'book' };
   const key = JSON.stringify(m);
   if (key === padViewSent) return;
   padViewSent = key;
@@ -262,6 +268,7 @@ function onPadMessage(m) {
     const cx = h.r.left + p.x + m.x * p.w, cy = h.r.top + p.y + m.y * p.h;
     if (h.kind === 'sketch') skSurface.zoomAt(cx, cy, m.f);
     else if (h.kind === 'studio') stSurface.zoomAt(cx, cy, m.f);
+    else if (h.kind === 'book') bkSurface.zoomAt(cx, cy, m.f);
     else zoomAt(cx, cy, m.f);
     padNav = Math.max(padNav, m.n || 0);
   }
@@ -269,9 +276,12 @@ function onPadMessage(m) {
     const kind = padHost().kind;
     if (kind === 'sketch') sketchUndo(true);
     else if (kind === 'studio') studioUndo(true);
+    else if (kind === 'book') bookUndo(true);
     else padUndo();
   }
   else if (m.t === 'sel') padSelection(m);
+  // the phone's arrows turn a book's pages
+  else if (m.t === 'page') { if (padHost().kind === 'book') bookGo(m.d); }
   else if (m.t === 'size') { padSize = { a: m.a, px: m.px }; paintPadArea(); sendPadView(); padDirty(); }
   else if (m.t === 'got') padGot(m.n);
 }
@@ -326,7 +336,8 @@ function movePadStroke(id, pts) {
   if (!k) return;
   for (let i = 0; i < pts.length; i += 3) {
     if (k.ed) {
-      if (k.pick) { if (sk && sk.pick && padHostAlive(k.map)) moveSketchPick(Object.assign(padWorld(k.map, pts[i], pts[i + 1]), { k: k.map.z })); }
+      if (k.book) padBookPoint(k, pts[i], pts[i + 1], pts[i + 2]);
+      else if (k.pick) { if (sk && sk.pick && padHostAlive(k.map)) moveSketchPick(Object.assign(padWorld(k.map, pts[i], pts[i + 1]), { k: k.map.z })); }
       else if (k.erase) padEditorErase(k, pts[i], pts[i + 1]);
       else addPadEditorPoint(k, pts[i], pts[i + 1], pts[i + 2]);
     }
@@ -447,6 +458,7 @@ function padPan(dx, dy) {
   const v = { x: h.v.x + dx * p.w, y: h.v.y + dy * p.h, z: h.v.z };
   if (h.kind === 'sketch') { setSketchView(v); return; }
   if (h.kind === 'studio') { setStudioView(v); return; }
+  if (h.kind === 'book') { setBookView(v); return; }
   state.view.x = v.x; state.view.y = v.y;
   applyView(); saveSoon();
 }
@@ -472,6 +484,7 @@ function padColorCss(c) {
 }
 function beginPadEditorStroke(m, map) {
   hidePadCursor();
+  if (map.kind === 'book') { beginPadBookStroke(m, map); return; }
   if (m.tool === 'select') {
     // the drawing note's arrow, from the phone (the picture editor has nothing to select)
     if (map.kind !== 'sketch' || sk.live || sk.erase || sk.pick) return;
@@ -525,6 +538,11 @@ function addPadEditorPoint(k, x, y, p) {
 }
 function endPadEditorStroke(k) {
   padDirty();
+  if (k.book) {
+    if (!padHostAlive(k.map)) { if (k.L) { k.L.done = true; k.L.el.remove(); } return; }
+    if (k.E) bookEraseEnd(k.E); else bookStrokeEnd(k.L);
+    return;
+  }
   if (k.pick) { if (sk && sk.pick && padHostAlive(k.map)) endSketchPick(); return; }
   if (k.erase) return;
   if (k.mark) {
@@ -548,6 +566,44 @@ function padEditorErase(k, x, y) {
   const w = padWorld(k.map, x, y);
   if (k.map.kind === 'sketch') eraseSketchAt(w, k.E);
   else studioErase(w, k.E);
+}
+
+/* ---- the phone in a book (3.0.2) ----
+   The stroke goes to the page under the pen when it went down, in that page's
+   units, through book.js's own steps — so the book's undo, its eraser and its
+   save treat a phone line exactly like one from the mouse. The page's place is
+   taken once, with the view (padMap), so a pan or a zoom on either side half
+   way through cannot bend the line; one that ends off the page is clipped by
+   the page, as the mouse's is. The arrow has nothing to select in a book. */
+function bookPageUnder(w) {
+  const h = padHost(), v = h.v;
+  for (const pg of document.querySelectorAll('#bkSpread > .bk-side > .bk-page, #bkScroll .bk-page')) {
+    const r = pg.getBoundingClientRect();
+    // the page's box in the camera's own units (before the zoom), where padWorld() answers
+    const x = (r.left - h.r.left - v.x) / v.z, y = (r.top - h.r.top - v.y) / v.z, w2 = r.width / v.z, h2 = r.height / v.z;
+    if (w.x >= x && w.x <= x + w2 && w.y >= y && w.y <= y + h2) return { page: +pg.dataset.p, x, y, u: w2 / BOOK_U };
+  }
+  return null;
+}
+function beginPadBookStroke(m, map) {
+  if (m.tool === 'select' || bk.turning || bk.live || bk.erase) return;
+  const at = bookPageUnder(padWorld(map, m.x, m.y));
+  if (!at) return;
+  const k = { ed: true, book: true, map, k: m.k, at };
+  if (m.tool === 'eraser') k.E = bookEraseBegin(at.page, m.size, at.u * map.z);
+  else {
+    k.L = bookStrokeBegin(at.page, INK_SIZES[m.tool] ? m.tool : 'pen', inkColorOk(m.color) ? m.color : 'text', m.size, at.u * map.z);
+    if (!k.L) return;
+  }
+  padLive.set(m.id, k);
+  padBookPoint(k, m.x, m.y, m.p);
+}
+function padBookPoint(k, x, y, p) {
+  if (!padHostAlive(k.map)) return;
+  const w = padWorld(k.map, x, y), at = k.at;
+  const q = { x: (w.x - at.x) / at.u, y: (w.y - at.y) / at.u };
+  if (k.E) bookEraseAt(k.E, q);
+  else bookStrokeAdd(k.L, q.x, q.y, p != null && p > 0 ? p : null, performance.now());
 }
 
 /* ---- the ring where the pen would land ---- */

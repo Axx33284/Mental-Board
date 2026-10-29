@@ -42,6 +42,7 @@ function zoomPanSurface(el, opts) {
 
   el.addEventListener('wheel', (e) => {
     e.preventDefault();
+    if (opts.wheel && opts.wheel(e)) return;          // the owner took this notch (a book turns a page with it)
     const zoom = e.ctrlKey || state.settings.wheel === 'zoom';
     const v = opts.get();
     if (zoom) {

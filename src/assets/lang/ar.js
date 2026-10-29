@@ -1115,6 +1115,8 @@ window.MB_LANG.ar = {
   'main.padFull': 'ملء الشاشة',
   'main.padSelect': 'تحديد — المس خطًا أو اسحب حول عدة خطوط، ثم اسحبها لتحريكها',
   'main.padDelete': 'احذف الخطوط المحددة',
+  'main.padPrev': 'صفحة الكتاب السابقة',
+  'main.padNext': 'صفحة الكتاب التالية',
   // ---- 2.4
   'menu.shape': 'الشكل…',
   'form.title': 'الشكل',

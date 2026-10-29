@@ -80,6 +80,8 @@
   <span class="sep"></span>
   <span id="swatches" style="display:flex;gap:0;flex-wrap:wrap"></span>
   <span class="sep"></span>
+  <button id="pgPrev" class="hidden"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button id="pgNext" class="hidden"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
   <button id="undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/></svg></button>
   <button id="fingers"><svg viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v4c0 4-2 7-6 7s-6-3-7-6l-1-3a1.6 1.6 0 013-1l1 2"/></svg></button>
   <button id="full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
@@ -92,12 +94,12 @@ const S = __STRINGS__;
 const $ = (id) => document.getElementById(id);
 const tip = { select: S.select, pen: S.pen, marker: S.marker, brush: S.brush, eraser: S.eraser };
 document.querySelectorAll('[data-tool]').forEach((b) => { b.title = b.ariaLabel = tip[b.dataset.tool] || ''; });
-for (const [id, k] of [['undo', 'undo'], ['fingers', 'fingers'], ['full', 'full'], ['del', 'del']]) $(id).title = $(id).ariaLabel = S[k] || '';
+for (const [id, k] of [['undo', 'undo'], ['fingers', 'fingers'], ['full', 'full'], ['del', 'del'], ['pgPrev', 'prev'], ['pgNext', 'next']]) $(id).title = $(id).ariaLabel = S[k] || '';
 
 /* ---- what the pen is ---- */
 const pen = { tool: 'pen', size: 1, color: 'text' };
 let fingerDraws = false;
-let readOnly = false, selCount = 0, regionW = 400, palette = [{ k: 'text', c: '#e8e9ee' }];
+let readOnly = false, inBook = false, selCount = 0, regionW = 400, palette = [{ k: 'text', c: '#e8e9ee' }];
 const colorOf = (k) => (palette.find((p) => p.k === k) || palette[0]).c;
 /* The bar acts on the press, as the computer's bars do (helpers.js onPress):
    an S Pen tap that slides a millimetre across a button still counts. Full
@@ -114,6 +116,9 @@ function paintBar() {
   $('fingers').classList.toggle('on', fingerDraws);
   $('del').classList.toggle('hidden', pen.tool !== 'select');
   $('del').disabled = !selCount;
+  // a book open on the computer: its pages turn from here too
+  $('pgPrev').classList.toggle('hidden', !inBook);
+  $('pgNext').classList.toggle('hidden', !inBook);
 }
 function paintSwatches() {
   const box = $('swatches');
@@ -144,6 +149,8 @@ document.querySelectorAll('[data-tool]').forEach((b) => press(b, () => setTool(b
 document.querySelectorAll('[data-size]').forEach((b) => press(b, () => { pen.size = +b.dataset.size; paintBar(); }));
 press($('undo'), () => send({ t: 'undo' }));
 press($('del'), () => send({ t: 'sel', act: 'delete' }));
+press($('pgPrev'), () => send({ t: 'page', d: -1 }));
+press($('pgNext'), () => send({ t: 'page', d: 1 }));
 press($('fingers'), () => { fingerDraws = !fingerDraws; paintBar(); });
 $('full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else goFull(); });
 function goFull() {
@@ -284,6 +291,7 @@ function connect() {
     else if (m.t === 'view') {
       readOnly = !!m.ro;
       selCount = m.sel || 0;
+      inBook = !!m.book;
       if (m.rw) regionW = m.rw;
       if (m.pal && m.pal.length && JSON.stringify(m.pal) !== JSON.stringify(palette)) { palette = m.pal; paintSwatches(); }
       paintBar();

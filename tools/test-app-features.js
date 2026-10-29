@@ -2408,6 +2408,93 @@ module.exports = [
       ok(r.slots === 2, 'the scroll view lays out every page');
     });
 
+    // 3.0.2, MAP.md §4z9: a book has the drawing note's camera, and a paired phone draws, pans, zooms and turns in it
+    await test('3.0.2 a book: Space drags it, Ctrl+wheel zooms at the pointer, the phone draws, pans, zooms and turns it', async () => {
+      const r = await page(async () => {
+        const frames = async (k) => { for (let i = 0; i < k; i++) await new Promise((res) => requestAnimationFrame(res)); };
+        const n = addNotebook({ x: 11200, y: 9600 });
+        await frames(4);
+        bk.tool = 'pen';
+        const stage = $('bkStage'), S = stage.getBoundingClientRect();
+        const pe = (type, x, y, extra) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 41, pointerType: 'mouse', button: 0, buttons: 1 }, extra));
+        const out = { fit: bk.cam.z };
+        // Space held: a press drags the pages and writes nothing, even with the pen out
+        const c0 = Object.assign({}, bk.cam);
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true }));
+        const pg = document.querySelector('#bkSpread .bk-page');
+        pg.dispatchEvent(pe('pointerdown', S.left + 300, S.top + 200));
+        window.dispatchEvent(pe('pointermove', S.left + 360, S.top + 230));
+        window.dispatchEvent(pe('pointerup', S.left + 360, S.top + 230, { buttons: 0 }));
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
+        out.space = { dx: bk.cam.x - c0.x, dy: bk.cam.y - c0.y, ink: Object.keys(bk.ink).length };
+        // Ctrl+wheel: closer, and the point under the pointer stays under it
+        const px = S.left + S.width / 2 + 40, py = S.top + S.height / 2;
+        const c1 = Object.assign({}, bk.cam);
+        const wx = (px - S.left - c1.x) / c1.z, wy = (py - S.top - c1.y) / c1.z;
+        stage.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -200, clientX: px, clientY: py }));
+        const c2 = bk.cam;
+        out.wheel = { z: c2.z, drift: Math.hypot(S.left + c2.x + wx * c2.z - px, S.top + c2.y + wy * c2.z - py) };
+        // the hand drags too, and a drag does not turn the page
+        bk.tool = 'hand'; buildBookBar();
+        const c3 = Object.assign({}, bk.cam), at3 = bk.at;
+        document.querySelector('#bkSpread .bk-page').dispatchEvent(pe('pointerdown', S.left + S.width / 2 + 100, S.top + 300));
+        window.dispatchEvent(pe('pointermove', S.left + S.width / 2 + 40, S.top + 260));
+        window.dispatchEvent(pe('pointerup', S.left + S.width / 2 + 40, S.top + 260, { buttons: 0 }));
+        out.hand = { dx: bk.cam.x - c3.x, dy: bk.cam.y - c3.y, at: bk.at === at3 };
+        bookFit();
+        // the phone: what it is on, its pan, its zoom
+        onPadMessage({ t: 'size', a: 0.5, px: 1080 });
+        out.kind = padHost().kind;
+        const c4 = Object.assign({}, bk.cam), p = padRect();
+        onPadMessage({ t: 'pan', dx: 0.05, dy: 0.02, n: 1 });
+        out.pan = { dx: bk.cam.x - c4.x - 0.05 * p.w, dy: bk.cam.y - c4.y - 0.02 * p.h };
+        onPadMessage({ t: 'zoom', f: 1.5, x: 0.5, y: 0.5, n: 2 });
+        out.zoom = bk.cam.z;
+        bookFit();
+        await frames(2);
+        // a phone line lands on the page under the pen, in that page's units
+        const P = padRect(), R = stage.getBoundingClientRect();
+        const cx = R.left + P.x + 0.75 * P.w, cy = R.top + P.y + 0.4 * P.h;
+        const under = [...document.querySelectorAll('#bkSpread > .bk-side > .bk-page')].find((e) => { const q = e.getBoundingClientRect(); return cx >= q.left && cx <= q.right && cy >= q.top && cy <= q.bottom; });
+        const ur = under && under.getBoundingClientRect();
+        const page = under ? +under.dataset.p : -1;
+        onPadMessage({ t: 'down', id: 'b1', x: 0.75, y: 0.4, p: 0.3, tool: 'brush', size: 1, color: 'red', k: 1 });
+        const pts = [];
+        for (let i = 1; i <= 8; i++) pts.push(0.75 + i * 0.01, 0.4 + i * 0.005, 0.3 + i * 0.05);
+        onPadMessage({ t: 'move', id: 'b1', pts });
+        onPadMessage({ t: 'up', id: 'b1' });
+        const s = (bk.ink[page] || [])[0];
+        const want = ur ? { x: (cx - ur.left) / (ur.width / BOOK_U), y: (cy - ur.top) / (ur.width / BOOK_U) } : { x: NaN, y: NaN };
+        out.line = { page, n: (bk.ink[page] || []).length, tool: s && s.tool, ws: !!(s && s.ws), off: s ? Math.hypot(s.pts[0] - want.x, s.pts[1] - want.y) : -1, kept: (n.book.ink[page] || []).length, inked: Object.keys(bk.ink), cx, cy, R: [R.left, R.top, R.width, R.height], P };
+        onPadMessage({ t: 'undo' });
+        out.undone = (bk.ink[page] || []).length;
+        const at5 = bk.at;
+        onPadMessage({ t: 'page', d: 1 });
+        await new Promise((res) => setTimeout(res, 900));
+        out.turned = bk.at !== at5;
+        // the scroll view has the same camera: Space-free, the plain wheel moves it down the column
+        bk.view = 'scroll'; bookLayout();
+        const c6 = Object.assign({}, bk.cam);
+        stage.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 300, clientX: px, clientY: py }));
+        out.scroll = { moved: c6.y - bk.cam.y, filled: document.querySelectorAll('#bkScroll .bk-page').length };
+        bk.view = 'book';
+        closeBook();
+        out.after = padHost().kind;
+        return out;
+      });
+      ok(r.fit === 1, 'it opens at 100%');
+      ok(r.space.dx === 60 && r.space.dy === 30 && r.space.ink === 0, 'Space drags the pages and writes nothing: ' + JSON.stringify(r.space));
+      ok(r.wheel.z > 1 && r.wheel.drift < 1, 'Ctrl+wheel zooms at the pointer: ' + JSON.stringify(r.wheel));
+      ok(r.hand.dx === -60 && r.hand.dy === -40 && r.hand.at, 'the hand drags without turning: ' + JSON.stringify(r.hand));
+      ok(r.kind === 'book' && r.after === 'board', 'the phone is on the book while it is open: ' + r.kind + ' / ' + r.after);
+      ok(Math.abs(r.pan.dx) < 0.5 && Math.abs(r.pan.dy) < 0.5, 'the phone pans the pages: ' + JSON.stringify(r.pan));
+      ok(Math.abs(r.zoom - 1.5) < 0.01, 'the phone zooms them: ' + r.zoom);
+      ok(r.line.page >= 0 && r.line.n === 1 && r.line.tool === 'brush' && r.line.ws && r.line.off < 1 && r.line.kept === 1, 'a phone line on the page under the pen, kept: ' + JSON.stringify(r.line));
+      ok(r.undone === 0, 'the phone\'s undo is the book\'s');
+      ok(r.turned, 'the phone turns the page');
+      ok(r.scroll.moved > 100 && r.scroll.filled > 0, 'the scroll view moves with the wheel and fills what it shows: ' + JSON.stringify(r.scroll));
+    });
+
     await test('3.0 the wallpaper: rain and snow draw, a YouTube link waits for a link, none clears it', async () => {
       const r = await page(async () => {
         const was = { kind: state.settings.wpKind, url: state.settings.wpUrl };

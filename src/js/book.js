@@ -18,6 +18,15 @@
    writes. Strokes are kept per page in page units — a page is BOOK_U wide —
    so they sit on the same words at any zoom.
 
+   **The pages are looked at through a camera** (3.0.2), the drawing note's
+   own: they are laid out once at the size that fits, and a view `{ x, y, z }`
+   moves and scales them (`setBookView`) on sketch.js's zoomPanSurface — the
+   wheel at the pointer with Ctrl, Space or the middle button to drag, two
+   fingers to pan and pinch, the hand to drag. A paired phone draws on the
+   pages, pans, zooms and turns them (tablet.js). Nothing in the layout moves
+   with the zoom, so a page's units under a stroke stay where they were; a
+   PDF page is drawn again, sharper, once a zoom settles (`bookSharpen`).
+
    **It is a note**, `{ book: { title, kind, pages, ar, paper, view, at, ink } }`,
    the way a drawing note is (sketch.js): the gesture engine, undo, the
    clipboard, the bin and the save path have no second branch. Its files —
@@ -37,6 +46,9 @@ const BOOK_PAPERS = ['ruled', 'dots', 'grid', 'plain'];
 const BOOK_VIEWS = ['book', 'scroll'];
 const BOOK_TOOLS = ['hand', 'pen', 'marker', 'brush', 'eraser'];
 const BOOK_TITLE_H = 44;         // the title under the cover on the board, in note px
+const BOOK_ZMIN = 0.3, BOOK_ZMAX = 6;
+const BOOK_PDF_PX = 12e6;        // the most pixels one drawn PDF page may have, at any zoom
+const BOOK_CACHE_PX = 48e6;      // and the drawn pages kept, together
 
 function okBook(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -180,7 +192,8 @@ function paintBookOnCanvas(ctx, n, pal, font, pictures) {
 }
 
 /* ---- the reader ---- */
-let bk = null;     // { n, doc, ink, undo, redo, view, at, zoom, tool, color, size, live, erase, dirty, undoTaken, turning }
+let bk = null;     // { n, doc, ink, undo, redo, view, at, cam, tool, color, size, live, erase, hand, dirty, undoTaken, turning }
+let bkSurface = null;
 const bookOpen = () => !!bk;
 
 function openBook(id) {
@@ -191,9 +204,9 @@ function openBook(id) {
   closeCtxMenu();
   const B = n.book, p = state.settings.bookPen || {};
   bk = {
-    n, doc: null, docP: null, ink: Object.assign({}, B.ink), undo: [], redo: [], view: B.view, at: B.at, zoom: 1,
+    n, doc: null, docP: null, ink: Object.assign({}, B.ink), undo: [], redo: [], view: B.view, at: B.at, cam: { x: 0, y: 0, z: 1 }, fitKey: '',
     tool: BOOK_TOOLS.includes(p.tool) ? p.tool : 'hand', color: inkColorOk(p.color) ? p.color : 'text', size: [0, 1, 2].includes(p.size) ? p.size : 1,
-    live: null, erase: null, dirty: false, undoTaken: false, turning: false, cache: new Map(), penSeen: false
+    live: null, erase: null, hand: null, dirty: false, undoTaken: false, turning: false, cache: new Map(), penSeen: false
   };
   const dlg = $('bookDlg');
   dlg.classList.remove('hidden');
@@ -205,12 +218,14 @@ function openBook(id) {
       .catch((err) => { console.warn('book: the PDF did not open', err); bookSay(t('book.cannotOpen')); });
   }
   buildBookBar();
+  if (typeof padHostChanged === 'function') padHostChanged();     // a paired phone draws in the book now (tablet.js)
   if (state.settings.sketchFull !== false && dlg.requestFullscreen && !document.fullscreenElement) dlg.requestFullscreen().catch(() => {});
   requestAnimationFrame(() => requestAnimationFrame(() => { if (bk) bookLayout(); }));
 }
 function closeBook() {
   if (!bk) return;
   endBookStroke();
+  clearTimeout(bk.sharpT);
   if (bk.dirty) commitBook();
   const { n, undoTaken, doc } = bk;
   bk = null;
@@ -223,6 +238,7 @@ function closeBook() {
   if (el) paintBook(el, n);
   if (undoTaken) { drawLinks(); scheduleMinimap(); }
   saveSoon();
+  if (typeof padHostChanged === 'function') padHostChanged();
 }
 // into the note as it changes; one step of the board's undo per visit (sketch.js commitSketch)
 function commitBook() {
@@ -271,7 +287,7 @@ function buildBookBar() {
     [0, 1, 2].map((i) => `<button class="ik-size${bk.size === i ? ' on' : ''}" data-size="${i}" title="${sizeTips[i]}"><i style="--d:${[4, 7, 11][i]}px"></i></button>`).join('') +
     ['text', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'].filter((c) => c === 'text' || COLORS.includes(c)).map(sw).join('') +
     `<span class="ik-sep"></span>` +
-    btn('zout', 'zoom_out', te('zoom.out')) + `<button class="ik-btn sk-pct" data-bk="fit" title="${te('zoom.fit')}">${pct(Math.round(bk.zoom * 100))}</button>` + btn('zin', 'zoom_in', te('zoom.in')) +
+    btn('zout', 'zoom_out', te('zoom.out')) + `<button class="ik-btn sk-pct" data-bk="fit" title="${te('zoom.fit')}">${pct(Math.round(bk.cam.z * 100))}</button>` + btn('zin', 'zoom_in', te('zoom.in')) +
     `<span class="ik-sep"></span>` +
     btn('undo', 'undo', te('menu.undo')) + btn('redo', 'redo', te('menu.redo')) +
     (B.kind === 'blank' ? btn('addpage', 'library_add', te('book.addPage')) : '') +
@@ -287,9 +303,9 @@ function buildBookBar() {
     if (act === 'done') closeBook();
     else if (act === 'prev') bookGo(-1);
     else if (act === 'next') bookGo(1);
-    else if (act === 'zin') bookZoom(bk.zoom * 1.25);
-    else if (act === 'zout') bookZoom(bk.zoom / 1.25);
-    else if (act === 'fit') bookZoom(1);
+    else if (act === 'zin') bkSurface.zoomCentre(1.25);
+    else if (act === 'zout') bkSurface.zoomCentre(1 / 1.25);
+    else if (act === 'fit') bookFit();
     else if (act === 'undo') bookUndo(true);
     else if (act === 'redo') bookUndo(false);
     else if (act === 'addpage') bookAddPage();
@@ -318,14 +334,14 @@ function bookTwoUp() {
   const r = $('bkStage').getBoundingClientRect();
   return bk.view === 'book' && r.width > r.height / bk.n.book.ar * 1.35 && r.width > 760;
 }
-// a page's size on screen at this zoom
+// a page's size when it fits (the camera at 100%); the zoom is the camera's, not the layout's
 function bookPageSize() {
   const r = $('bkStage').getBoundingClientRect(), ar = bk.n.book.ar;
   let ph;
   if (bk.view === 'scroll') ph = Math.min(r.width - 80, 920) * ar;          // a column, as a PDF reader shows it
   else if (bookTwoUp()) ph = Math.min(r.height - 56, (r.width - 96) / 2 * ar);
   else ph = Math.min(r.height - 56, (r.width - 64) * ar);
-  ph = Math.max(120, ph) * bk.zoom;
+  ph = Math.max(120, ph);
   return { w: Math.round(ph / ar), h: Math.round(ph) };
 }
 // the pages the spread shows: the first alone on the right, then 1–2, 3–4…
@@ -336,6 +352,8 @@ function bookSpreadOf(at) {
   const left = at % 2 ? at : at - 1;
   return [left, left + 1 < B.pages ? left + 1 : null];
 }
+/* Laid out again when the view, the window or the PDF changes. The camera is
+   kept while the pages keep their size, and fitted when they do not. */
 function bookLayout() {
   if (!bk) return;
   const stage = $('bkStage'), spread = $('bkSpread'), scroll = $('bkScroll');
@@ -358,14 +376,14 @@ function bookLayout() {
         frag.appendChild(ph);
       }
       scroll.appendChild(frag);
-      const slot = scroll.children[bk.at];
-      if (slot) scroll.scrollTop = slot.offsetTop - 24;
     }
-    bookFillNear();
   } else {
-    scroll.textContent = ''; scroll.classList.add('hidden'); spread.classList.remove('hidden');
+    scroll.textContent = ''; scroll.dataset.w = ''; scroll.classList.add('hidden'); spread.classList.remove('hidden');
     bookPaintSpread();
   }
+  const key = bk.view + ' ' + S.w + 'x' + S.h + ' ' + bookTwoUp();
+  if (key !== bk.fitKey) { bk.fitKey = key; bookFit(); } else setBookView(bk.cam);
+  if (bk.view === 'scroll') bookFillNear();
   bookShowAt();
 }
 function bookPaintSpread() {
@@ -381,11 +399,13 @@ function bookPaintSpread() {
     if (p != null) slot.appendChild(bookPageEl(p, S));
     spread.appendChild(slot);
   });
+  if (typeof padDirty === 'function') padDirty();
 }
-// near the screen gets drawn, far from it is let go
+// near the screen gets drawn, far from it is let go — "the screen" is what the camera sees
 function bookFillNear() {
   if (!bk || bk.view !== 'scroll') return;
-  const scroll = $('bkScroll'), top = scroll.scrollTop, h = scroll.clientHeight;
+  const scroll = $('bkScroll'), z = bk.cam.z;
+  const top = -bk.cam.y / z, h = $('bkStage').clientHeight / z;
   let best = bk.at, bestD = Infinity;
   for (const slot of scroll.children) {
     const y = slot.offsetTop, near = y + slot.offsetHeight > top - h && y < top + h * 2;
@@ -396,6 +416,70 @@ function bookFillNear() {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best !== bk.at) { bk.at = best; bookShowAt(); clearTimeout(bookFillNear.keep); bookFillNear.keep = setTimeout(keepBookPlace, 800); }
+}
+
+/* ---- the camera ---- */
+const bookContent = () => $(bk.view === 'scroll' ? 'bkScroll' : 'bkSpread');
+function setBookView(v) {
+  if (!bk) return;
+  const stage = $('bkStage'), el = bookContent();
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const z = clamp(v.z, BOOK_ZMIN, BOOK_ZMAX);
+  // some of the pages always stays on screen, however far they are pushed
+  const cw = el.offsetWidth * z, ch = el.offsetHeight * z, keep = 80;
+  const x = clamp(v.x, Math.min(keep - cw, (W - cw) / 2), Math.max(W - keep, (W - cw) / 2));
+  const y = clamp(v.y, Math.min(keep - ch, (H - ch) / 2), Math.max(H - keep, (H - ch) / 2));
+  const zoomed = z !== bk.cam.z;
+  bk.cam = { x, y, z };
+  el.style.transform = `translate(${x}px, ${y}px) scale(${z})`;
+  const p = $('bkBar').querySelector('[data-bk="fit"]');
+  if (p) p.textContent = pct(Math.round(z * 100));
+  if (bk.view === 'scroll' && !bk.fillFrame) bk.fillFrame = requestAnimationFrame(() => { if (bk) { bk.fillFrame = 0; bookFillNear(); } });
+  if (zoomed) { clearTimeout(bk.sharpT); bk.sharpT = setTimeout(bookSharpen, 160); }
+  if (typeof padDirty === 'function') padDirty();       // a paired phone sees the pages move (tablet.js)
+}
+// 100%: the spread in the middle, or the column with the current page at the top
+function bookFit() {
+  if (!bk) return;
+  const stage = $('bkStage'), el = bookContent();
+  const W = stage.clientWidth, H = stage.clientHeight;
+  if (bk.view === 'scroll') {
+    const slot = $('bkScroll').children[bk.at];
+    setBookView({ x: (W - el.offsetWidth) / 2, y: slot ? 24 - slot.offsetTop : 0, z: 1 });
+  } else setBookView({ x: (W - el.offsetWidth) / 2, y: Math.max(0, (H - el.offsetHeight) / 2), z: 1 });
+}
+// the pages under the pointer move with it: the hand, or any tool pressed off a page
+function bookHandMove(e) {
+  const G = bk.hand;
+  const dx = e.clientX - G.lx, dy = e.clientY - G.ly;
+  if (!G.moved && Math.hypot(e.clientX - G.sx, e.clientY - G.sy) < 5) return;
+  if (!G.moved) { G.moved = true; $('bkStage').classList.add('bk-panning'); }
+  G.lx = e.clientX; G.ly = e.clientY;
+  setBookView({ x: bk.cam.x + dx, y: bk.cam.y + dy, z: bk.cam.z });
+}
+// a second finger landed: the first one's line, or its drag, was the start of a pinch
+function cancelBookGesture() {
+  if (!bk) return;
+  if (bk.live) { const L = bk.live; bk.live = null; if (L.frame) cancelAnimationFrame(L.frame); L.el.remove(); }
+  bk.hand = null;
+  $('bkStage').classList.remove('bk-panning');
+  endBookStroke();
+}
+/* The wheel: Ctrl zooms at the pointer (the surface does it). Without Ctrl it
+   reads, whatever the board's wheel setting: in the book view at 100% or less
+   a notch turns a page, and otherwise it moves down the pages, as a reader's
+   wheel does. */
+function bookWheel(e) {
+  if (!bk) return true;
+  if (e.ctrlKey) return false;
+  if (bk.view === 'book' && bk.cam.z <= 1.01) {
+    const now = performance.now();
+    if (now - (bookWheel.at || 0) >= 350 && Math.abs(e.deltaY) >= 4) { bookWheel.at = now; bookGo(e.deltaY > 0 ? 1 : -1); }
+    return true;
+  }
+  const v = bk.cam, k = e.deltaMode === 1 ? 32 : 1;           // a mouse that counts lines
+  setBookView({ x: v.x - (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * k, y: v.y - (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * k, z: v.z });
+  return true;
 }
 
 /* ---- a page ---- */
@@ -424,18 +508,30 @@ function bookPageEl(i, S) {
   pg.appendChild(no);
   return pg;
 }
-/* pdf.js draws a page at the size it is shown, times the screen's density (at
-   most 2.5). A drawn page is kept (the last dozen) and copied for the next
-   element that shows it — a turn, a redraw, the scroll coming back. */
+/* How many device pixels a PDF page is drawn with: the screen's density (at
+   most 2.5) times the zoom, in half-octave steps so a pinch does not redraw it
+   at every frame, and never more than BOOK_PDF_PX pixels in all. */
+function bookPdfSize(S) {
+  const zq = Math.pow(2, Math.round(Math.log2(Math.max(bk.cam.z, 0.5)) * 2) / 2);
+  const q = Math.min(2.5, window.devicePixelRatio || 1) * zq;
+  let W = S.w * q, H = S.h * q;
+  if (W * H > BOOK_PDF_PX) { const f = Math.sqrt(BOOK_PDF_PX / (W * H)); W *= f; H *= f; }
+  return { W: Math.round(W), H: Math.round(H) };
+}
+/* pdf.js draws a page at that size. Drawn pages are kept (a dozen, and
+   BOOK_CACHE_PX pixels at most) and copied for the next element that shows
+   one — a turn, a redraw, the scroll coming back. A canvas that already shows
+   its page keeps showing it until the sharper one is ready, so a zoom never
+   flashes white. */
 async function bookRenderPage(i, canvas, S) {
-  const dpr = Math.min(2.5, window.devicePixelRatio || 1);
-  const W = Math.round(S.w * dpr), H = Math.round(S.h * dpr);
-  canvas.width = W; canvas.height = H;
+  const { W, H } = bookPdfSize(S);
   const key = i + '@' + W;
-  const hit = bk.cache.get(key);
+  canvas.dataset.want = key;
   const g = canvas.getContext('2d');
-  if (hit) { g.drawImage(hit, 0, 0, W, H); return; }
-  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const show = (src) => { canvas.width = W; canvas.height = H; g.drawImage(src, 0, 0, W, H); canvas.dataset.has = key; };
+  const hit = bk.cache.get(key);
+  if (hit) { show(hit); return; }
+  if (!canvas.dataset.has) { canvas.width = W; canvas.height = H; g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); }
   const book = bk;
   await null;              // the page is put in the document after this is called, in the same task
   if (bk !== book) return;                  // closed meanwhile
@@ -455,10 +551,28 @@ async function bookRenderPage(i, canvas, S) {
     await page.render({ canvasContext: og, viewport: vp }).promise;
     page.cleanup();
     if (bk !== book) return;
+    book.cache.delete(key);
     book.cache.set(key, off);
-    if (book.cache.size > 12) book.cache.delete(book.cache.keys().next().value);
-    if (canvas.isConnected) g.drawImage(off, 0, 0);
+    let px = 0;
+    for (const c of book.cache.values()) px += c.width * c.height;
+    while (book.cache.size > 1 && (px > BOOK_CACHE_PX || book.cache.size > 12)) {
+      const old = book.cache.keys().next().value;
+      px -= book.cache.get(old).width * book.cache.get(old).height;
+      book.cache.delete(old);
+    }
+    // a later zoom asked this canvas for another size meanwhile: that one draws it
+    if (canvas.isConnected && canvas.dataset.want === key) show(off);
+    if (typeof padDirty === 'function') padDirty();
   } catch (err) { console.warn('book: page ' + (i + 1) + ' would not draw', err); }
+}
+// a zoom settled: every PDF page on screen is drawn again at the new size
+function bookSharpen() {
+  if (!bk || !bk.ps) return;
+  const W = bookPdfSize(bk.ps).W;
+  document.querySelectorAll('#bookDlg .bk-page > .bk-pdf').forEach((c) => {
+    const i = +c.parentElement.dataset.p;
+    if (c.dataset.want !== i + '@' + W) bookRenderPage(i, c, bk.ps);
+  });
 }
 
 /* ---- moving through it ---- */
@@ -481,7 +595,7 @@ function bookGoTo(i) {
   if (bk.view === 'scroll') {
     const slot = $('bkScroll').children[i];
     bk.at = i;
-    if (slot) $('bkScroll').scrollTop = slot.offsetTop - 24;
+    if (slot) setBookView({ x: bk.cam.x, y: 24 - slot.offsetTop * bk.cam.z, z: bk.cam.z });
     bookFillNear();
   } else {
     bk.at = i;
@@ -522,16 +636,6 @@ function bookTurn(dir, to) {
   // a safety net: an animation that never ends (a hidden window) must not freeze the book
   setTimeout(() => { if (bk && bk.turning) { bk.turning = false; bookPaintSpread(); } }, 1200);
 }
-function bookZoom(z) {
-  if (!bk) return;
-  bk.zoom = clamp(z, 0.4, 4);
-  bk.cache.clear();
-  $('bkScroll').dataset.w = '';
-  bookLayout();
-  const p = $('bkBar').querySelector('[data-bk="fit"]');
-  if (p) p.textContent = pct(Math.round(bk.zoom * 100));
-}
-
 /* ---- ink on a page ---- */
 function bookStep(page) {
   bk.undo.push({ page, strokes: (bk.ink[page] || []).slice() });
@@ -555,6 +659,7 @@ function bookRepaintInk(page) {
     svg.textContent = '';
     for (const s of bk.ink[page] || []) svg.appendChild(makeInkEl(s));
   });
+  if (typeof padDirty === 'function') padDirty();
 }
 function bookClearPage() {
   const p = bk.at;
@@ -578,78 +683,40 @@ function bookPoint(e, pg) {
   const k = r.width / BOOK_U;
   return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k, k };
 }
-function onBookDown(e) {
-  if (!bk || bk.turning) return;
-  const pg = e.target.closest && e.target.closest('#bookDlg .bk-page');
-  if (e.pointerType === 'pen') bk.penSeen = true;
-  else if (e.pointerType === 'touch' && bk.penSeen) return;          // a palm, once a pen has been used
-  const tool = e.pointerType === 'pen' && bk.tool === 'hand' ? 'pen' : bk.tool;   // a pen always writes
-  if (tool === 'hand' || !pg) {
-    // the hand: a click on the outer part of a page turns it (book view)
-    if (bk.view === 'book' && e.button === 0 && pg) {
-      const r = pg.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
-      const side = pg.parentElement.classList;
-      if ((side.contains('right') || side.contains('one')) && x > 0.6) bookGo(1);
-      else if ((side.contains('left') || side.contains('one')) && x < 0.4) bookGo(-1);
-    }
-    return;
-  }
-  if (e.button !== 0 && e.button !== 5) return;
-  e.preventDefault();
-  const page = +pg.dataset.p, at = bookPoint(e, pg);
-  try { pg.setPointerCapture(e.pointerId); } catch (_) {}
-  window.addEventListener('pointermove', onBookMove);
-  window.addEventListener('pointerup', onBookUp);
-  window.addEventListener('pointercancel', onBookUp);
-  if (tool === 'eraser' || e.button === 5 || (e.pointerType === 'pen' && (e.buttons & 2))) {
-    bk.erase = { page, pg, r: INK_SIZES.eraser[bk.size] / at.k, last: null, hit: false, id: e.pointerId };
-    bookEraseAt(at);
-    return;
-  }
-  if ((bk.ink[page] || []).length >= BOOK_INK_MAX) { bookSay(t('sketch.full')); return; }
-  const s = { id: uid(), tool, color: bk.color, size: Math.round(INK_SIZES[tool][bk.size] / at.k * 100) / 100 };
+// the ink layer a page shows now (not the copy on a leaf being turned)
+const bookInkSvg = (page) => document.querySelector(`#bkSpread > .bk-side > .bk-page[data-p="${page}"] > .bk-ink, #bkScroll .bk-page[data-p="${page}"] > .bk-ink`);
+
+/* A line, from a pointer here or from a paired phone (tablet.js): begun on a
+   page with a tool, a colour and a size (0–2), `k` being how many screen
+   pixels one page unit is, so the line is as wide as the bar says on screen. */
+function bookStrokeBegin(page, tool, color, size, k) {
+  if ((bk.ink[page] || []).length >= BOOK_INK_MAX) { bookSay(t('sketch.full')); return null; }
+  const s = { id: uid(), tool, color, size: Math.round(INK_SIZES[tool][size] / k * 100) / 100 };
   const el = document.createElementNS(SVGNS, 'path');
   el.setAttribute('class', 'ink ink-' + tool);
   const c = inkColorCss(s.color);
   if (tool === 'brush') el.style.fill = c; else { el.style.stroke = c; el.style.strokeWidth = s.size + 'px'; }
-  pg.querySelector('.bk-ink').appendChild(el);
-  bk.live = { s, raw: [], el, k: at.k, page, pg, id: e.pointerId, frame: 0 };
-  bookAddPoint(e);
+  const svg = bookInkSvg(page);
+  if (svg) svg.appendChild(el);
+  return { s, raw: [], el, k, page, frame: 0 };
 }
-function bookAddPoint(e) {
-  const L = bk.live, w = bookPoint(e, L.pg);
+function bookStrokeAdd(L, x, y, p, at) {
   const last = L.raw[L.raw.length - 1];
-  if (last && Math.hypot(w.x - last.x, w.y - last.y) * L.k < 0.6) return;
-  L.raw.push({ x: w.x, y: w.y, p: e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null, t: e.timeStamp || performance.now() });
+  if (last && Math.hypot(x - last.x, y - last.y) * L.k < 0.6) return;
+  L.raw.push({ x, y, p, t: at });
   if (!L.frame) L.frame = requestAnimationFrame(() => {
-    if (!bk || bk.live !== L) return;
     L.frame = 0;
+    if (!bk || L.done) return;
+    // the page was drawn again under the line (a zoom, a turn): the line moves to the new one
+    if (!L.el.isConnected) { const svg = bookInkSvg(L.page); if (svg) svg.appendChild(L.el); }
     const pts = [];
     L.raw.forEach((q) => pts.push(r1(q.x), r1(q.y)));
     L.el.setAttribute('d', L.s.tool === 'brush' ? inkBrushPath(pts, brushWidths(L.raw, L.s.size, L.k)) : inkLinePath(pts));
+    if (typeof padDirty === 'function') padDirty();
   });
 }
-function onBookMove(e) {
-  if (!bk) return;
-  if (bk.erase && e.pointerId === bk.erase.id) { bookEraseAt(bookPoint(e, bk.erase.pg)); return; }
-  if (!bk.live || e.pointerId !== bk.live.id) return;
-  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
-  if (evs && evs.length) evs.forEach(bookAddPoint); else bookAddPoint(e);
-}
-function onBookUp(e) {
-  const g = bk && (bk.live || bk.erase);
-  if (g && e.pointerId !== g.id) return;
-  endBookStroke();
-}
-function endBookStroke() {
-  window.removeEventListener('pointermove', onBookMove);
-  window.removeEventListener('pointerup', onBookUp);
-  window.removeEventListener('pointercancel', onBookUp);
-  if (!bk) return;
-  if (bk.erase) { const E = bk.erase; bk.erase = null; if (E.hit) { commitBook(); buildBookBar(); } }
-  const L = bk.live;
-  if (!L) return;
-  bk.live = null;
+function bookStrokeEnd(L) {
+  L.done = true;
   if (L.frame) cancelAnimationFrame(L.frame);
   if (!L.raw.length) { L.el.remove(); return; }
   const pts = [];
@@ -659,14 +726,15 @@ function endBookStroke() {
   if (L.s.tool === 'brush') L.s.ws = brushWidths(L.raw, L.s.size, L.k);
   bookStep(L.page);
   bk.ink[L.page] = (bk.ink[L.page] || []).concat([L.s]);
-  L.el.dataset.id = L.s.id;
-  L.el.setAttribute('d', inkPath(L.s));
+  if (L.el.isConnected) { L.el.dataset.id = L.s.id; L.el.setAttribute('d', inkPath(L.s)); }
+  else bookRepaintInk(L.page);
   commitBook();
   buildBookBar();
+  if (typeof padDirty === 'function') padDirty();
 }
-// whole strokes along the sweep, as everywhere else (ink.js eraseAt)
-function bookEraseAt(w) {
-  const E = bk.erase;
+// the eraser takes whole strokes along the sweep, as everywhere else (ink.js eraseAt)
+function bookEraseBegin(page, size, k) { return { page, r: INK_SIZES.eraser[size] / k, last: null, hit: false }; }
+function bookEraseAt(E, w) {
   const from = E.last || w;
   E.last = w;
   const list = bk.ink[E.page] || [];
@@ -682,6 +750,81 @@ function bookEraseAt(w) {
   bk.dirty = true;
   bookRepaintInk(E.page);
 }
+function bookEraseEnd(E) { if (E.hit) { commitBook(); buildBookBar(); } }
+
+/* ---- the pointer here ---- */
+function onBookDown(e) {
+  if (!bk || bk.turning || e.defaultPrevented) return;        // taken by the camera (Space, the middle button, a pinch)
+  const pg = e.target.closest && e.target.closest('#bookDlg .bk-page');
+  if (e.pointerType === 'pen') bk.penSeen = true;
+  else if (e.pointerType === 'touch' && bk.penSeen) return;          // a palm, once a pen has been used
+  const tool = e.pointerType === 'pen' && bk.tool === 'hand' ? 'pen' : bk.tool;   // a pen always writes
+  window.addEventListener('pointermove', onBookMove);
+  window.addEventListener('pointerup', onBookUp);
+  window.addEventListener('pointercancel', onBookUp);
+  if (tool === 'hand' || !pg) {
+    // the hand drags the pages; a click on the outer part of a page turns it (book view)
+    if (e.button !== 0) { endBookStroke(); return; }
+    e.preventDefault();
+    bk.hand = { id: e.pointerId, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, pg };
+    return;
+  }
+  if (e.button !== 0 && e.button !== 5) { endBookStroke(); return; }
+  e.preventDefault();
+  const page = +pg.dataset.p, at = bookPoint(e, pg);
+  try { pg.setPointerCapture(e.pointerId); } catch (_) {}
+  if (tool === 'eraser' || e.button === 5 || (e.pointerType === 'pen' && (e.buttons & 2))) {
+    bk.erase = Object.assign(bookEraseBegin(page, bk.size, at.k), { pg, id: e.pointerId });
+    bookEraseAt(bk.erase, at);
+    return;
+  }
+  const L = bookStrokeBegin(page, tool, bk.color, bk.size, at.k);
+  if (!L) { endBookStroke(); return; }
+  bk.live = Object.assign(L, { id: e.pointerId, pg });
+  bookAddPoint(e);
+}
+function bookAddPoint(e) {
+  const L = bk.live, w = bookPoint(e, L.pg);
+  bookStrokeAdd(L, w.x, w.y, e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null, e.timeStamp || performance.now());
+}
+function onBookMove(e) {
+  if (!bk) return;
+  if (bk.hand && e.pointerId === bk.hand.id) { bookHandMove(e); return; }
+  if (bk.erase && e.pointerId === bk.erase.id) { bookEraseAt(bk.erase, bookPoint(e, bk.erase.pg)); return; }
+  if (!bk.live || e.pointerId !== bk.live.id) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+  if (evs && evs.length) evs.forEach(bookAddPoint); else bookAddPoint(e);
+}
+function onBookUp(e) {
+  const g = bk && (bk.live || bk.erase || bk.hand);
+  if (g && e.pointerId !== g.id) return;
+  if (bk && bk.hand) {
+    const G = bk.hand;
+    bk.hand = null;
+    $('bkStage').classList.remove('bk-panning');
+    if (!G.moved) bookClickTurn(G);
+  }
+  endBookStroke();
+}
+// the hand pressed and let go without dragging: the outer part of a page turns it
+function bookClickTurn(G) {
+  if (bk.view !== 'book' || !G.pg || !G.pg.isConnected) return;
+  const r = G.pg.getBoundingClientRect(), x = (G.sx - r.left) / r.width;
+  const side = G.pg.parentElement.classList;
+  if ((side.contains('right') || side.contains('one')) && x > 0.6) bookGo(1);
+  else if ((side.contains('left') || side.contains('one')) && x < 0.4) bookGo(-1);
+}
+function endBookStroke() {
+  window.removeEventListener('pointermove', onBookMove);
+  window.removeEventListener('pointerup', onBookUp);
+  window.removeEventListener('pointercancel', onBookUp);
+  if (!bk) return;
+  if (bk.erase) { const E = bk.erase; bk.erase = null; bookEraseEnd(E); }
+  const L = bk.live;
+  if (!L) return;
+  bk.live = null;
+  bookStrokeEnd(L);
+}
 
 /* ---- keys: every one goes to the reader while it is open (init.js onKeyDown) ---- */
 function onBookKey(e) {
@@ -693,11 +836,13 @@ function onBookKey(e) {
   if (e.key === 'Escape') { e.preventDefault(); closeBook(); return; }
   if (ctrl && key === 'z') { e.preventDefault(); bookUndo(!e.shiftKey); return; }
   if (ctrl && key === 'y') { e.preventDefault(); bookUndo(false); return; }
-  if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); bookZoom(bk.zoom * 1.25); return; }
-  if (ctrl && e.key === '-') { e.preventDefault(); bookZoom(bk.zoom / 1.25); return; }
-  if (ctrl && e.key === '0') { e.preventDefault(); bookZoom(1); return; }
+  if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); bkSurface.zoomCentre(1.25); return; }
+  if (ctrl && e.key === '-') { e.preventDefault(); bkSurface.zoomCentre(1 / 1.25); return; }
+  if (ctrl && e.key === '0') { e.preventDefault(); bookFit(); return; }
   if (ctrl) return;
-  if (['ArrowRight', 'PageDown'].includes(e.key) || (e.key === ' ' && bk.view === 'book')) { e.preventDefault(); bookGo(document.documentElement.dir === 'rtl' && e.key === 'ArrowRight' ? -1 : 1); return; }
+  if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); bookFit(); return; }
+  if (e.code === 'Space') { e.preventDefault(); return; }    // held, Space is the hand (zoomPanSurface)
+  if (['ArrowRight', 'PageDown'].includes(e.key)) { e.preventDefault(); bookGo(document.documentElement.dir === 'rtl' && e.key === 'ArrowRight' ? -1 : 1); return; }
   if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); bookGo(document.documentElement.dir === 'rtl' && e.key === 'ArrowLeft' ? 1 : -1); return; }
   if (e.key === 'Home') { e.preventDefault(); bookGoTo(0); return; }
   if (e.key === 'End') { e.preventDefault(); bookGoTo(bk.n.book.pages - 1); return; }
@@ -710,19 +855,11 @@ function wireBook() {
   const stage = $('bkStage');
   stage.addEventListener('pointerdown', onBookDown);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
-  $('bkScroll').addEventListener('scroll', () => { if (bk) requestAnimationFrame(bookFillNear); }, { passive: true });
-  // the wheel: Ctrl zooms; in the book view a notch turns a page; in the scroll view it scrolls
-  stage.addEventListener('wheel', (e) => {
-    if (!bk) return;
-    if (e.ctrlKey) { e.preventDefault(); bookZoom(bk.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); return; }
-    if (bk.view === 'book' && bk.zoom <= 1.01) {
-      e.preventDefault();
-      const now = performance.now();
-      if (now - (wireBook.wheelAt || 0) < 350 || Math.abs(e.deltaY) < 4) return;
-      wireBook.wheelAt = now;
-      bookGo(e.deltaY > 0 ? 1 : -1);
-    }
-  }, { passive: false });
+  // the drawing note's camera: Ctrl+wheel at the pointer, Space or the middle button to drag, two fingers to pinch
+  bkSurface = zoomPanSurface(stage, {
+    get: () => (bk ? bk.cam : { x: 0, y: 0, z: 1 }), set: setBookView,
+    min: BOOK_ZMIN, max: BOOK_ZMAX, cancel: cancelBookGesture, wheel: bookWheel
+  });
   $('bkTitle').addEventListener('input', () => {
     if (!bk) return;
     bk.dirty = true;
@@ -730,5 +867,5 @@ function wireBook() {
     bk.titleTimer = setTimeout(commitBook, 600);
   });
   $('bkTitle').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); });
-  window.addEventListener('resize', () => { if (bk) { clearTimeout(wireBook.rs); wireBook.rs = setTimeout(() => { if (bk) { bk.cache.clear(); $('bkScroll').dataset.w = ''; bookLayout(); } }, 120); } });
+  window.addEventListener('resize', () => { if (bk) { clearTimeout(wireBook.rs); wireBook.rs = setTimeout(() => { if (bk) bookLayout(); }, 120); } });
 }

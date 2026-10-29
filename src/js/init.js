@@ -235,8 +235,8 @@ function onKeyDown(e) {
     if (e.key === 'Escape') { e.preventDefault(); closeStudio(); return; }
     onStudioKey(e); return;
   }
-  if (sketchOpen()) { onSketchKey(e); return; }
-  if (bookOpen()) { onBookKey(e); return; }        // and so has a book (book.js)    // a drawing note open full screen has every key (sketch.js)
+  if (sketchOpen()) { onSketchKey(e); return; }    // a drawing note open full screen has every key (sketch.js)
+  if (bookOpen()) { onBookKey(e); return; }        // and so has a book (book.js)
   if (!$('studio').classList.contains('hidden') && onStudioKey(e)) return;   // and so has the picture editor (media.js)
   const typing = e.target.closest('input, textarea, [contenteditable="true"]');
 
@@ -1127,8 +1127,8 @@ function init() {
   wireKeySounds();
   wirePad();
   wireSketch();
-  wireHandwrite();
-  wireBook();              // the book reader (book.js)         // a picture in a drawing, written out by hand (handwrite.js)
+  wireHandwrite();         // a picture in a drawing, written out by hand (handwrite.js)
+  wireBook();              // the book reader (book.js)
   startAutosave();
   watchVpRect();
   wireExtras();

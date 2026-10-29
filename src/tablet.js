@@ -148,6 +148,8 @@ function clean(m) {
       return f == null || x == null || y == null ? null : { t: 'zoom', f, x, y, n: int(m.n, 1e9) || 0 };
     }
     case 'undo': return { t: 'undo' };
+    // a book is open: the page before or after
+    case 'page': return m.d === 1 || m.d === -1 ? { t: 'page', d: m.d } : null;
     // the phone's drawing area changed shape: its aspect, and how many device pixels wide it is
     case 'size': {
       const a = num(m.a, 0.2, 5), px = num(m.px, 50, 4000);
@@ -174,7 +176,7 @@ function cleanOut(m) {
   if (!m || m.t !== 'view') return null;
   const pal = Array.isArray(m.pal) ? m.pal.slice(0, 16).filter((c) => c && typeof c.k === 'string' && typeof c.c === 'string')
     .map((c) => ({ k: c.k.slice(0, 12), c: c.c.slice(0, 40) })) : [];
-  return { t: 'view', ro: !!m.ro, pal, sel: int(m.sel, 1e6) || 0, rw: num(m.rw, 1, 20000) || 400 };
+  return { t: 'view', ro: !!m.ro, pal, sel: int(m.sel, 1e6) || 0, rw: num(m.rw, 1, 20000) || 400, book: !!m.book };
 }
 
 /* ---- a WebSocket, the 30 lines of RFC 6455 this needs ----

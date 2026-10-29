@@ -2569,3 +2569,13 @@ html[dir="rtl"] #settings .set-panes :is(.set-row, .set-check):is(:hover, :focus
   #settings .set-desc { flex: 0 0 auto; max-width: none; padding: 12px 0; border-top: 1px solid var(--rq-line); min-height: 90px; }
   .stp, #settings .set-panes input[type="range"], #settings .set-panes .set-row .sel-wrap, .set-txt { width: 220px; flex-basis: 220px; }
 }
+
+/* ─────────────── 89. a book looked at through a camera (3.0.2, js/book.js setBookView) ───────────────
+   The pages no longer scroll: they are laid out at the size that fits and
+   moved and scaled by the view, as a drawing note's are, so the stage clips
+   and the spread or the column sits at its top left with the transform on it. */
+.bk-stage { overflow: hidden; display: block; }
+.bk-spread, .bk-scroll { position: absolute; left: 0; top: 0; right: auto; bottom: auto; margin: 0; transform-origin: 0 0; }
+.bk-scroll { overflow: visible; padding: 28px 24px 60px; }
+#bookDlg.bk-hand .bk-stage { cursor: grab; }
+.bk-stage.bk-panning, .bk-stage.bk-panning * { cursor: grabbing !important; }

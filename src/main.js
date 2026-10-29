@@ -99,7 +99,9 @@ const S_EN = {
   'main.padFingers': 'Let a finger draw too',
   'main.padFull': 'Full screen',
   'main.padSelect': 'Select — touch a stroke or drag round several, then drag to move them',
-  'main.padDelete': 'Delete the selected strokes'
+  'main.padDelete': 'Delete the selected strokes',
+  'main.padPrev': 'Previous page of the book',
+  'main.padNext': 'Next page of the book'
 };
 let STRINGS = {};
 function t(key, vars) {
@@ -616,7 +618,7 @@ function padStrings() {
     away: t('main.padAway'), ended: t('main.padEnded'), readonly: t('main.padReadonly'),
     pen: t('main.padPen'), marker: t('main.padMarker'), brush: t('main.padBrush'), eraser: t('main.padEraser'),
     undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull'),
-    select: t('main.padSelect'), del: t('main.padDelete')
+    select: t('main.padSelect'), del: t('main.padDelete'), prev: t('main.padPrev'), next: t('main.padNext')
   };
 }
 const padSend = (ch, m) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, m); };

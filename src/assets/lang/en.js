@@ -1011,6 +1011,8 @@ window.MB_LANG.en = {
   'main.padFull': 'Full screen',
   'main.padSelect': 'Select — touch a stroke or drag round several, then drag to move them',
   'main.padDelete': 'Delete the selected strokes',
+  'main.padPrev': 'Previous page of the book',
+  'main.padNext': 'Next page of the book',
   // ---- 2.4: note shapes, the workflows list, the space round the writing, column widths
   'menu.shape': 'Shape…',
   'form.title': 'Shape',

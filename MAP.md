@@ -656,7 +656,7 @@ no bundler and no build step — the only thing joining them is the order
 | `media.js` | ~900 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — zoomable, with a pen's pressure, highlighter, eraser and its own undo since 2.6, §4z3: `ST.view` `setStudioView` `studioStep`/`studioUndo` `markNear` `onStudioKey` `wireStudioSurface` — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
 | `sketch.js` | ~470 | **The zoomable surface** both drawing editors use (`zoomPanSurface`, §4z3), and **a drawing note** (2.5; no page since 2.6): `okSketch` (healing), `sketchBounds` `fitSketchNote`, `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
 | `handwrite.js` | ~780 | **Handwrite it** (3.0): `handwriteSketchPic` / `handwritePictureNote`, the OCR reading (`hwRead` `hwBestReading`, main.js `ocr:read`), the picture taken apart (`hwAnalyse`: `hwBackground` `hwClusters` `hwDistance` `hwComponents` `hwThin` `hwTrace` `hwSmooth` `hwSimplify` `hwCutout`), a word in a hand (`hwGlyph` `hwWordStrokes`), the writing-out (`hwWriteOut`), and the editor's right-click menu on a picture (`openSketchPicMenu`). See §4z9. |
-| `book.js` | ~640 | **A book** (3.0): `okBook` `bookFiles` `bookBody`, making one (`addNotebook` `addBookFromPdf` `bookFromFile` `bookOpenPdf`), its face on the board (`fillBook` `paintBook` `paintBookOnCanvas`), the reader (`openBook` `closeBook` `commitBook` `buildBookBar` `bookLayout` `bookPaintSpread` `bookFillNear` `bookPageEl` `bookRenderPage`), turning (`bookGo` `bookGoTo` `bookTurn` `bookZoom`), ink (`onBookDown` → `onBookMove` → `endBookStroke`, `bookEraseAt`, `bookUndo`), `onBookKey`, `wireBook`. See §4z9. |
+| `book.js` | ~640 | **A book** (3.0): `okBook` `bookFiles` `bookBody`, making one (`addNotebook` `addBookFromPdf` `bookFromFile` `bookOpenPdf`), its face on the board (`fillBook` `paintBook` `paintBookOnCanvas`), the reader (`openBook` `closeBook` `commitBook` `buildBookBar` `bookLayout` `bookPaintSpread` `bookFillNear` `bookPageEl` `bookPdfSize` `bookRenderPage` `bookSharpen`), the camera (3.0.2: `setBookView` `bookFit` `bookHandMove` `bookClickTurn` `bookWheel` `cancelBookGesture`, on `bkSurface`), turning (`bookGo` `bookGoTo` `bookTurn`), ink (`bookStrokeBegin` → `bookStrokeAdd` → `bookStrokeEnd`, `bookEraseBegin` `bookEraseAt` `bookEraseEnd` — shared with the phone; `onBookDown` → `onBookMove` → `endBookStroke`, `bookUndo`), `onBookKey`, `wireBook`. See §4z9. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
 | `menus.js` | ~660 | The right-click menu (spelling suggestions on top — `awaitSpellMenu` `answerSpell` `wordRangeAt` `fixSpelling`, §4z1; colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
@@ -668,7 +668,7 @@ no bundler and no build step — the only thing joining them is the order
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
 | `wallpaper.js` | ~310 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`. See §4z9. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
-| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
+| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring), and the phone in a book (`bookPageUnder` `beginPadBookStroke` `padBookPoint`, 3.0.2). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
 
 ### The load order is the only contract
@@ -1994,7 +1994,8 @@ drawn in with it at all.
 
 `padHost()` is now the one question "what is the phone on?": the board
 (`vpRect()`, `state.view`), a drawing note's editor (`#skStage`, `sk.view`)
-or the picture editor (`#studioStage`, `ST.view`). All three views have the
+or the picture editor (`#studioStage`, `ST.view`) — and since 3.0.2 an open
+book (`#bkStage`, `bk.cam`, §4z9). All four views have the
 board's form — `{ x, y, z }` relative to their own box — so `padRect()`, the
 pictures (`padPump`), `padMap()`/`padWorld()`, the hover ring, the outline,
 pan and zoom are unchanged arithmetic on a different box. The editors call
@@ -2011,12 +2012,23 @@ mark is burned into pixels. Undo from the phone is the editor's undo; the
 phone's arrow draws nothing there. `map.kind`/`map.id` pin a stroke to what it
 began on: if that closes mid-line, the rest is dropped.
 
+**In a book (3.0.2)** a stroke goes to the page under the pen when it went
+down (`bookPageUnder`: the page's box in the camera's units, taken with the
+map), in that page's units, through book.js's own `bookStrokeBegin/Add/End`
+and `bookEraseBegin/At/End` — the book's undo and save, no copy of either. The
+phone's two-finger pan and pinch move `bk.cam` (`setBookView`,
+`bkSurface.zoomAt`), its undo is `bookUndo`, and while a book is open the view
+message says `book: true` and the phone shows ‹ › on its bar, which send
+`{ t: 'page', d: ±1 }` (checked in src/tablet.js `clean`) → `bookGo`.
+
 In full screen only the full-screen element is drawn, so the outline and the
 ring are moved into it (`padLayer()`).
 
 Test: **2.6.2** in `tools/test-app-features.js` — a phone line in an open
 drawing note (mapped through the note's view, with pressure), its eraser and
-undo, the picture editor's pen, and nothing on the board behind.
+undo, the picture editor's pen, and nothing on the board behind. **3.0.2**
+does the same for a book: its pan, zoom, a line on the page under the pen,
+undo and a page turn.
 
 ### Palm rejection, the pen button, the eraser
 
@@ -3024,11 +3036,31 @@ and the PDF as `<a class="mb-file" href>` — every file-keeping pass reads
 - **Book view**: a spread, the first page alone on the right; a turn is a leaf
   (`.bk-leaf`, mental.css §87) with the page being turned on its front and the
   one behind it on its back, swinging about the spine over a spread that is
-  already half the new one. One page at a time on a narrow window. A click on
-  the outer part of a page with the hand, the arrows, PageUp/Down, Space, the
-  wheel, or the page number typed.
-- **Scroll view**: a placeholder per page; only those near the screen are
-  filled (`bookFillNear`), the current page follows the scroll.
+  already half the new one. One page at a time on a narrow window. A click
+  (not a drag) on the outer part of a page with the hand, the arrows,
+  PageUp/Down, the wheel at 100% or less (`bookWheel`), the page number typed,
+  or ‹ › on a paired phone. **Space no longer turns a page** (3.0.2): held, it
+  drags, as in a drawing note.
+- **Scroll view**: a placeholder per page; only those the camera sees, and a
+  screen either side, are filled (`bookFillNear`); the current page follows.
+- **The camera (3.0.2)** is the drawing note's (§4z3, `zoomPanSurface` on
+  `#bkStage`, `bkSurface`): pages are laid out once at the size that fits
+  (`bookPageSize`, no zoom in it) and the spread or the column is moved and
+  scaled by `bk.cam` `{ x, y, z }` as a CSS transform (`setBookView`, mental.css
+  §89; the stage clips, nothing scrolls). Ctrl+wheel zooms at the pointer; the
+  plain wheel reads whatever the board's wheel setting is — it turns a page
+  in the book view at 100%, and otherwise moves down the pages (Shift: across), Space or the middle button
+  drags, two fingers pan and pinch, the hand — or any tool pressed off a page
+  — drags. Ctrl+= / − / 0 and Shift+1 as on the board; 30%–600%; the camera is
+  refitted only when the pages' size changes (`bk.fitKey`). The surface's
+  `wheel` option lets the book take a notch first. Because the layout never
+  changes with the zoom, page units under a phone stroke stay put. A PDF page
+  is drawn at the screen's density × the zoom in half-octave steps, at most
+  `BOOK_PDF_PX` pixels (`bookPdfSize`), again once a zoom settles
+  (`bookSharpen`) — the old bitmap stays up until the new one is ready — and
+  the drawn pages kept are capped at a dozen and `BOOK_CACHE_PX` pixels. (Before
+  3.0.2 a zoom re-laid out the pages and a PDF page at 400% on a 2.5× screen
+  was a ~100-megapixel canvas.)
 - **Ink**: per page, in page units (a page is `BOOK_U` = 1000 wide), with the
   board pen's tools and ink.js's drawing — pressure, coalesced events, the
   eraser by whole strokes, the pen's eraser end. The hand (H) reads; **a pen
@@ -3685,7 +3717,7 @@ app looks. Add new rules to the end of the last sheet — `mental.css` since
 | `icons.css` | 142 | `.mi` sizing, note/frame icon badges, the theme picker, the icon picker, image toolbar and studio |
 | `lang.css` | 270 | Font stack, per-paragraph bidi, the `html[dir="rtl"]` mirror, the data-folder box, and per-context icon sizing |
 | `boards.css` | 448 | The board rail, tables in notes, the empty board as onboarding, and everything added after 1.1 |
-| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line; and **2.11**: §82 the far-zoom canvas (§4c); and **3.0** (§4z9): §83 a drawing's paper and its fixed ink, §84 the app's face, §85 the live wallpaper, §86 Handwrite it, §87 a book, §88 the options screen. Wins every argument with the eight above by position. See §5c. |
+| `mental.css` | ~1040 | **The 2.0 look**, and the last sheet by design: §50 pictures on the board, §51 a board's own font/text size/background, §52 the page menu, §53 the chrome — corners, hairlines, tracked labels, selection as a bar of light, the settings nav and its footer, §54 the reference pass, §55 the date pill, §56 a clip that cannot play, §57 the minimap, the agenda and the columns, and **2.1**: §58 the reminder pill, following a rope, links to notes, a locked workflow, columns that keep their shape, the paste ghost; §59 ink, the pen's bar and the Balanced tier, the theme fade; §60 icon buttons with no stray padding and the date/time pickers' glyphs; §61 the custom-colour swatch, blue links, selected ink; §62 pinned paper on a cork or wooden board, the settings footer, a rope's colour row; and **2.2**: §63 the phone-pairing box and the pen's hover ring (§4x), §66 the ghost of a note's text at far zoom (§4c); and **2.3**: §67 formulas, the formula window, sup/sub, numbered-list styles, the centred checkbox (§4y); and **2.4** (§4z): §68 the space round a note's writing and its example note, §69 note shapes and the shape panel, §70 **all of the columns' CSS**, §71 the top-right row and the workflows list; and **2.8** (§4z6): §75 the slash menu's sections, its last row and the picture beside it (`.pk-*`), §76 **a database in a note** (`.db-*`, `#dbPop`, the row sheet), §77 the table of contents; and **2.9** (§4z7): §78 text and background colours (`mb-tc-*` `mb-bc-*`, `--tc-*` per mode) and the colour panel, §79 toggles, §80 the block handle and the drop line; and **2.11**: §82 the far-zoom canvas (§4c); and **3.0** (§4z9): §83 a drawing's paper and its fixed ink, §84 the app's face, §85 the live wallpaper, §86 Handwrite it, §87 a book, §88 the options screen; and **3.0.2**: §89 a book looked at through a camera. Wins every argument with the eight above by position. See §5c. |
 | `later.css` | 1546 | Everything after that, in the order it was added: big boards, the launcher, templates, Arabic leftovers, shape and density, columns, statuses, the 1.4 themes, alignment, icons standing alone, Notion columns, ropes, embeds, the settings nav, the bin, **§30 the boards window**, **§31 the cheap-to-draw mode**, **§32 the day/night pair**, **§33 filtering the board**, **§44 the 1.5 themes**, **§45 note face, shadow and motion**, **§46 the alignment guides**, **§47 focus mode**, **§48 the sub-heading inside a pane** and **§49 finding a setting** |
 
 The `/* ─── n. name ─── */` banners inside each sheet are the original section
