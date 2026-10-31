@@ -185,7 +185,12 @@ async function until(fn, ms) {
     assert.strictEqual(tablet.clean({ t: 'sel', act: 'color', color: 'url(x)' }), null, 'a colour that is not one');
     assert.strictEqual(tablet.clean({ t: 'sel', act: 'move', dx: 1 }), null, 'moving is a gesture, not a command');
     assert.deepStrictEqual(tablet.clean({ t: 'got', n: 3 }), { t: 'got', n: 3 });
-    assert.deepStrictEqual(tablet.cleanOut({ t: 'view', ro: 0, pal: [], sel: 2, rw: 420, book: 1, notes: ['x'] }), { t: 'view', ro: false, pal: [], sel: 2, rw: 420, book: true }, 'the view, and nothing riding on it');
+    assert.deepStrictEqual(tablet.cleanOut({ t: 'view', ro: 0, pal: [], sel: 2, rw: 420, book: 1, notes: ['x'] }),
+      { t: 'view', ro: false, pal: [], sel: 2, rw: 420, book: true, theme: { mode: 'dark' }, where: { k: 'board', title: '' } }, 'the view, and nothing riding on it');
+    // 3.1: the app's colours and what is open go too — a colour only as a colour, a title only as text
+    const v = tablet.cleanOut({ t: 'view', theme: { mode: 'light', bg: 'rgb(250, 250, 248)', text: 'url(x)', line: '#ddd' }, where: { k: 'book', title: 'Physics', at: 3, n: 12, html: '<b>' } });
+    assert.deepStrictEqual(v.theme, { mode: 'light', bg: 'rgb(250, 250, 248)', line: '#ddd' }, 'a colour that is not a colour is dropped');
+    assert.deepStrictEqual(v.where, { k: 'book', title: 'Physics', at: 3, n: 12 }, 'where the computer is, and nothing else');
     assert.deepStrictEqual(tablet.clean({ t: 'page', d: -1 }), { t: 'page', d: -1 });
     assert.strictEqual(tablet.clean({ t: 'page', d: 40 }), null, 'a page turn is one page');
     assert.strictEqual(tablet.clean({ t: 'eval', code: '1' }), null);

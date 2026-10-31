@@ -65,22 +65,45 @@ function settingsHintFor(el) {
   }
   return out.join(' ');
 }
+/* The column beside the rows (3.1). A card for the row under the pointer or
+   the focus — where it lives, its name, what it does, what it is now and what
+   it was when the app arrived — and, with nothing under the pointer, what the
+   open tab is for. A card is drawn only when the row changes, so the pointer
+   moving inside one row costs nothing; a click or a slider in it repaints the
+   "Now" in place. */
+let descUnit;
+function showSettingsDesc(el) {
+  const desc = $('setDesc');
+  const unit = el && el.closest ? el.closest(DESC_UNIT) : null;
+  if (unit === descUnit && desc.firstChild) return;
+  descUnit = unit;
+  const html = (unit && settingsDescHtml(el)) || settingsPaneHtml();
+  desc.innerHTML = html;
+  desc.classList.toggle('on', !!unit);
+}
 function wireSettingsDesc() {
   const panes = $('setPanes'), desc = $('setDesc');
   if (!panes || !desc) return;
-  const show = (el) => {
-    const html = settingsDescHtml(el);      // the name, what it does, and its default (3.0)
-    desc.innerHTML = html;
-    desc.classList.toggle('on', !!html);
-  };
-  panes.addEventListener('mouseover', (e) => show(e.target));
-  panes.addEventListener('mouseleave', () => show(null));
-  panes.addEventListener('focusin', (e) => show(e.target));
+  panes.addEventListener('mouseover', (e) => showSettingsDesc(e.target));
+  panes.addEventListener('mouseleave', () => showSettingsDesc(null));
+  panes.addEventListener('focusin', (e) => showSettingsDesc(e.target));
+  // a value changed under the pointer: its "Now" follows, once the handlers have run
+  const now = () => requestAnimationFrame(() => {
+    const cell = desc.querySelector('.sd-now dd');
+    if (cell && descUnit) cell.textContent = settingsNowText(descUnit);
+  });
+  ['click', 'input', 'change'].forEach((ev) => panes.addEventListener(ev, now));
   desc.dataset.empty = t('set.descEmpty');
 }
 
+/* It comes up and goes away (3.1, mental.css §90): a close waits for its own
+   animation before the panel is hidden, and counts as closed from the start —
+   settingsOpen() is what everything else asks. */
+const settingsOpen = () => { const el = $('settings'); return !el.classList.contains('hidden') && !el.classList.contains('closing'); };
 function openSettings() {
-  $('settings').classList.remove('hidden');
+  const el = $('settings');
+  clearTimeout(closeSettings.timer);
+  el.classList.remove('hidden', 'closing');
   /* A search left over from last time would open the panel on a filtered list
      with a box the user has to notice before any of it makes sense. */
   const box = $('setSearch');
@@ -92,8 +115,18 @@ function openSettings() {
   refreshSettingsStats();
   syncSettingsUI();
   renderTemplateList();
+  descUnit = undefined;
+  showSettingsDesc(null);
+  placeSetInk(false);
 }
-function closeSettings() { $('settings').classList.add('hidden'); }
+function closeSettings() {
+  const el = $('settings');
+  if (el.classList.contains('hidden') || el.classList.contains('closing')) return;
+  if (motionReduced()) { el.classList.add('hidden'); return; }
+  el.classList.add('closing');
+  clearTimeout(closeSettings.timer);
+  closeSettings.timer = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('closing'); }, 200);
+}
 
 /* Eighteen cards in one wall read as a swatch book, not as a choice: nothing
    tells you where the light ones stop and the dark ones start, so you scan the
@@ -191,8 +224,13 @@ let setTab = 'appearance';
 function showSetTab(id) {
   const nav = $('setNav'), panes = $('setPanes');
   if (!nav || !panes) return;
-  const known = [...nav.querySelectorAll('.set-tab')].some((b) => b.dataset.tab === id);
-  setTab = known ? id : 'appearance';
+  const tabs = [...nav.querySelectorAll('.set-tab')].map((b) => b.dataset.tab);
+  const was = tabs.indexOf(setTab);
+  setTab = tabs.includes(id) ? id : 'appearance';
+  // the new pane comes in from the way the tabs went (mental.css §90), its rows a beat apart
+  panes.style.setProperty('--set-dir', tabs.indexOf(setTab) >= was ? '1' : '-1');
+  const pane = panes.querySelector(`[data-pane="${setTab}"]`);
+  if (pane) [...pane.children].forEach((c, i) => c.style.setProperty('--i', String(Math.min(i, 18))));
   nav.querySelectorAll('.set-tab').forEach((b) => {
     const on = b.dataset.tab === setTab;
     b.classList.toggle('on', on);
@@ -200,6 +238,20 @@ function showSetTab(id) {
   });
   panes.querySelectorAll('[data-pane]').forEach((p) => p.classList.toggle('on', p.dataset.pane === setTab));
   panes.scrollTop = 0;
+  placeSetInk(true);
+  if (!descUnit) { descUnit = undefined; showSettingsDesc(null); }
+}
+// the lit bar behind the open tab, which slides from one to the next
+function placeSetInk(glide) {
+  const nav = $('setNav');
+  if (!nav) return;
+  let ink = nav.querySelector('.set-ink');
+  if (!ink) { ink = document.createElement('i'); ink.className = 'set-ink'; nav.prepend(ink); }
+  const on = nav.querySelector('.set-tab.on');
+  if (!on || !on.offsetHeight) return;
+  nav.classList.toggle('glide', !!glide);
+  ink.style.transform = `translateY(${on.offsetTop}px)`;
+  ink.style.height = on.offsetHeight + 'px';
 }
 /* --- finding a setting ---------------------------------------------------
 
@@ -308,8 +360,7 @@ function wireSetTabs() {
      lands on the tab that was just asked for. */
   nav.querySelectorAll('.set-tab').forEach((b) => b.addEventListener('click', () => {
     setTab = b.dataset.tab;
-    const desc = $('setDesc');
-    if (desc) { desc.innerHTML = ''; desc.classList.remove('on'); }    // a row on the last tab is not described on this one
+    descUnit = null;                                                   // a row on the last tab is not described on this one
     const box = $('setSearch');
     if (box && box.value) { box.value = ''; clearSettingsFilter(); return; }
     showSetTab(b.dataset.tab);
@@ -1865,11 +1916,27 @@ function wireSettings30() {
   seg('skPaperSeg', 'skpaper', 'sketchPaper', () => { if (sk) { buildSketchBar(); $('sketchDlg').style.setProperty('--sk-bg', sketchPaper(sk.n)); } });
   seg('hwHandSeg', 'hwhand', 'hwHand', () => hwGlyphCache.clear());
   seg('wpKindSeg', 'wp', 'wpKind');
+  // 3.1: Settings ▸ Drawing and Settings ▸ Books
+  seg('skGuideSeg', 'skguide', 'skGuide');
+  seg('skSmoothSeg', 'sksmooth', 'skSmooth');
+  seg('bookViewSeg', 'bkview', 'bookView');
+  seg('bookTurnSeg', 'bkturn', 'bookTurnFx');
+  seg('bookSpeedSeg', 'bkspeed', 'bookSpeed');
+  seg('bookQualitySeg', 'bkquality', 'bookQuality', () => { if (bookOpen()) bookSharpen(); });
+  seg('nbPaperSeg', 'nbpaper', 'nbPaper');
+  seg('nbShapeSeg', 'nbshape', 'nbShape');
+  $('nbPages').addEventListener('input', () => { s().nbPages = +$('nbPages').value; $('nbPagesVal').textContent = num(s().nbPages); saveSoon(); });
   const check = (id, key) => $(id).addEventListener('change', () => { s()[key] = $(id).checked; applySettings(); syncSettingsUI(); saveSoon(); });
   check('setHwAnimate', 'hwAnimate');
   check('setHwKeep', 'hwKeep');
   check('setWpSound', 'wpSound');
   check('setWpGrid', 'wpGrid');
+  check('setInkPressure', 'inkPressure');
+  check('setSkFull', 'sketchFull');
+  check('setBookDrag', 'bookDrag');
+  check('setBookWheel', 'bookWheel');
+  check('setBookFull', 'bookFull');
+  check('setBookNumbers', 'bookNumbers');
   // the sliders paint as they move and the wallpaper follows, without a full repaint of the panel
   const range = (id, key, fmt) => $(id).addEventListener('input', () => {
     s()[key] = +$(id).value;
@@ -1922,6 +1989,18 @@ function syncSettings30() {
   on('skPaperSeg', 'skpaper', s.sketchPaper);
   on('hwHandSeg', 'hwhand', s.hwHand);
   on('wpKindSeg', 'wp', s.wpKind);
+  on('skGuideSeg', 'skguide', s.skGuide);
+  on('skSmoothSeg', 'sksmooth', s.skSmooth);
+  on('bookViewSeg', 'bkview', s.bookView);
+  on('bookTurnSeg', 'bkturn', s.bookTurnFx);
+  on('bookSpeedSeg', 'bkspeed', s.bookSpeed);
+  on('bookQualitySeg', 'bkquality', s.bookQuality);
+  on('nbPaperSeg', 'nbpaper', s.nbPaper);
+  on('nbShapeSeg', 'nbshape', s.nbShape);
+  for (const [id, key] of [['setInkPressure', 'inkPressure'], ['setSkFull', 'sketchFull'], ['setBookDrag', 'bookDrag'],
+    ['setBookWheel', 'bookWheel'], ['setBookFull', 'bookFull'], ['setBookNumbers', 'bookNumbers']]) $(id).checked = !!s[key];
+  $('nbPages').value = s.nbPages;
+  $('nbPagesVal').textContent = num(s.nbPages);
   $('setHwAnimate').checked = !!s.hwAnimate;
   $('setHwKeep').checked = !!s.hwKeep;
   $('setWpSound').checked = !!s.wpSound;
@@ -2051,7 +2130,7 @@ function paintStepper(stp) {
   if (stp._seg) {
     const bs = [...stp._seg.querySelectorAll('button')];
     const i = bs.findIndex((b) => b.classList.contains('on'));
-    stp.querySelector('.stp-v').textContent = i >= 0 ? bs[i].textContent.trim() : '';
+    paintStepValue(stp, i >= 0 ? bs[i].textContent.trim() : '', i);
     const ticks = stp.querySelector('.stp-ticks');
     if (ticks.childElementCount !== bs.length) ticks.innerHTML = '<b></b>'.repeat(bs.length);
     [...ticks.children].forEach((b, k) => b.classList.toggle('on', k === i));
@@ -2059,10 +2138,19 @@ function paintStepper(stp) {
     stp.querySelector('[data-d="1"]').classList.toggle('off', i >= bs.length - 1);
   } else if (stp._box) {
     const v = stp._box.checked;
-    stp.querySelector('.stp-v').textContent = t(v ? 'set.on' : 'set.off');
+    paintStepValue(stp, t(v ? 'set.on' : 'set.off'), v ? 1 : 0);
     const [a, b] = stp.querySelectorAll('.stp-ticks b');
     a.classList.toggle('on', !v); b.classList.toggle('on', v);
   }
+}
+// the value between the arrows; a new one slides in from the way it was stepped (mental.css §90)
+function paintStepValue(stp, text, i) {
+  const v = stp.querySelector('.stp-v');
+  if (v.textContent === text) return;
+  const had = v.dataset.i != null && v.textContent !== '';
+  v.dataset.d = had && i < +v.dataset.i ? '-1' : '1';
+  v.dataset.i = String(i);
+  v.innerHTML = `<span class="stp-t${had ? ' go' : ''}">${esc(text)}</span>`;
 }
 function syncSteppers() { document.querySelectorAll('#setPanes .stp').forEach(paintStepper); }
 
@@ -2076,6 +2164,10 @@ const SET_KEYS = {
   shapeSeg: 'noteShape', densitySeg: 'noteDensity', fontSeg: 'noteFont', shadowSeg: 'noteShadow',
   linkStyleSeg: 'linkStyle', linkAnchorSeg: 'linkAnchor', autosaveSeg: 'autosaveMin', corkSeg: 'cork',
   uiFontSeg: 'uiFont', skPaperSeg: 'sketchPaper', hwHandSeg: 'hwHand', wpKindSeg: 'wpKind',
+  skGuideSeg: 'skGuide', skSmoothSeg: 'skSmooth', bookViewSeg: 'bookView', bookTurnSeg: 'bookTurnFx', bookSpeedSeg: 'bookSpeed',
+  bookQualitySeg: 'bookQuality', nbPaperSeg: 'nbPaper', nbShapeSeg: 'nbShape',
+  setInkPressure: 'inkPressure', setSkFull: 'sketchFull', setBookDrag: 'bookDrag', setBookWheel: 'bookWheel',
+  setBookFull: 'bookFull', setBookNumbers: 'bookNumbers',
   setEmbeds: 'embeds', setGuides: 'guides', setFocusMode: 'focusMode', setSounds: 'sounds', setSoftware: 'softwareRender',
   setSnap: 'snap', setCompass: 'compass', setMinimap: 'minimap', setSpell: 'spell', setConfirmDelete: 'confirmDelete',
   setShowArchived: 'showArchived', setBackupAuto: 'backupAuto', setBackground: 'background', setCapture: 'capture',
@@ -2091,14 +2183,83 @@ function settingDefaultText(unit) {
   }
   const box = unit.querySelector('input[type="checkbox"][id]');
   if (box && SET_KEYS[box.id]) return t(d[SET_KEYS[box.id]] ? 'set.on' : 'set.off');
+  const range = unit.querySelector('input[type="range"][id]');
+  if (range && SET_RANGES[range.id] && d[range.id] != null) return SET_RANGES[range.id](d[range.id]);
   return '';
+}
+// a slider's default, written as its value is (the key is the slider's id)
+const SET_RANGES = {
+  fontScale: pct, gridFade: pct, zoomSpeed: pct, soundVol: pct, keyVol: pct, wpAmount: pct, wpOpacity: pct, wpDim: pct,
+  wpBlur: (v) => num(v) + ' px', gridSize: num, noteW: num, noteH: num, linkWidth: num, nbPages: num
+};
+// what the row is called: its label, or the heading of the block it is
+function settingsNameOf(unit) {
+  const lab = unit.matches('.set-check') ? unit : unit.querySelector(':scope > label, .ct-head, .path-label');
+  if (lab) {
+    const c = lab.cloneNode(true);
+    c.querySelectorAll('.set-val, .stp, input').forEach((x) => x.remove());
+    const txt = c.textContent.replace(/\s+/g, ' ').trim();
+    if (txt) return txt;
+  }
+  const h = settingsHeadOf(unit);
+  return h ? h.textContent.trim() : '';
+}
+// the heading a row sits under in its pane: a section's, or the pane's own
+function settingsHeadOf(unit) {
+  let n = unit;
+  while (n && n.parentElement && !n.parentElement.matches('[data-pane]')) n = n.parentElement;
+  for (let p = n && n.previousElementSibling; p; p = p.previousElementSibling) if (p.tagName === 'H3') return p;
+  return null;
+}
+// what it is now, in the words the row itself uses
+function settingsNowText(unit) {
+  const seg = unit.querySelector('.seg');
+  if (seg) { const b = seg.querySelector('button.on'); return b ? b.textContent.trim() : ''; }
+  if (unit.matches('.set-check')) { const box = unit.querySelector('input[type="checkbox"]'); return box ? t(box.checked ? 'set.on' : 'set.off') : ''; }
+  const val = unit.querySelector(':scope > label .set-val');
+  if (val && unit.querySelector('input[type="range"]')) return val.textContent.trim();
+  const sel = unit.querySelector('select');
+  if (sel && sel.selectedIndex >= 0 && !unit.querySelector('.pair-pick')) return sel.options[sel.selectedIndex].textContent.trim();
+  const sw = unit.querySelector('.swatches button.on');
+  return sw ? (sw.title || sw.getAttribute('aria-label') || '') : '';
+}
+// the words for a row that never had a hint of its own: set.about.<its first id>, without a slider's "Val"
+function settingsAboutOf(unit) {
+  const el = unit.id ? unit : unit.querySelector('[id]');
+  const id = el ? el.id.replace(/Val$/, '') : '';
+  const key = 'set.about.' + id;
+  const txt = id ? t(key) : '';
+  return txt && txt !== key ? txt : '';
 }
 function settingsDescHtml(el) {
   const unit = el && el.closest ? el.closest(DESC_UNIT) : null;
   if (!unit) return '';
-  const hint = settingsHintFor(el);
-  const def = settingDefaultText(unit);
-  if (!hint && !def) return '';
-  return (hint ? `<span class="sd-text">${esc(hint)}</span>` : '') +
-    (def ? `<span class="sd-def">${esc(t('set.default', { v: def }))}</span>` : '');
+  const name = settingsNameOf(unit), text = settingsHintFor(el) || settingsAboutOf(unit);
+  const now = settingsNowText(unit), def = settingDefaultText(unit);
+  if (!name && !text) return '';
+  const pane = unit.closest('[data-pane]'), head = settingsHeadOf(unit);
+  const tab = pane && $('setNav').querySelector(`.set-tab[data-tab="${pane.dataset.pane}"]`);
+  const where = [tab ? tab.textContent.trim() : '', head && head.classList.contains('set-sub-h') ? head.textContent.trim() : ''].filter(Boolean).join(' · ');
+  const fact = (cls, label, v) => `<div class="sd-fact ${cls}"><dt>${esc(label)}</dt><dd>${esc(v)}</dd></div>`;
+  return `<div class="sd-card">` +
+    `<div class="sd-kick">${tab ? tab.querySelector('.tab-ic').innerHTML : ''}<span>${esc(where)}</span></div>` +
+    (name ? `<h4 class="sd-name">${esc(name)}</h4>` : '') +
+    (text ? `<p class="sd-text">${esc(text)}</p>` : '') +
+    (now || def ? `<dl class="sd-facts">${now ? fact('sd-now', t('set.now'), now) : ''}${def ? fact('sd-was', t('set.defaultIs'), def) : ''}</dl>` : '') +
+    (unit.querySelector('.stp') ? `<p class="sd-keys"><kbd>←</kbd><kbd>→</kbd><span>${esc(t('set.keysStep'))}</span></p>` : '') +
+    `</div>`;
+}
+// nothing under the pointer: what the open tab is for, and the sections in it
+function settingsPaneHtml() {
+  if (document.body.classList.contains('set-searching')) return `<p class="sd-hint">${esc(t('set.descEmpty'))}</p>`;
+  const tab = $('setNav').querySelector(`.set-tab[data-tab="${setTab}"]`);
+  const pane = $('setPanes').querySelector(`[data-pane="${setTab}"]`);
+  if (!tab || !pane) return '';
+  const subs = [...pane.querySelectorAll(':scope > h3.set-sub-h')].map((h) => `<span>${esc(h.textContent.trim())}</span>`).join('');
+  const about = t('set.pane.' + setTab);
+  return `<div class="sd-card sd-pane"><div class="sd-big">${tab.querySelector('.tab-ic').innerHTML}</div>` +
+    `<h4 class="sd-name">${esc(tab.textContent.trim())}</h4>` +
+    (about !== 'set.pane.' + setTab ? `<p class="sd-text">${esc(about)}</p>` : '') +
+    (subs ? `<div class="sd-chips">${subs}</div>` : '') +
+    `<p class="sd-hint">${esc(t('set.descEmpty'))}</p></div>`;
 }

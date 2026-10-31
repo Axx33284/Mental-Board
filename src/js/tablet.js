@@ -227,15 +227,36 @@ function padGot(n) {
 }
 
 /* ---- what the phone is told: whether it may draw, the colours, the selection ---- */
-function padPalette() {
+/* The ink colours as the phone should show them: resolved inside whatever is
+   open, not on <body>. A drawing note and a book fix their ink to the paper
+   (mental.css §83 and §87), so there "ink" is black whatever the theme — and
+   until 3.1 the phone was told the theme's text colour instead, so in a dark
+   theme its black swatch and the line it drew were white. Kept until the
+   host, the theme or the paper changes, since the view is sent every second. */
+const PAD_HOST_EL = { studio: 'studio', sketch: 'sketchDlg', book: 'bookDlg' };
+const padHostEl = (kind) => (PAD_HOST_EL[kind] && $(PAD_HOST_EL[kind])) || document.body;
+function padPalette(kind) {
+  const root = document.documentElement, key = [kind, root.dataset.theme, root.dataset.mode, root.style.getPropertyValue('--accent'), document.body.dataset.skpaper].join('|');
+  if (padPalette.key === key) return padPalette.out;
   const probe = document.createElement('i');
+  padHostEl(kind).appendChild(probe);
+  const read = (css) => { probe.style.color = css; return getComputedStyle(probe).color; };
+  padPalette.out = ['text', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'].filter((c) => c === 'text' || COLORS.includes(c))
+    .map((k) => ({ k, c: read(inkColorCss(k)) }));
+  // the app's own surfaces, so the phone's bar wears the theme the app is in
   document.body.appendChild(probe);
-  const out = ['text', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'].filter((c) => c === 'text' || COLORS.includes(c)).map((k) => {
-    probe.style.color = inkColorCss(k);
-    return { k, c: getComputedStyle(probe).color };
-  });
+  padPalette.theme = { bg: read('var(--bg)'), panel: read('var(--surface)'), line: read('var(--line-2)'), text: read('var(--text)'), dim: read('var(--dim)'), mode: root.dataset.mode === 'light' ? 'light' : 'dark' };
   probe.remove();
-  return out;
+  padPalette.key = key;
+  return padPalette.out;
+}
+// what is open, for the phone's bar: a board, a drawing, a book (and where in it), or a picture
+function padWhere(kind) {
+  if (kind === 'book') return { k: 'book', title: bk.n.book.title || t('book.untitled'), at: bk.at + 1, n: bk.n.book.pages };
+  if (kind === 'sketch') return { k: 'sketch', title: sk.n.sketch.title || '' };
+  if (kind === 'studio') return { k: 'studio', title: '' };
+  const b = activeBoard();
+  return { k: 'board', title: b ? b.name || '' : '' };
 }
 /* canEditHere() without its toast — it is asked once a second while a phone is
    paired, and a locked board would say so once a second. The stroke itself
@@ -247,7 +268,8 @@ function sendPadView() {
   const kind = padHost().kind, board = kind === 'board';
   // how much is selected, where the phone is — its bin is lit by this
   const sel = board ? inkSel.size : kind === 'sketch' ? sk.sel.size : 0;
-  const m = { t: 'view', ro: board && !padCanDraw(), pal: padPalette(), sel, rw: padRect().w, book: kind === 'book' };
+  const pal = padPalette(kind);
+  const m = { t: 'view', ro: board && !padCanDraw(), pal, sel, rw: padRect().w, book: kind === 'book', theme: padPalette.theme, where: padWhere(kind) };
   const key = JSON.stringify(m);
   if (key === padViewSent) return;
   padViewSent = key;
@@ -586,6 +608,7 @@ function bookPageUnder(w) {
   return null;
 }
 function beginPadBookStroke(m, map) {
+  if (bk.turning && typeof bookTurnSettle === 'function' && !(bk.turn && bk.turn.dragging)) bookTurnSettle();
   if (m.tool === 'select' || bk.turning || bk.live || bk.erase) return;
   const at = bookPageUnder(padWorld(map, m.x, m.y));
   if (!at) return;

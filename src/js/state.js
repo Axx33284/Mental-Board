@@ -237,6 +237,19 @@ function defaults() {
       sketchFull: true,
       // the book reader's pen (3.0, js/book.js): the hand to read, or a pen, its colour and size
       bookPen: { tool: 'hand', color: 'text', size: 1 },
+      /* Settings ▸ Drawing and Settings ▸ Books (3.1). A drawing note's
+         pattern ('dots' 'grid' 'lines' 'none'), whether a pen's pressure
+         widens a line (drawing notes, books and the board), and how much a
+         line is steadied as it is drawn ('off' 'some' 'more'). A book's
+         first view, how a page turns ('curl' 'slide' 'fade' 'none') and how
+         fast, whether a page's corner can be dragged over and the wheel turns
+         it, whether it opens full screen, its page numbers, and how sharp a
+         PDF page is drawn ('sharp' or 'quick'). What a new notebook is: its
+         paper, its page ('a4' 'letter' 'square' 'wide') and how many pages. */
+      skGuide: 'dots', inkPressure: true, skSmooth: 'off',
+      bookView: 'book', bookTurnFx: 'curl', bookSpeed: 'normal', bookDrag: true, bookWheel: true,
+      bookFull: true, bookNumbers: true, bookQuality: 'sharp',
+      nbPaper: 'ruled', nbShape: 'a4', nbPages: 12,
       /* What a drawing is drawn on (3.0): 'light' or 'dark' paper whose ink keeps
          its colour whatever the theme, or 'note' — the note's colour and the
          theme's ink, as before 3.0. See SK_PAPERS in sketch.js. */
@@ -907,6 +920,21 @@ function adopt(raw, keepSettings) {
   st.sketchFull = st.sketchFull !== false;
   { const bp = st.bookPen || {}; st.bookPen = { tool: ['hand', 'pen', 'marker', 'brush', 'eraser'].includes(bp.tool) ? bp.tool : 'hand', color: inkColorOk(bp.color) ? bp.color : 'text', size: [0, 1, 2].includes(bp.size) ? bp.size : 1 }; }
   if (!SK_PAPER_KINDS.includes(st.sketchPaper)) st.sketchPaper = 'light';
+  // 3.1: Settings ▸ Drawing and ▸ Books. A book opened full screen when a drawing note did, so that is where bookFull starts.
+  if (!SK_GUIDES.includes(st.skGuide)) st.skGuide = 'dots';
+  st.inkPressure = st.inkPressure !== false;
+  if (!INK_SMOOTH[st.skSmooth]) st.skSmooth = 'off';
+  if (!BOOK_VIEWS.includes(st.bookView)) st.bookView = 'book';
+  if (!BOOK_TURNS.includes(st.bookTurnFx)) st.bookTurnFx = 'curl';
+  if (!BOOK_SPEEDS[st.bookSpeed]) st.bookSpeed = 'normal';
+  st.bookDrag = st.bookDrag !== false;
+  st.bookWheel = st.bookWheel !== false;
+  st.bookFull = typeof st.bookFull === 'boolean' ? st.bookFull : st.sketchFull;
+  st.bookNumbers = st.bookNumbers !== false;
+  if (!['sharp', 'quick'].includes(st.bookQuality)) st.bookQuality = 'sharp';
+  if (!BOOK_PAPERS.includes(st.nbPaper)) st.nbPaper = 'ruled';
+  if (!NB_SHAPES[st.nbShape]) st.nbShape = 'a4';
+  st.nbPages = clamp(Math.round(+st.nbPages || 12), 1, 200);
   if (!HW_HANDS.includes(st.hwHand)) st.hwHand = 'ink';
   st.hwLang = /^(auto|[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*)$/.test(String(st.hwLang)) ? String(st.hwLang) : 'auto';
   st.hwAnimate = st.hwAnimate !== false;

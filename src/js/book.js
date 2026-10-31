@@ -49,6 +49,11 @@ const BOOK_TITLE_H = 44;         // the title under the cover on the board, in n
 const BOOK_ZMIN = 0.3, BOOK_ZMAX = 6;
 const BOOK_PDF_PX = 12e6;        // the most pixels one drawn PDF page may have, at any zoom
 const BOOK_CACHE_PX = 48e6;      // and the drawn pages kept, together
+/* Settings ▸ Books (3.1): how a page turns and how long it takes, and the
+   pages a new notebook has — its shape is its height over its width. */
+const BOOK_TURNS = ['curl', 'slide', 'fade', 'none'];
+const BOOK_SPEEDS = { slow: 950, normal: 640, fast: 380 };
+const NB_SHAPES = { a4: 1.414, letter: 1.294, square: 1, wide: 0.707 };
 
 function okBook(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -86,9 +91,12 @@ function bookBody(cover, pdf, name) {
 }
 
 /* ---- making one ---- */
+// a new notebook is what Settings ▸ Books says: its paper, its page and how many
 function addNotebook(worldPt) {
   if (!canEditHere()) return null;
-  const n = addNote(worldPt, { book: { title: '', kind: 'blank', pages: 12, ar: 1.414, paper: 'ruled' }, w: 220, h: Math.round(220 * 1.3) + BOOK_TITLE_H, edit: false });
+  const s = state.settings, ar = NB_SHAPES[s.nbShape] || 1.414;
+  const book = { title: '', kind: 'blank', pages: clamp(s.nbPages || 12, 1, BOOK_PAGES_MAX), ar, paper: s.nbPaper, view: s.bookView };
+  const n = addNote(worldPt, { book, w: 220, h: Math.round(220 * Math.min(ar, 1.3)) + BOOK_TITLE_H, edit: false });
   if (n) openBook(n.id);
   return n;
 }
@@ -122,7 +130,7 @@ async function bookFromFile(pick, at) {
     const pages = Math.min(doc.numPages, BOOK_PAGES_MAX);
     const w = 220;
     const n = addNote(at, {
-      book: { title: pick.name.replace(/\.pdf$/i, ''), kind: 'pdf', pages, ar, paper: 'plain' },
+      book: { title: pick.name.replace(/\.pdf$/i, ''), kind: 'pdf', pages, ar, paper: 'plain', view: state.settings.bookView },
       body: bookBody(cover, r.url, pick.name), w, h: Math.round(w * Math.min(ar, 1.8)) + BOOK_TITLE_H, edit: false
     });
     if (doc.numPages > BOOK_PAGES_MAX) toast(t('book.tooLong', { n: BOOK_PAGES_MAX }));
@@ -209,8 +217,10 @@ function openBook(id) {
     live: null, erase: null, hand: null, dirty: false, undoTaken: false, turning: false, cache: new Map(), penSeen: false
   };
   const dlg = $('bookDlg');
-  dlg.classList.remove('hidden');
+  clearTimeout(closeBook.timer);
+  dlg.classList.remove('hidden', 'bk-closing');
   dlg.dataset.paper = B.paper;
+  dlg.classList.toggle('bk-nonum', !state.settings.bookNumbers);
   $('bkTitle').value = B.title;
   const f = bookFiles(n);
   if (B.kind === 'pdf' && f.pdf) {
@@ -219,20 +229,22 @@ function openBook(id) {
   }
   buildBookBar();
   if (typeof padHostChanged === 'function') padHostChanged();     // a paired phone draws in the book now (tablet.js)
-  if (state.settings.sketchFull !== false && dlg.requestFullscreen && !document.fullscreenElement) dlg.requestFullscreen().catch(() => {});
+  if (state.settings.bookFull !== false && dlg.requestFullscreen && !document.fullscreenElement) dlg.requestFullscreen().catch(() => {});
   requestAnimationFrame(() => requestAnimationFrame(() => { if (bk) bookLayout(); }));
 }
 function closeBook() {
   if (!bk) return;
   endBookStroke();
+  bookTurnSettle();
   clearTimeout(bk.sharpT);
   if (bk.dirty) commitBook();
   const { n, undoTaken, doc } = bk;
   bk = null;
   if (doc) doc.destroy();
-  $('bookDlg').classList.add('hidden');
-  $('bkSpread').textContent = '';
-  $('bkScroll').textContent = '';
+  // out of a window it fades and settles back (mental.css §91); out of full screen it simply goes
+  const dlg = $('bookDlg'), gone = () => { dlg.classList.add('hidden'); dlg.classList.remove('bk-closing'); $('bkSpread').textContent = ''; $('bkScroll').textContent = ''; };
+  if (document.fullscreenElement || motionReduced()) gone();
+  else { dlg.classList.add('bk-closing'); closeBook.timer = setTimeout(() => { if (!bk) gone(); }, 190); }
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   const el = els.get(n.id);
   if (el) paintBook(el, n);
@@ -290,7 +302,8 @@ function buildBookBar() {
     btn('zout', 'zoom_out', te('zoom.out')) + `<button class="ik-btn sk-pct" data-bk="fit" title="${te('zoom.fit')}">${pct(Math.round(bk.cam.z * 100))}</button>` + btn('zin', 'zoom_in', te('zoom.in')) +
     `<span class="ik-sep"></span>` +
     btn('undo', 'undo', te('menu.undo')) + btn('redo', 'redo', te('menu.redo')) +
-    (B.kind === 'blank' ? btn('addpage', 'library_add', te('book.addPage')) : '') +
+    (B.kind === 'blank' ? btn('addpage', 'library_add', te('book.addPage')) +
+      `<button class="ik-btn bk-paper" data-bk="paper" title="${te('book.paperTip')}">${icon('grid_on')}<span>${te('set.nbPaper' + B.paper[0].toUpperCase() + B.paper.slice(1))}</span></button>` : '') +
     btn('clear', 'delete_sweep', te('book.clearPage')) + btn('full', 'open_in_full', te('sketch.fullScreen')) +
     `<button class="ik-btn ik-done" data-bk="done" title="${te('ink.done')}" aria-label="${te('ink.done')}">${icon('check')}</button>`;
   const keep = () => { state.settings.bookPen = { tool: bk.tool, color: bk.color, size: bk.size }; saveSoon(); };
@@ -309,6 +322,7 @@ function buildBookBar() {
     else if (act === 'undo') bookUndo(true);
     else if (act === 'redo') bookUndo(false);
     else if (act === 'addpage') bookAddPage();
+    else if (act === 'paper') bookNextPaper();
     else if (act === 'clear') bookClearPage();
     else if (act === 'full') { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else $('bookDlg').requestFullscreen().catch(() => {}); }
   }));
@@ -330,13 +344,15 @@ function bookShowAt() {
 
 /* ---- the layout: a spread, or a scroll ---- */
 // two pages side by side when the window is wide enough for two readable pages
+// (the stage's own size, not its box on screen: it is scaled while the reader opens, mental.css §91)
+const bookStageSize = () => { const st = $('bkStage'); return { width: st.clientWidth, height: st.clientHeight }; };
 function bookTwoUp() {
-  const r = $('bkStage').getBoundingClientRect();
+  const r = bookStageSize();
   return bk.view === 'book' && r.width > r.height / bk.n.book.ar * 1.35 && r.width > 760;
 }
 // a page's size when it fits (the camera at 100%); the zoom is the camera's, not the layout's
 function bookPageSize() {
-  const r = $('bkStage').getBoundingClientRect(), ar = bk.n.book.ar;
+  const r = bookStageSize(), ar = bk.n.book.ar;
   let ph;
   if (bk.view === 'scroll') ph = Math.min(r.width - 80, 920) * ar;          // a column, as a PDF reader shows it
   else if (bookTwoUp()) ph = Math.min(r.height - 56, (r.width - 96) / 2 * ar);
@@ -356,6 +372,7 @@ function bookSpreadOf(at) {
    kept while the pages keep their size, and fitted when they do not. */
 function bookLayout() {
   if (!bk) return;
+  bookTurnSettle();
   const stage = $('bkStage'), spread = $('bkSpread'), scroll = $('bkScroll');
   stage.dataset.view = bk.view;
   const S = bookPageSize();
@@ -438,6 +455,19 @@ function setBookView(v) {
   if (zoomed) { clearTimeout(bk.sharpT); bk.sharpT = setTimeout(bookSharpen, 160); }
   if (typeof padDirty === 'function') padDirty();       // a paired phone sees the pages move (tablet.js)
 }
+// the camera moved there over a moment (the scroll view's arrows), or at once
+function bookGlideTo(v, glide) {
+  cancelAnimationFrame(bookGlideTo.raf);
+  if (!glide || motionReduced()) { setBookView(v); return; }
+  const a = Object.assign({}, bk.cam), t0 = performance.now(), book = bk;
+  const step = (now) => {
+    if (bk !== book) return;
+    const k = Math.min(1, (now - t0) / 320), e = bookEaseOut(k);
+    setBookView({ x: a.x + (v.x - a.x) * e, y: a.y + (v.y - a.y) * e, z: a.z + (v.z - a.z) * e });
+    if (k < 1) bookGlideTo.raf = requestAnimationFrame(step);
+  };
+  bookGlideTo.raf = requestAnimationFrame(step);
+}
 // 100%: the spread in the middle, or the column with the current page at the top
 function bookFit() {
   if (!bk) return;
@@ -451,9 +481,14 @@ function bookFit() {
 // the pages under the pointer move with it: the hand, or any tool pressed off a page
 function bookHandMove(e) {
   const G = bk.hand;
+  if (G.turn) { bookDragTurnMove(G, e); return; }
   const dx = e.clientX - G.lx, dy = e.clientY - G.ly;
   if (!G.moved && Math.hypot(e.clientX - G.sx, e.clientY - G.sy) < 5) return;
-  if (!G.moved) { G.moved = true; $('bkStage').classList.add('bk-panning'); }
+  if (!G.moved) {
+    G.moved = true;
+    if (!bk.turning && bookDragTurnStart(G, e)) return;      // the corner of a page, pulled towards the spine
+    $('bkStage').classList.add('bk-panning');
+  }
   G.lx = e.clientX; G.ly = e.clientY;
   setBookView({ x: bk.cam.x + dx, y: bk.cam.y + dy, z: bk.cam.z });
 }
@@ -461,6 +496,7 @@ function bookHandMove(e) {
 function cancelBookGesture() {
   if (!bk) return;
   if (bk.live) { const L = bk.live; bk.live = null; if (L.frame) cancelAnimationFrame(L.frame); L.el.remove(); }
+  if (bk.hand && bk.hand.turn) bookDragTurnEnd(bk.hand);
   bk.hand = null;
   $('bkStage').classList.remove('bk-panning');
   endBookStroke();
@@ -472,7 +508,7 @@ function cancelBookGesture() {
 function bookWheel(e) {
   if (!bk) return true;
   if (e.ctrlKey) return false;
-  if (bk.view === 'book' && bk.cam.z <= 1.01) {
+  if (bk.view === 'book' && bk.cam.z <= 1.01 && state.settings.bookWheel !== false) {
     const now = performance.now();
     if (now - (bookWheel.at || 0) >= 350 && Math.abs(e.deltaY) >= 4) { bookWheel.at = now; bookGo(e.deltaY > 0 ? 1 : -1); }
     return true;
@@ -513,9 +549,11 @@ function bookPageEl(i, S) {
    at every frame, and never more than BOOK_PDF_PX pixels in all. */
 function bookPdfSize(S) {
   const zq = Math.pow(2, Math.round(Math.log2(Math.max(bk.cam.z, 0.5)) * 2) / 2);
-  const q = Math.min(2.5, window.devicePixelRatio || 1) * zq;
+  // Settings ▸ Books ▸ PDF pages: 'quick' draws at one pixel a screen pixel and a third of the size at most
+  const quick = state.settings.bookQuality === 'quick', most = quick ? BOOK_PDF_PX / 3 : BOOK_PDF_PX;
+  const q = (quick ? 1 : Math.min(2.5, window.devicePixelRatio || 1)) * zq;
   let W = S.w * q, H = S.h * q;
-  if (W * H > BOOK_PDF_PX) { const f = Math.sqrt(BOOK_PDF_PX / (W * H)); W *= f; H *= f; }
+  if (W * H > most) { const f = Math.sqrt(most / (W * H)); W *= f; H *= f; }
   return { W: Math.round(W), H: Math.round(H) };
 }
 /* pdf.js draws a page at that size. Drawn pages are kept (a dozen, and
@@ -577,9 +615,11 @@ function bookSharpen() {
 
 /* ---- moving through it ---- */
 function bookGo(dir) {
-  if (!bk || bk.turning) return;
+  if (!bk) return;
+  if (bk.turn && bk.turn.dragging) return;
+  bookTurnSettle();
   const B = bk.n.book;
-  if (bk.view === 'scroll') { bookGoTo(clamp(bk.at + dir, 0, B.pages - 1)); return; }
+  if (bk.view === 'scroll') { bookGoTo(clamp(bk.at + dir, 0, B.pages - 1), true); return; }
   const pages = bookSpreadOf(bk.at);
   let to;
   if (pages.length === 1) to = bk.at + dir;
@@ -588,14 +628,15 @@ function bookGo(dir) {
   if (to < 0 || to >= B.pages) return;
   bookTurn(dir, to);
 }
-function bookGoTo(i) {
+function bookGoTo(i, glide) {
   if (!bk) return;
+  bookTurnSettle();
   const B = bk.n.book;
   i = clamp(i, 0, B.pages - 1);
   if (bk.view === 'scroll') {
     const slot = $('bkScroll').children[i];
     bk.at = i;
-    if (slot) setBookView({ x: bk.cam.x, y: 24 - slot.offsetTop * bk.cam.z, z: bk.cam.z });
+    if (slot) bookGlideTo({ x: bk.cam.x, y: 24 - slot.offsetTop * bk.cam.z, z: bk.cam.z }, !!glide);
     bookFillNear();
   } else {
     bk.at = i;
@@ -604,37 +645,203 @@ function bookGoTo(i) {
   bookShowAt();
   keepBookPlace();
 }
-/* A page turned over: the leaf carries the page being turned on its front and
-   the page it reveals on its back, and swings about the spine. Under it the
-   spread is already half the new one, so when the leaf lands nothing jumps. */
+/* ---- turning a page (3.1) ----
+   A turn is a progress from 0 to 1, and everything in it is painted from that
+   one number (`bookTurnPaint`): the leaf swinging about the spine, the shade
+   across each of its faces, a glint as it lifts, and the shadow it throws on
+   the page it is uncovering and then on the one it lands on. So the same turn
+   runs by itself (a click, a key, the wheel, the phone) or follows a hand
+   dragging a page's corner over (`bookDragTurn*`), and goes on or falls back
+   from wherever it is let go.
+
+   Under the leaf the spread is already half the new one — the side that
+   stays and the side that is coming — so when the leaf lands nothing jumps.
+   Settings ▸ Books picks the turn ('curl', a 'slide' or 'fade' of the new
+   spread, or 'none') and its speed; reduced motion is always 'none'. A press
+   while a page is still turning lands that turn at once and goes on from
+   there, so paging quickly is never ignored. */
+const bookEase = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const bookEaseOut = (x) => 1 - Math.pow(1 - x, 3);
+const bookTurnMs = () => BOOK_SPEEDS[state.settings.bookSpeed] || BOOK_SPEEDS.normal;
+const bookTurnFx = () => (motionReduced() ? 'none' : BOOK_TURNS.includes(state.settings.bookTurnFx) ? state.settings.bookTurnFx : 'curl');
+
 function bookTurn(dir, to) {
-  const spread = $('bkSpread'), S = bk.ps;
-  const from = bookSpreadOf(bk.at), next = bookSpreadOf(to);
-  const reduced = document.body.dataset.motion === 'reduced' || (document.body.dataset.motion !== 'full' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const fx = bookTurnFx(), from = bookSpreadOf(bk.at);
+  const backTo = bk.at;
   bk.at = to;
   bookShowAt();
   keepBookPlace();
-  if (reduced) { bookPaintSpread(); return; }
-  bk.turning = true;
-  const two = from.length === 2;
-  // under the leaf: the side that stays, and the side that is coming
+  if (fx === 'none') { bookPaintSpread(); return; }
+  if (fx !== 'curl') { bookPaintSpread(); bookSlideIn(dir, fx); return; }
+  const T = bookTurnBuild(dir, from, bookSpreadOf(to));
+  T.backTo = backTo;
+  bookTurnRun(T, 1, bookTurnMs(), bookEase);
+}
+// a slide or a fade: the new spread comes in from the way the reader is going
+function bookSlideIn(dir, fx) {
+  const from = fx === 'slide' ? `translateX(${dir * 7}%) scale(.985)` : 'scale(.992)';
+  $('bkSpread').querySelectorAll(':scope > .bk-side').forEach((el) => el.animate(
+    [{ transform: from, opacity: 0 }, { transform: 'none', opacity: 1 }],
+    { duration: Math.round(bookTurnMs() * 0.75), easing: 'cubic-bezier(.16, 1, .3, 1)' }));
+}
+function bookTurnBuild(dir, from, next) {
+  const spread = $('bkSpread'), S = bk.ps, two = from.length === 2;
   spread.textContent = '';
-  const side = (p, cls) => { const s = document.createElement('div'); s.className = 'bk-side ' + cls; if (p != null) s.appendChild(bookPageEl(p, S)); spread.appendChild(s); return s; };
+  const side = (p, cls) => {
+    const el = document.createElement('div');
+    el.className = 'bk-side ' + cls;
+    if (p != null) el.appendChild(bookPageEl(p, S));
+    const cast = document.createElement('i');                // the leaf's shadow on this side
+    cast.className = 'bk-cast';
+    el.appendChild(cast);
+    spread.appendChild(el);
+    return cast;
+  };
+  // under the leaf: the side that stays, and the side that is coming
+  let castL = null, castR = null;
   if (two) {
-    if (dir > 0) { side(from[0], 'left'); side(next[1], 'right'); }
-    else { side(next[0], 'left'); side(from[1], 'right'); }
-  } else side(next[0], 'one');
+    if (dir > 0) { castL = side(from[0], 'left'); castR = side(next[1], 'right'); }
+    else { castL = side(next[0], 'left'); castR = side(from[1], 'right'); }
+  } else castR = side(next[0], 'one');
   const leaf = document.createElement('div');
-  leaf.className = 'bk-leaf ' + (two ? (dir > 0 ? 'fwd' : 'back') : (dir > 0 ? 'fwd one' : 'back one'));
-  const face = (p, cls) => { const f = document.createElement('div'); f.className = 'bk-face-' + cls; if (p != null) f.appendChild(bookPageEl(p, S)); leaf.appendChild(f); };
+  leaf.className = 'bk-leaf ' + (dir > 0 ? 'fwd' : 'back') + (two ? '' : ' one');
+  const face = (p, cls) => {
+    const el = document.createElement('div');
+    el.className = 'bk-face-' + cls;
+    if (p != null) el.appendChild(bookPageEl(p, S));
+    const sh = document.createElement('i');
+    sh.className = 'bk-shade';
+    el.appendChild(sh);
+    leaf.appendChild(el);
+    return sh;
+  };
+  let shFront, shBack;
   if (two) {
-    if (dir > 0) { face(from[1], 'front'); face(next[0], 'back'); }
-    else { face(from[0], 'front'); face(next[1], 'back'); }
-  } else { face(from[0], 'front'); face(null, 'back'); }
+    if (dir > 0) { shFront = face(from[1], 'front'); shBack = face(next[0], 'back'); }
+    else { shFront = face(from[0], 'front'); shBack = face(next[1], 'back'); }
+  } else { shFront = face(from[0], 'front'); shBack = face(null, 'back'); }
+  const glint = document.createElement('i');
+  glint.className = 'bk-glint';
+  leaf.firstChild.appendChild(glint);
   spread.appendChild(leaf);
-  leaf.addEventListener('animationend', () => { bk && (bk.turning = false); if (bk) bookPaintSpread(); }, { once: true });
-  // a safety net: an animation that never ends (a hidden window) must not freeze the book
-  setTimeout(() => { if (bk && bk.turning) { bk.turning = false; bookPaintSpread(); } }, 1200);
+  bk.turning = true;
+  const T = { dir, two, leaf, shFront, shBack, glint, castL, castR, p: 0, raf: 0, done: false, backTo: bk.at };
+  bk.turn = T;
+  bookTurnPaint(T, 0);
+  return T;
+}
+/* Everything from the progress. The angle is 0–180°; the leaf rises a little
+   off the paper as it goes and bends a hair (a skew that is gone at both
+   ends), the face turning away darkens towards its free edge, and the shadow
+   it throws is a soft band just past the leaf's edge as seen from above —
+   cos θ of a page's width out from the spine. */
+function bookTurnPaint(T, p) {
+  T.p = p;
+  const th = p * Math.PI, lift = Math.sin(th), sgn = T.dir > 0 ? 1 : -1;
+  T.leaf.style.transform = `rotateY(${(-sgn * p * 180).toFixed(2)}deg) translateZ(${(lift * 16).toFixed(1)}px) skewY(${(-sgn * lift * 1.4).toFixed(2)}deg)`;
+  T.shFront.style.opacity = (Math.min(1, p * 2) * 0.6).toFixed(3);
+  T.shBack.style.opacity = (p > 0.5 ? (1 - p) * 2 * 0.5 : 0).toFixed(3);
+  T.glint.style.opacity = (Math.sin(Math.min(1, p * 2) * Math.PI) * 0.5).toFixed(3);
+  T.glint.style.transform = `translateX(${(sgn * (60 - p * 180)).toFixed(1)}%)`;
+  const reach = Math.cos(th);                                // the leaf's edge over the page beneath it: 1 the outer edge, 0 the spine
+  const dark = (lift * 0.55).toFixed(3);
+  if (T.two) {
+    // forward it is over the right page first and then the left; back, the other way round
+    const first = T.dir > 0 ? T.castR : T.castL, second = T.dir > 0 ? T.castL : T.castR;
+    bookCast(first, Math.max(0, reach), reach > 0 ? dark : 0);
+    bookCast(second, Math.max(0, -reach), reach < 0 ? dark : 0);
+  } else bookCast(T.castR, Math.max(0, reach), reach > 0 ? dark : 0);
+}
+// the band of shadow, `at` of the way out from the spine (mental.css §91 draws it from --at)
+function bookCast(el, at, a) {
+  if (!el) return;
+  el.style.opacity = a;
+  el.style.setProperty('--at', (at * 100).toFixed(2) + '%');
+}
+// run a turn to `to` (1: over, 0: back where it was) and land it
+function bookTurnRun(T, to, ms, ease) {
+  cancelAnimationFrame(T.raf);
+  const p0 = T.p, t0 = performance.now(), dur = Math.max(80, ms * Math.abs(to - p0));
+  const step = (now) => {
+    if (T.done) return;
+    const k = Math.min(1, (now - t0) / dur);
+    bookTurnPaint(T, p0 + (to - p0) * ease(k));
+    if (typeof padDirty === 'function') padDirty();
+    if (k < 1 && !document.hidden) T.raf = requestAnimationFrame(step);
+    else bookTurnLand(T, to);
+  };
+  T.raf = requestAnimationFrame(step);
+}
+function bookTurnLand(T, to) {
+  if (T.done) return;
+  T.done = true;
+  cancelAnimationFrame(T.raf);
+  if (!bk || bk.turn !== T) return;
+  bk.turn = null;
+  bk.turning = false;
+  if (to === 0) {                                            // let go short of the spine: the page falls back
+    bk.at = T.backTo;
+    bookShowAt();
+    keepBookPlace();
+  }
+  bookPaintSpread();
+}
+// a turn still going lands at once; one being dragged falls back
+function bookTurnSettle() {
+  const T = bk && bk.turn;
+  if (T) bookTurnLand(T, T.dragging ? 0 : 1);
+}
+
+/* ---- dragging a page over (Settings ▸ Books ▸ Drag a page's corner) ----
+   With the hand, a press on the outer part of a page that moves towards the
+   spine takes the page with it, the leaf's edge staying under the pointer.
+   Let go past a quarter of the way, or with a flick, and it goes over; short
+   of that it falls back. Only in the book view at 100% or less — zoomed in, a
+   drag moves the pages as it always did. */
+function bookDragTurnStart(G, e) {
+  if (state.settings.bookDrag === false || bk.view !== 'book' || bk.cam.z > 1.01 || !G.pg || !G.pg.isConnected) return false;
+  const r = G.pg.getBoundingClientRect(), x = (G.sx - r.left) / r.width;
+  const side = G.pg.parentElement.classList;
+  const dx = e.clientX - G.sx, dy = e.clientY - G.sy;
+  if (Math.abs(dx) < Math.abs(dy) * 1.2) return false;
+  let dir = 0;
+  if ((side.contains('right') || side.contains('one')) && x > 0.62 && dx < 0) dir = 1;
+  else if ((side.contains('left') || side.contains('one')) && x < 0.38 && dx > 0) dir = -1;
+  if (!dir) return false;
+  const B = bk.n.book, pages = bookSpreadOf(bk.at);
+  let to;
+  if (pages.length === 1) to = bk.at + dir;
+  else if (dir > 0) to = (pages[1] != null ? pages[1] : pages[0]) + 1;
+  else to = (pages[0] != null ? pages[0] : 0) - 1;
+  if (to < 0 || to >= B.pages) return false;
+  const T = bookTurnBuild(dir, pages, bookSpreadOf(to));
+  /* the spine on screen and a page's width there. A single page turns about
+     its own edge — forward about its left, back about its right. */
+  Object.assign(T, { dragging: true, spine: dir > 0 ? r.left : r.right, pw: r.width, lastX: e.clientX, lastT: e.timeStamp || performance.now(), v: 0 });
+  bk.at = to;
+  bookShowAt();
+  G.turn = T;
+  bookDragTurnMove(G, e);
+  return true;
+}
+function bookDragTurnMove(G, e) {
+  const T = G.turn;
+  // cos θ is how far out from the spine the leaf's edge is: keep it under the pointer
+  const c = clamp((e.clientX - T.spine) * (T.dir > 0 ? 1 : -1) / T.pw, -1, 1);
+  const now = e.timeStamp || performance.now(), dt = Math.max(1, now - T.lastT);
+  T.v = T.v * 0.6 + ((T.lastX - e.clientX) * (T.dir > 0 ? 1 : -1) / dt) * 0.4;     // px a ms, towards the spine
+  T.lastX = e.clientX;
+  T.lastT = now;
+  bookTurnPaint(T, Math.acos(c) / Math.PI);
+  if (typeof padDirty === 'function') padDirty();
+}
+function bookDragTurnEnd(G) {
+  const T = G.turn;
+  G.turn = null;
+  T.dragging = false;
+  const over = T.p > 0.25 || T.v > 0.6;
+  bookTurnRun(T, over ? 1 : 0, bookTurnMs(), bookEaseOut);
+  if (over) keepBookPlace();
 }
 /* ---- ink on a page ---- */
 function bookStep(page) {
@@ -676,6 +883,18 @@ function bookAddPage() {
   saveSoon();
   buildBookBar();
   bookGoTo(B.pages);
+}
+// a notebook's paper, from its bar: ruled, dots, grid, plain, and round again
+function bookNextPaper() {
+  const B = bk.n.book;
+  if (B.kind !== 'blank') return;
+  if (!bk.undoTaken) { pushUndo(); bk.undoTaken = true; }
+  const paper = BOOK_PAPERS[(BOOK_PAPERS.indexOf(B.paper) + 1) % BOOK_PAPERS.length];
+  bk.n.book = Object.assign({}, B, { paper });
+  $('bookDlg').dataset.paper = paper;
+  saveSoon();
+  buildBookBar();
+  if (typeof padDirty === 'function') padDirty();
 }
 // a pointer's place on a page, in page units, and how many screen px one unit is
 function bookPoint(e, pg) {
@@ -754,7 +973,8 @@ function bookEraseEnd(E) { if (E.hit) { commitBook(); buildBookBar(); } }
 
 /* ---- the pointer here ---- */
 function onBookDown(e) {
-  if (!bk || bk.turning || e.defaultPrevented) return;        // taken by the camera (Space, the middle button, a pinch)
+  if (!bk || e.defaultPrevented) return;        // taken by the camera (Space, the middle button, a pinch)
+  if (bk.turning) { if (bk.turn && bk.turn.dragging) return; bookTurnSettle(); }   // a page still turning lands first
   const pg = e.target.closest && e.target.closest('#bookDlg .bk-page');
   if (e.pointerType === 'pen') bk.penSeen = true;
   else if (e.pointerType === 'touch' && bk.penSeen) return;          // a palm, once a pen has been used
@@ -784,8 +1004,8 @@ function onBookDown(e) {
   bookAddPoint(e);
 }
 function bookAddPoint(e) {
-  const L = bk.live, w = bookPoint(e, L.pg);
-  bookStrokeAdd(L, w.x, w.y, e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null, e.timeStamp || performance.now());
+  const L = bk.live, w = inkSteady(L.raw, bookPoint(e, L.pg));
+  bookStrokeAdd(L, w.x, w.y, inkPressure(e), e.timeStamp || performance.now());
 }
 function onBookMove(e) {
   if (!bk) return;
@@ -802,7 +1022,8 @@ function onBookUp(e) {
     const G = bk.hand;
     bk.hand = null;
     $('bkStage').classList.remove('bk-panning');
-    if (!G.moved) bookClickTurn(G);
+    if (G.turn) bookDragTurnEnd(G);
+    else if (!G.moved) bookClickTurn(G);
   }
   endBookStroke();
 }
@@ -847,7 +1068,7 @@ function onBookKey(e) {
   if (e.key === 'Home') { e.preventDefault(); bookGoTo(0); return; }
   if (e.key === 'End') { e.preventDefault(); bookGoTo(bk.n.book.pages - 1); return; }
   const tools = { h: 'hand', d: 'pen', m: 'marker', b: 'brush', e: 'eraser' };
-  if (tools[key]) { bk.tool = tools[key]; state.settings.bookPen = { tool: bk.tool, color: bk.color, size: bk.size }; buildBookBar(); return; }
+  if (tools[key]) { bk.tool = tools[key]; state.settings.bookPen = { tool: bk.tool, color: bk.color, size: bk.size }; saveSoon(); buildBookBar(); return; }
   if (e.key === '[' || e.key === ']') { bk.size = clamp(bk.size + (e.key === ']' ? 1 : -1), 0, 2); buildBookBar(); }
 }
 

@@ -20,6 +20,14 @@
      hovers, and the computer leaves its ring out of the pictures it sends, so
      there is one circle under the pen, not three.
 
+     It wears the app (3.1): the computer sends its theme's colours with every
+     view, so the bar is the app's own surface, text and hairlines, light or
+     dark; a tool that is on is lit the way the app lights one (the text colour
+     behind it); and the bar says what is open — the board, the drawing, or the
+     book and the page it is on. The ink colours are the ones the open thing
+     really draws in, so black is black in a drawing note or a book whatever
+     the theme. On a narrow screen the colours fold into a tray under the bar.
+
      The three placeholders (the title, the nonce, the strings) are written
      in capitals between double underscores, and appear nowhere else in this
      file — tablet.js fills them by plain text replacement. -->
@@ -27,65 +35,120 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#121318">
+<meta name="theme-color" content="#141416">
 <title>__TITLE__</title>
 <style>
-  :root { color-scheme: dark; --bg: #121318; --panel: #1c1e26; --line: #343846; --text: #e8e9ee; --dim: #8b8fa0; --accent: #7aa2ff; }
+  /* the app's own surfaces arrive with the first view; these are its dark theme until then */
+  :root { color-scheme: dark; --bg: #0b0b0c; --panel: #141416; --line: #2a2a2e; --text: #ececec; --dim: #9a9aa0; }
+  :root[data-mode="light"] { color-scheme: light; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
     font: 13px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* the dynamic viewport: the whole screen whether or not the browser's own bars are showing */
   body { display: flex; flex-direction: column; height: 100dvh; }
-  #bar { flex: none; display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
-    padding: 4px max(6px, env(safe-area-inset-right)) 4px max(6px, env(safe-area-inset-left));
-    padding-top: max(4px, env(safe-area-inset-top));
-    background: var(--panel); border-bottom: 1px solid var(--line); touch-action: manipulation; }
-  #bar button { appearance: none; border: 1px solid transparent; background: none; color: var(--text); border-radius: 9px;
-    min-width: 36px; height: 36px; padding: 0 5px; display: grid; place-items: center; font: inherit; }
-  #bar button.on { background: rgba(122, 162, 255, .18); border-color: var(--accent); }
+  #bar { flex: none; position: relative; z-index: 2; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; row-gap: 2px;
+    padding: 5px max(8px, env(safe-area-inset-right)) 5px max(8px, env(safe-area-inset-left));
+    padding-top: max(5px, env(safe-area-inset-top));
+    background: var(--panel); border-bottom: 1px solid var(--line); touch-action: manipulation;
+    transition: background-color .3s, border-color .3s; }
+  .grp { display: flex; align-items: center; gap: 2px; }
+  #bar button { appearance: none; border: 0; background: none; color: var(--dim); border-radius: 6px;
+    min-width: 38px; height: 38px; padding: 0 6px; display: grid; place-items: center; font: inherit;
+    transition: background-color .18s, color .18s, transform .12s; }
+  #bar button:active { transform: scale(.92); }
+  /* lit as the app lights one: the text colour behind it */
+  #bar button.on { background: var(--text); color: var(--bg); }
   #bar button:disabled { opacity: .3; }
-  #bar button.hidden { display: none; }
+  #bar button.hidden, .hidden { display: none !important; }
   #bar svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .sep { width: 1px; height: 24px; background: var(--line); margin: 0 2px; }
-  .sw { width: 22px; height: 22px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
-  .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .sep { width: 1px; height: 26px; background: var(--line); margin: 0 3px; }
+  /* a colour: a ring of the bar's own text colour around it, so black shows on a dark bar and white on a light one */
+  .sw { width: 24px; height: 24px; border-radius: 50%; background: var(--c);
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 40%, transparent); transition: box-shadow .18s, transform .18s; }
+  #bar button.cb { min-width: 34px; padding: 0; }
+  #bar button.cb.on { background: none; }
+  #bar button.cb.on .sw { transform: scale(1.06); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 40%, transparent), 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
   .sz i { display: block; border-radius: 50%; background: currentColor; }
-  #status { margin-inline-start: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--dim);
-    white-space: nowrap; padding: 0 4px; min-width: 0; flex: 1 1 60px; overflow: hidden; }
+  /* what is open on the computer, in the app's condensed capitals */
+  #where { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 90px; padding: 0 6px; color: var(--dim); overflow: hidden; }
+  #where svg { flex: none; width: 18px; height: 18px; }
+  #whereT { font-stretch: condensed; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; font-size: 12.5px;
+    color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pgAt { min-width: 54px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); font-size: 13px; }
+  #status { display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--dim);
+    white-space: nowrap; padding: 0 4px; min-width: 0; flex: 0 1 auto; overflow: hidden; font-size: 12px; }
+  .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
   #stText { overflow: hidden; text-overflow: ellipsis; }
-  #status.ok { color: #6fd08c; } #status.bad { color: #f0a35a; } #status.off { color: #ef6b6b; }
-  #rtt { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #status.ok .dot { background: #4fbf74; box-shadow: 0 0 0 3px color-mix(in srgb, #4fbf74 25%, transparent); }
+  #status.bad .dot { background: #e6a04a; animation: blink 1s ease-in-out infinite; }
+  #status.off .dot { background: #e5605c; }
+  #status.ok #stText { display: none; }
+  @keyframes blink { 50% { opacity: .35; } }
+  #rtt { font-variant-numeric: tabular-nums; }
+  /* the colours: in the bar on a wide screen, in a tray under it on a narrow one */
+  #swatches { display: flex; gap: 0; flex-wrap: wrap; }
+  #colorBtn { display: none !important; }
+  @media (max-width: 760px) {
+    #colorBtn { display: grid !important; }
+    /* over the drawing, not in the bar, so opening it never changes the surface's shape */
+    #swatches { display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 3; justify-content: center;
+      padding: 6px 8px 8px; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 10px 24px rgba(0, 0, 0, .25); }
+    body.tray #swatches { display: flex; animation: tray .22s cubic-bezier(.16, 1, .3, 1); }
+    #swatchSep { display: none; }
+    #status #rtt { display: none; }
+  }
+  .brk { flex-basis: 100%; height: 0; }
+  /* one row on a wide screen: the tools first, what is open at the end */
+  @media (min-width: 761px) {
+    .brk { display: none; }
+    #where { order: 10; justify-content: flex-end; }
+    #pages { order: 11; }
+    #status { order: 12; }
+  }
+  @keyframes tray { from { opacity: 0; transform: translateY(-6px); } }
   /* the drawing surface: everything under the bar, edge to edge, clear of the gesture bar and the cut-outs */
-  #frame { flex: 1; position: relative; min-height: 0; touch-action: none; background: #181a21;
+  #frame { flex: 1; position: relative; min-height: 0; touch-action: none; background: var(--bg);
     margin: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   #frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   #msg { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; color: var(--text);
-    font-size: 15px; pointer-events: none; background: rgba(18, 19, 24, .72); }
-  #msg.show { display: grid; }
+    font-size: 15px; line-height: 1.5; pointer-events: none; background: color-mix(in srgb, var(--bg) 82%, transparent); }
+  #msg.show { display: grid; animation: tray .25s ease-out; }
 </style>
 </head>
 <body>
 <div id="bar">
-  <button data-tool="select"><svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15.5 20l-2.6 1.2-3-6.6L6 18z"/></svg></button>
-  <button data-tool="pen" class="on"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></button>
-  <button data-tool="marker"><svg viewBox="0 0 24 24"><path d="M5 19h6M9 15l-2-2 9-9 4 4-9 9z" stroke-width="2.6"/></svg></button>
-  <button data-tool="brush"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-7 7c-1 1-3 1-4 0l-2-2c-1-1-1-3 0-4zM7 15c-2 0-3 2-3 5 3 0 5-1 5-3"/></svg></button>
-  <button data-tool="eraser"><svg viewBox="0 0 24 24"><path d="M8 20h12M5 15l9-9 5 5-8 8H8z"/></svg></button>
-  <button id="del" class="hidden"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button>
-  <span class="sep"></span>
-  <button class="sz" data-size="0"><i style="width:4px;height:4px"></i></button>
-  <button class="sz on" data-size="1"><i style="width:8px;height:8px"></i></button>
-  <button class="sz" data-size="2"><i style="width:13px;height:13px"></i></button>
-  <span class="sep"></span>
-  <span id="swatches" style="display:flex;gap:0;flex-wrap:wrap"></span>
-  <span class="sep"></span>
-  <button id="pgPrev" class="hidden"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
-  <button id="pgNext" class="hidden"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
-  <button id="undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/></svg></button>
-  <button id="fingers"><svg viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v4c0 4-2 7-6 7s-6-3-7-6l-1-3a1.6 1.6 0 013-1l1 2"/></svg></button>
-  <button id="full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  <div id="where"><svg viewBox="0 0 24 24" id="whereIc"></svg><span id="whereT"></span></div>
+  <div class="grp hidden" id="pages">
+    <button id="pgPrev"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <span id="pgAt"></span>
+    <button id="pgNext"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  </div>
   <span id="status"><span class="dot"></span><span id="stText"></span><span id="rtt"></span></span>
+  <span class="brk" aria-hidden="true"></span>
+  <div class="grp">
+    <button data-tool="select"><svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.5 1.2L15.5 20l-2.6 1.2-3-6.6L6 18z"/></svg></button>
+    <button data-tool="pen" class="on"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></button>
+    <button data-tool="marker"><svg viewBox="0 0 24 24"><path d="M5 19h6M9 15l-2-2 9-9 4 4-9 9z" stroke-width="2.6"/></svg></button>
+    <button data-tool="brush"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-7 7c-1 1-3 1-4 0l-2-2c-1-1-1-3 0-4zM7 15c-2 0-3 2-3 5 3 0 5-1 5-3"/></svg></button>
+    <button data-tool="eraser"><svg viewBox="0 0 24 24"><path d="M8 20h12M5 15l9-9 5 5-8 8H8z"/></svg></button>
+    <button id="del" class="hidden"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button>
+  </div>
+  <span class="sep"></span>
+  <div class="grp">
+    <button class="sz" data-size="0"><i style="width:4px;height:4px"></i></button>
+    <button class="sz on" data-size="1"><i style="width:8px;height:8px"></i></button>
+    <button class="sz" data-size="2"><i style="width:13px;height:13px"></i></button>
+  </div>
+  <span class="sep" id="swatchSep"></span>
+  <button id="colorBtn" class="cb"><span class="sw" id="curSw"></span></button>
+  <span id="swatches"></span>
+  <span class="sep"></span>
+  <div class="grp">
+    <button id="undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/></svg></button>
+    <button id="fingers"><svg viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v4c0 4-2 7-6 7s-6-3-7-6l-1-3a1.6 1.6 0 013-1l1 2"/></svg></button>
+    <button id="full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
 </div>
 <div id="frame"><canvas id="cv"></canvas><div id="msg"></div></div>
 <script nonce="__NONCE__">
@@ -94,12 +157,12 @@ const S = __STRINGS__;
 const $ = (id) => document.getElementById(id);
 const tip = { select: S.select, pen: S.pen, marker: S.marker, brush: S.brush, eraser: S.eraser };
 document.querySelectorAll('[data-tool]').forEach((b) => { b.title = b.ariaLabel = tip[b.dataset.tool] || ''; });
-for (const [id, k] of [['undo', 'undo'], ['fingers', 'fingers'], ['full', 'full'], ['del', 'del'], ['pgPrev', 'prev'], ['pgNext', 'next']]) $(id).title = $(id).ariaLabel = S[k] || '';
+for (const [id, k] of [['undo', 'undo'], ['fingers', 'fingers'], ['full', 'full'], ['del', 'del'], ['pgPrev', 'prev'], ['pgNext', 'next'], ['colorBtn', 'color']]) $(id).title = $(id).ariaLabel = S[k] || '';
 
 /* ---- what the pen is ---- */
 const pen = { tool: 'pen', size: 1, color: 'text' };
 let fingerDraws = false;
-let readOnly = false, inBook = false, selCount = 0, regionW = 400, palette = [{ k: 'text', c: '#e8e9ee' }];
+let readOnly = false, inBook = false, selCount = 0, regionW = 400, palette = [{ k: 'text', c: '#1c1c1c' }];
 const colorOf = (k) => (palette.find((p) => p.k === k) || palette[0]).c;
 /* The bar acts on the press, as the computer's bars do (helpers.js onPress):
    an S Pen tap that slides a millimetre across a button still counts. Full
@@ -117,8 +180,9 @@ function paintBar() {
   $('del').classList.toggle('hidden', pen.tool !== 'select');
   $('del').disabled = !selCount;
   // a book open on the computer: its pages turn from here too
-  $('pgPrev').classList.toggle('hidden', !inBook);
-  $('pgNext').classList.toggle('hidden', !inBook);
+  $('pages').classList.toggle('hidden', !inBook);
+  $('curSw').style.setProperty('--c', colorOf(pen.color));
+  $('colorBtn').classList.toggle('on', document.body.classList.contains('tray'));
 }
 function paintSwatches() {
   const box = $('swatches');
@@ -126,11 +190,13 @@ function paintSwatches() {
   palette.forEach((p) => {
     const b = document.createElement('button');
     b.dataset.color = p.k;
+    b.className = 'cb';
     b.innerHTML = '<span class="sw"></span>';
     b.firstChild.style.setProperty('--c', p.c);
     press(b, () => {
       if (pen.tool === 'select' && selCount) { send({ t: 'sel', act: 'color', color: p.k }); return; }
       pen.color = p.k;
+      document.body.classList.remove('tray');
       if (pen.tool === 'eraser' || pen.tool === 'select') setTool('pen');
       paintBar();
     });
@@ -152,6 +218,7 @@ press($('del'), () => send({ t: 'sel', act: 'delete' }));
 press($('pgPrev'), () => send({ t: 'page', d: -1 }));
 press($('pgNext'), () => send({ t: 'page', d: 1 }));
 press($('fingers'), () => { fingerDraws = !fingerDraws; paintBar(); });
+press($('colorBtn'), () => { document.body.classList.toggle('tray'); paintBar(); });
 $('full').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else goFull(); });
 function goFull() {
   const d = document.documentElement;
@@ -159,6 +226,33 @@ function goFull() {
 }
 
 /* ---- the surface ---- */
+/* ---- wearing the app ----
+   Its theme's surfaces, as the computer sends them, and what is open there. */
+const WHERE_IC = {
+  board: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  sketch: '<path d="M4 20l4-1 11-11-3-3L5 16zM14 6l3 3"/>',
+  book: '<path d="M12 6c-2-1.5-5-2-8-1.5V19c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V4.5c-3-.5-6 0-8 1.5zM12 6v14.5"/>',
+  studio: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/>'
+};
+let themeKey = '', whereKey = '';
+function wear(theme, where) {
+  const tk = JSON.stringify(theme || {});
+  if (theme && tk !== themeKey) {
+    themeKey = tk;
+    const root = document.documentElement;
+    for (const k of ['bg', 'panel', 'line', 'text', 'dim']) if (theme[k]) root.style.setProperty('--' + k, theme[k]);
+    root.dataset.mode = theme.mode === 'light' ? 'light' : 'dark';
+    if (theme.panel) document.querySelector('meta[name="theme-color"]').content = theme.panel;
+  }
+  const wk = JSON.stringify(where || {});
+  if (where && wk !== whereKey) {
+    whereKey = wk;
+    $('whereIc').innerHTML = WHERE_IC[where.k] || WHERE_IC.board;
+    $('whereT').textContent = where.title || '';
+    $('pgAt').textContent = where.k === 'book' ? where.at + ' / ' + where.n : '';
+  }
+}
+
 const frame = $('frame'), cv = $('cv'), ctx = cv.getContext('2d');
 let box = null, W = 1, H = 1;
 function layout() {
@@ -294,6 +388,7 @@ function connect() {
       inBook = !!m.book;
       if (m.rw) regionW = m.rw;
       if (m.pal && m.pal.length && JSON.stringify(m.pal) !== JSON.stringify(palette)) { palette = m.pal; paintSwatches(); }
+      wear(m.theme, m.where);
       paintBar();
       showMsg(readOnly ? S.readonly : '');
     }
@@ -349,6 +444,7 @@ function finishStroke() {
   paint();
 }
 frame.addEventListener('pointerdown', (e) => {
+  if (document.body.classList.contains('tray')) { document.body.classList.remove('tray'); paintBar(); }
   if (e.pointerType === 'pen') lastPen = performance.now();
   if (!drawsWith(e)) { touchDown(e); return; }
   if (stroke || readOnly || !open) return;

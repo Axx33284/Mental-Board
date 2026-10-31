@@ -101,7 +101,8 @@ const S_EN = {
   'main.padSelect': 'Select — touch a stroke or drag round several, then drag to move them',
   'main.padDelete': 'Delete the selected strokes',
   'main.padPrev': 'Previous page of the book',
-  'main.padNext': 'Next page of the book'
+  'main.padNext': 'Next page of the book',
+  'main.padColor': 'Colour'
 };
 let STRINGS = {};
 function t(key, vars) {
@@ -466,7 +467,7 @@ const crypto = require('crypto');
 /* `ytbg` / `ytbgs` are the live wallpaper (3.0, js/wallpaper.js): the same
    player, looped, with no controls, muted or with its sound. */
 const YT_BG = (id, mute) => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=${mute}&loop=1&playlist=${id}` +
-  '&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&rel=0&playsinline=1';
+  '&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&rel=0&playsinline=1&showinfo=0&cc_load_policy=0&autohide=1';
 const PLAYER_FRAME = {
   yt: (id) => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&modestbranding=1`,
   vimeo: (id) => `https://player.vimeo.com/video/${id}?autoplay=1`,
@@ -487,12 +488,23 @@ const PLAYER_CSP =
 let playerServer = null, playerPort = 0;
 const playerToken = crypto.randomBytes(16).toString('hex');
 
+/* A wallpaper shows the picture and nothing of the player. `controls=0` hides
+   the bar, but YouTube still draws its title and channel along the top, its
+   logo and "More videos" along the bottom, and a play button while it loads —
+   and none of that can be switched off from the URL any more. So the frame is
+   made a fifth bigger than the page on every side it can be cropped from
+   (still 16:9, so the video fills it edge to edge), which pushes all of that
+   out of sight, and it fades in only after the player has had time to start,
+   so the thumbnail and its play button are never seen. Nothing can be clicked
+   either way: the wallpaper never takes the pointer. */
+const BG_STYLE = 'iframe{position:absolute;left:50%;top:50%;width:140%;height:140%;transform:translate(-50%,-50%);' +
+  'pointer-events:none;opacity:0;animation:in .9s ease-out 2.4s forwards}@keyframes in{to{opacity:1}}';
 function playerPage(kind, id) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${PLAYER_CSP}">
 <title>player</title>
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
-iframe{display:block;width:100%;height:100%;border:0}</style>
+iframe{display:block;width:100%;height:100%;border:0}${kind.startsWith('ytbg') ? BG_STYLE : ''}</style>
 </head><body><iframe src="${PLAYER_FRAME[kind](id)}"
  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
  referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></body></html>`;
@@ -618,7 +630,7 @@ function padStrings() {
     away: t('main.padAway'), ended: t('main.padEnded'), readonly: t('main.padReadonly'),
     pen: t('main.padPen'), marker: t('main.padMarker'), brush: t('main.padBrush'), eraser: t('main.padEraser'),
     undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull'),
-    select: t('main.padSelect'), del: t('main.padDelete'), prev: t('main.padPrev'), next: t('main.padNext')
+    select: t('main.padSelect'), del: t('main.padDelete'), prev: t('main.padPrev'), next: t('main.padNext'), color: t('main.padColor')
   };
 }
 const padSend = (ch, m) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, m); };

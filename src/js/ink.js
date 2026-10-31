@@ -59,6 +59,16 @@ function healPen(p) {
     size: size >= 0 && size <= 2 ? size : 1
   };
 }
+/* 3.1, Settings ▸ Drawing: a pen's pressure is used unless that is switched
+   off, and in drawing notes and books a line can be steadied as it is drawn —
+   each new point pulled only part of the way from the last, so the tremor of
+   a hand averages out. The board's own pen stays as quick as it was. */
+const INK_SMOOTH = { off: 1, some: 0.5, more: 0.28 };
+const inkPressure = (e) => (state.settings.inkPressure !== false && e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null);
+function inkSteady(raw, w) {
+  const f = INK_SMOOTH[state.settings.skSmooth] || 1, last = raw[raw.length - 1];
+  return f >= 1 || !last ? w : Object.assign({}, w, { x: last.x + (w.x - last.x) * f, y: last.y + (w.y - last.y) * f });
+}
 const inkColorOk = (c) => c === 'text' || COLORS.includes(c) || isHex(c);
 function inkColorCss(c) {
   if (isHex(c)) return c;
@@ -364,8 +374,7 @@ function addInkPoint(e) {
   if (last && Math.hypot(w.x - last.x, w.y - last.y) * state.view.z < 0.6) return;
   /* A pen tablet reports real pressure. A mouse reports 0.5 while a button is
      down and nothing else — that is not pressure, so it is not used as such. */
-  const pr = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null;
-  k.raw.push({ x: w.x, y: w.y, p: pr, t: e.timeStamp || performance.now() });
+  k.raw.push({ x: w.x, y: w.y, p: inkPressure(e), t: e.timeStamp || performance.now() });
   if (!k.frame) k.frame = requestAnimationFrame(paintLiveInk);
 }
 function onInkMove(e) {

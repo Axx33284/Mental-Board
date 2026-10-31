@@ -254,7 +254,7 @@ function onKeyDown(e) {
     if (!$('linkDlg').classList.contains('hidden')) { closeLinkDialog(); return; }
     if (!$('mathDlg').classList.contains('hidden')) { closeMathDialog(); return; }
     if (!$('tplDlg').classList.contains('hidden')) { closeTemplateDialog(); return; }
-    if (!$('settings').classList.contains('hidden')) { closeSettings(); return; }
+    if (settingsOpen()) { closeSettings(); return; }
     if (!$('ctxMenu').classList.contains('hidden')) { closeCtxMenu(); return; }
     if (!$('boardMenu').classList.contains('hidden')) { closeBoardMenu(); return; }
     if (!$('flowsMenu').classList.contains('hidden')) { closeFlowsMenu(); return; }
@@ -420,7 +420,7 @@ function toggleFocusMode(on) {
   const s = state.settings;
   s.focusMode = (on == null) ? !s.focusMode : !!on;
   applySettings();
-  if (!$('settings').classList.contains('hidden')) syncSettingsUI();
+  if (settingsOpen()) syncSettingsUI();
   saveSoon();
   if (s.focusMode) toast(t('msg.focusOn'), 5200);
   else { toast(t('msg.focusOff')); flashRail(2600); }
@@ -669,7 +669,7 @@ function init() {
     if (state.settings.themeMode !== 'system') return;
     applyThemeFaded(900);
     // only if it is on screen — syncSettingsUI() walks every board to count words
-    if (!$('settings').classList.contains('hidden')) syncSettingsUI();
+    if (settingsOpen()) syncSettingsUI();
   };
   if (THEME) THEME.onSystemChange(onSystemTheme);
   mql.addEventListener('change', (e) => onSystemTheme(e.matches));
@@ -738,7 +738,7 @@ function init() {
     if (sketchOpen()) { if ($('studio').classList.contains('hidden')) onSketchPaste(e); return; }
     if (bookOpen()) return;                                // a book takes no paste
     if (editing) return;
-    if (!$('settings').classList.contains('hidden')) return;
+    if (settingsOpen()) return;
     pasteSeen = true; clearTimeout(pasteTimer);
     if (pasteGhost) { e.preventDefault(); return; }       // a held Ctrl+V repeats
     // a picture copied out of the app is on the system clipboard too; the app's own copy is newer, so it is the paste
@@ -1584,6 +1584,9 @@ const STATIC_ICONS = [
   ['label:has([data-t="set.motion"]) .row-ic', 'waves'],
   ['#setSounds + .row-ic', 'volume_up'],
   ['.set-tab[data-tab="extra"] .tab-ic', 'auto_awesome'],
+  ['.set-tab[data-tab="wallpaper"] .tab-ic', 'landscape'],
+  ['.set-tab[data-tab="drawing"] .tab-ic', 'draw'],
+  ['.set-tab[data-tab="books"] .tab-ic', 'menu_book'],
   ['h3:has(> [data-t="set.extra"]) .sec-ic', 'auto_awesome'],
   ['h3:has([data-t="set.extraBoard"]) .sec-ic', 'push_pin'],
   ['label:has([data-t="set.keySounds"]) .row-ic', 'keyboard'],

@@ -2269,14 +2269,14 @@ module.exports = [
         const esc = () => $('viewport').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         $('viewport').focus();
         esc();
-        const opened = !$('settings').classList.contains('hidden');
+        const opened = settingsOpen();
         esc();
-        const closed = $('settings').classList.contains('hidden');
+        const closed = !settingsOpen();          // closed from the moment it starts to sink out (3.1)
         // a selection is let go first, as before
         const n = addNote({ x: 9400, y: 9400 }, { edit: false });
         setSelection([n.id], false);
         esc();
-        const keptShut = $('settings').classList.contains('hidden') && !selection.size;
+        const keptShut = !settingsOpen() && !selection.size;
         return { opened, closed, keptShut };
       });
       ok(r.opened && r.closed && r.keptShut, JSON.stringify(r));
@@ -2534,7 +2534,7 @@ module.exports = [
       });
       ok(r.after !== r.before && r.back === r.before, 'the arrow steps through the options and back: ' + JSON.stringify(r));
       ok(r.shown.length > 0 && r.checks, 'the value is shown, and every check box is a two-option row');
-      ok(/\(.+\)/.test(r.desc) && r.desc.length > 30, 'the description, ending in its default: ' + r.desc);
+      ok(/Default/.test(r.desc) && /Now/.test(r.desc) && r.desc.length > 30, 'the description card: what it is now and its default: ' + r.desc);
       ok(r.face === 'clean', 'the app is set in the clean face (Frutiger, Univers Condensed): ' + r.face);
     });
   }

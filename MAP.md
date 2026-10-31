@@ -647,7 +647,7 @@ no bundler and no build step — the only thing joining them is the order
 | `items.js` | ~950 | `makeNote` (no head since 2.1) `makeFrame`, the far-zoom stub and its text ghost (`stubNote`, `ghostBars` — the geometry, shared with the canvas — `noteGhost` `ghostBlocks`, §4c), **`lockFrame`** (§4v), the status pill, `lazyImages` (which also hands every drawn body to `watchVideos`), the one drag/resize gesture engine, **the alignment guides** (§4o), the selection set, and the camera (`zoomAt` `flyTo` `stopFlight` `fitTo`, `followCamera` + `gestureDelta` — §4z1, and `onWheel`, which lets a long note scroll — §4v). |
 | `links.js` | ~400 | The ropes: `ropeColor`/`applyLinkStyle`, `anchor`, `ropePath`, `drawLinks`, and since 2.1 **following** them — `followRope` `goToNote` `flashNote`, the end highlight (`markRopeEnds`), the ropes of the selection drawn over the notes (`drawHotRopes`), `linksOf` `unlinkNote`. See §4d, §4v. Below FAR_Z `drawLinks()` empties the SVG layer and hands the ropes to far.js. |
 | `far.js` | ~500 | **The far-zoom canvas** (2.11): one `<canvas>` in `#world` that draws every note on screen without an element — and below FAR_Z every rope — from the model: `drawFar` (one a frame, `requestFar`), `drawFarNote` / `drawFarTiny` (a note a few pixels across is batched by colour), `drawFarRopes` with `farRopeOf` / `farRopePaths` (Path2Ds kept, joined per colour), the colours read off a probe note (`farPal` `farNoteColors` `farPill`, dropped by `forgetFarPalette`), and the hit test the pointer routing asks (`farNoteAt` `farRopeAt`). See §4c. |
-| `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture. See §4v. |
+| `ink.js` | ~640 | **Drawing on the board** (2.1): the strokes (`adoptInk` `inkPath` `drawInk` `syncInk`), the pen (`toggleInk` `setPen` `buildInkBar`), a stroke (`beginInk` → `onInkMove` → `endInkGesture`, `brushWidths`), the eraser (`eraseAt` `strokeNear`), **selecting** (`inkSel` `beginInkPick` `moveInkPick` `endInkPick` `deleteInkSelection` `pickInkColor` `recolorInkSelection`), and `paintInkOnCanvas` for the board picture, and since 3.1 `inkPressure(e)` and `inkSteady()` (`INK_SMOOTH`) that the drawing note and the book draw through. See §4v, §4z10. |
 | `editor.js` | ~1500 | The note editor — markdown shortcuts (`$…$` a formula, `a.`/`I.` a lettered or Roman list), **formulas** (`mathHtml` `paintMath` `renderTex` `insertMath`, §4y), `ensureTail` (a table is never last), `insertStyledList`, `normalizeBody` (which since 2.1 also strips the styles `insertHTML` freezes in and calls `repairColumns`), code colouring, tables, columns (`repairColumns` `columnsBroken` `columnEdgeKey`; widths since 2.4: `applyColWidths` `repairColWidths` `wireColDrag`, §4z), user templates, the paste sanitiser. |
 | `embeds.js` | ~350 | Bookmark cards, click-to-play video, `/video` and `/bookmark` (one window, `embedMode`), and the paste-as menu. See §4e. |
 | `database.js` | ~1500 | **A database inside a note** (2.8): the model and its healing (`adoptDb` `okDbCell` `newDbData`), where a block's data is (`dbCtx` `dbLocate` — a linked view reads another block's), the one door for a change (`dbEdit`), painting (`paintDatabases` `paintDb` → a `db*Html` per layout: table, board, gallery, list, calendar, timeline, feed, dashboard, map, chart, form), the menus (`openDbPop` and the builders on it), cells (`dbEditCell` `dbInlineInput` `openOptPicker` `openDatePicker`), a row as a page (`openDbRow` `paintDbRow`), drag (`onDbPointerDown` → `onDbPointerUp`), the Backspace guard (`dbGuardKey`), and `dbMarkdown`/`dbPlain` for export and search. See §4z6. |
@@ -656,19 +656,19 @@ no bundler and no build step — the only thing joining them is the order
 | `media.js` | ~900 | The icon picker; `watchVideos()` (§4n); images (select, resize, align, the crop/annotate studio — zoomable, with a pen's pressure, highlighter, eraser and its own undo since 2.6, §4z3: `ST.view` `setStudioView` `studioStep`/`studioUndo` `markNear` `onStudioKey` `wireStudioSurface` — which writes its result back as a file in the board's folder, §4n); and **the files a board carries** — `takeFileIn`, `fileHtml`, `attachmentUrls`, `carryNotesTo`, `relinkAttachments`, `revealFile`. See §4n. |
 | `sketch.js` | ~470 | **The zoomable surface** both drawing editors use (`zoomPanSurface`, §4z3), and **a drawing note** (2.5; no page since 2.6): `okSketch` (healing), `sketchBounds` `fitSketchNote`, `fillSketch`/`paintSketch` (the title and the drawing on the board), `addSketch`, the full-screen editor (`openSketch` `closeSketch` `buildSketchBar` `onSketchDown` → `onSketchMove` → `endSketchStroke`, `eraseSketchAt`, `sketchUndo`, `onSketchKey`), and `paintSketchOnCanvas` for the board picture. See §4z2. |
 | `handwrite.js` | ~780 | **Handwrite it** (3.0): `handwriteSketchPic` / `handwritePictureNote`, the OCR reading (`hwRead` `hwBestReading`, main.js `ocr:read`), the picture taken apart (`hwAnalyse`: `hwBackground` `hwClusters` `hwDistance` `hwComponents` `hwThin` `hwTrace` `hwSmooth` `hwSimplify` `hwCutout`), a word in a hand (`hwGlyph` `hwWordStrokes`), the writing-out (`hwWriteOut`), and the editor's right-click menu on a picture (`openSketchPicMenu`). See §4z9. |
-| `book.js` | ~640 | **A book** (3.0): `okBook` `bookFiles` `bookBody`, making one (`addNotebook` `addBookFromPdf` `bookFromFile` `bookOpenPdf`), its face on the board (`fillBook` `paintBook` `paintBookOnCanvas`), the reader (`openBook` `closeBook` `commitBook` `buildBookBar` `bookLayout` `bookPaintSpread` `bookFillNear` `bookPageEl` `bookPdfSize` `bookRenderPage` `bookSharpen`), the camera (3.0.2: `setBookView` `bookFit` `bookHandMove` `bookClickTurn` `bookWheel` `cancelBookGesture`, on `bkSurface`), turning (`bookGo` `bookGoTo` `bookTurn`), ink (`bookStrokeBegin` → `bookStrokeAdd` → `bookStrokeEnd`, `bookEraseBegin` `bookEraseAt` `bookEraseEnd` — shared with the phone; `onBookDown` → `onBookMove` → `endBookStroke`, `bookUndo`), `onBookKey`, `wireBook`. See §4z9. |
+| `book.js` | ~640 | **A book** (3.0): `okBook` `bookFiles` `bookBody`, making one (`addNotebook` `addBookFromPdf` `bookFromFile` `bookOpenPdf`), its face on the board (`fillBook` `paintBook` `paintBookOnCanvas`), the reader (`openBook` `closeBook` `commitBook` `buildBookBar` `bookNextPaper` `bookLayout` `bookPaintSpread` `bookFillNear` `bookPageEl` `bookPdfSize` `bookRenderPage` `bookSharpen`), the camera (3.0.2: `setBookView` `bookFit` `bookHandMove` `bookClickTurn` `bookWheel` `cancelBookGesture`, on `bkSurface`), turning (`bookGo` `bookGoTo` `bookGlideTo` `bookTurn`, and since 3.1 one progress drawn by `bookTurnBuild` `bookTurnPaint` `bookTurnRun` `bookTurnLand` `bookTurnSettle`, dragged by `bookDragTurnStart` `bookDragTurnMove` `bookDragTurnEnd` — §4z10), ink (`bookStrokeBegin` → `bookStrokeAdd` → `bookStrokeEnd`, `bookEraseBegin` `bookEraseAt` `bookEraseEnd` — shared with the phone; `onBookDown` → `onBookMove` → `endBookStroke`, `bookUndo`), `onBookKey`, `wireBook`. See §4z9. |
 | `shapes.js` | ~270 | **A note's shape and where its writing sits** (2.4): `FORM_PATHS` `FORM_SAFE`, `paintForm` (from `fillNote`/`stubNote`), `formIssues` (the warnings), `setNoteForm`, `openShapeMenu` (the panel in `#ctxMenu`), and `formPath2D`/`formBox` for the board picture. See §4z. |
 | `pictures.js` | ~230 | **A picture standing on the board** — `fillPicture`, `addPicture`, the shape-keeping resize (`fitPictureBox`), the drop into a note (`trackPicTarget` / `finishPicDrop`), the studio on it, `replacePicture`, and the way back out of a note. See §4q. |
 | `menus.js` | ~660 | The right-click menu (spelling suggestions on top — `awaitSpellMenu` `answerSpell` `wordRangeAt` `fixSpelling`, §4z1; colour, status and **date** rows, §4s; linked notes, copy, lock — §4v; **Shape…**, §4z), `openRopeMenu`, and the compass that signposts off-screen workflows — laid out by `placeChips()` so no two overlap (§4z). See §7. |
 | `edit-ops.js` | ~915 | Create, delete (`askThenDelete` is the one door), **arrange**, duplicate, **the trash**, undo, the clipboard, find, and **the image export** (`loadExportPictures` → `paintBoardCanvas`, which draws the ink since 2.1). See §4f and §4g. |
 | `boards.js` | ~1500 | Several boards, one rail: switching, the flyout, locking, drag-to-board, undo (including the `ink` step), the clipboard with its ropes (`clipLinks` `retieLinks`), **the paste ghost** (`beginPasteGhost` … `commitPasteGhost`), and the JSON export/import. |
-| `settings.js` | ~1640 | The settings panel and every dialog behind it (the formula window: `openMathDialog` `applyMath` `MATH_SNIPS`, §4y; the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description footer (`wireSettingsDesc`), `resetSettings()`, the stats cache, and the padding sliders with their example note (`wirePadStudio` `paintPadStudio`, §4z). See §5b. |
+| `settings.js` | ~1640 | The settings panel and every dialog behind it (the formula window: `openMathDialog` `applyMath` `MATH_SNIPS`, §4y; the link dialog: `openLinkDialog` `applyLink` `linkNoteMatches` `applyNoteLink` `followNoteLink`, §4v), the rail (with its group headings), the board menu, the description card (`wireSettingsDesc` `showSettingsDesc` `settingsDescHtml` `settingsPaneHtml` `settingsNameOf` `settingsNowText` `settingsAboutOf`, 3.1), opening and closing (`settingsOpen` — ask it, not `.hidden`), the sliding tab bar (`placeSetInk`), `resetSettings()`, the stats cache, and the padding sliders with their example note (`wirePadStudio` `paintPadStudio`, §4z). See §5b. |
 | `page.js` | ~345 | **The page menu** at the top right, **the workflows list** beside it (`paintFlowsBtn` `openFlowsMenu`, §4z), and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
-| `wallpaper.js` | ~310 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`. See §4z9. |
+| `wallpaper.js` | ~310 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`; since 3.1 the loop sleeps on a timer between frames and a drop's rim is one sprite (`wpRim`). See §4z9. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
-| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring), and the phone in a book (`bookPageUnder` `beginPadBookStroke` `padBookPoint`, 3.0.2). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
+| `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring), and the phone in a book (`bookPageUnder` `beginPadBookStroke` `padBookPoint`, 3.0.2). Since 3.1 the colours are resolved inside the open host and sent with the app's theme and what is open (`padHostEl` `padPalette` `padWhere`, §4z10). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
 
 ### The load order is the only contract
@@ -3145,6 +3145,131 @@ picture goes out (the clipboard writer stubbed), Light paper's ink in a light
 and a dark theme, Handwrite it on a synthetic picture, a notebook written in
 and round-tripped, a PDF book drawn and laid out, the wallpaper's three kinds,
 a stepper stepped and its description's default.
+
+## 4z10. Mental Board 3.1 — Settings as a dialog, Settings ▸ Books, a page that turns under the hand, the phone wears the app
+
+### Settings is a dialog again (settings.js, mental.css §90)
+
+The 3.0 options screen filled the window; 3.1 puts it back in the middle over
+the board, keeping §88's look (condensed capitals, hairlines, ‹ value ›). The
+sheet is a grid: the head across the top, the tabs a **column** down the left
+(`.set-nav`, now 13 tabs with icons — Books is new), the rows, and the
+description column on the right. Below 980 px the tabs are icons alone; below
+780 px the description column goes.
+
+- **It animates.** `openSettings()` lets the sheet rise in; `closeSettings()`
+  adds `.closing`, waits 200 ms, then `.hidden`. **Ask `settingsOpen()`, never
+  `.hidden`** — the panel counts as closed from the moment it starts to sink
+  (init.js, theme.js and the Escape test all do). Reduced motion closes at once.
+- **The lit bar slides** (`placeSetInk`, `.set-ink` prepended to the nav,
+  `.glide` only after the first placement so opening does not sweep it in).
+- **A pane comes in from the way the tabs went**: `showSetTab` writes
+  `--set-dir` (±1) on `#setPanes` and `--i` on every child, and §90 staggers
+  the rows. A stepped value slides in from its side (`paintStepValue`, `.stp-t.go`).
+  Every animation there is `backwards`-only, so nothing keeps a transform.
+- **The description column is a card** (`settingsDescHtml`): where the row
+  lives (tab · section, with the tab's icon), its name (`settingsNameOf`), what
+  it does — its hint as before, or **`set.about.<id>`** for the ~50 rows that
+  never had one (`settingsAboutOf`: the unit's id or its first id, a slider's
+  `…Val` stripped) — and two facts, **Now** (`settingsNowText`) and **Default**
+  (`settingDefaultText`, which now knows sliders through `SET_RANGES`). With
+  nothing under the pointer it shows the open tab: its icon, `set.pane.<tab>`
+  and its sections as chips (`settingsPaneHtml`). A card is rebuilt only when
+  the row changes (`descUnit`); a click or slider repaints just its Now.
+  `set.pane.` and `set.about.` are prefixes in tools/check-lang.js.
+
+### Settings ▸ Drawing and Settings ▸ Books (state.js `defaults`/`adopt`)
+
+| Setting | Key | Where it acts |
+|---|---|---|
+| Pattern on a drawing's paper | `skGuide` dots/grid/lines/none | `body[data-skguide]`, mental.css §90; `setSketchView` moves it |
+| Steady the line | `skSmooth` off/some/more | `inkSteady()` (ink.js, `INK_SMOOTH`) in sketch.js and book.js — not the board's pen |
+| Use the pen's pressure | `inkPressure` | `inkPressure(e)` (ink.js), board, drawing notes and books |
+| Open drawing notes full screen | `sketchFull` | was only remembered from the editor's button; now shown |
+| A new book opens as | `bookView` | `addNotebook`, `bookFromFile` |
+| Page turn / Turn speed | `bookTurnFx` curl/slide/fade/none, `bookSpeed` | `bookTurn` (`BOOK_TURNS`, `BOOK_SPEEDS`) |
+| Drag a page's corner | `bookDrag` | `bookDragTurnStart` |
+| The wheel turns the page | `bookWheel` | `bookWheel` |
+| Open books full screen | `bookFull` (healed from `sketchFull`) | `openBook` — books used `sketchFull` until 3.1 |
+| Page numbers | `bookNumbers` | `#bookDlg.bk-nonum` |
+| PDF pages | `bookQuality` sharp/quick | `bookPdfSize`: quick = 1× density, a third of `BOOK_PDF_PX` |
+| A new notebook's paper, page, pages | `nbPaper`, `nbShape` (`NB_SHAPES`: a4 letter square wide), `nbPages` 1–200 | `addNotebook` |
+
+A notebook's own paper is switched from its bar (`bookNextPaper`, one board
+undo step per visit).
+
+### A page that turns (book.js `bookTurnBuild` … `bookDragTurnEnd`, mental.css §87 and §91)
+
+The CSS keyframe leaf is gone. A turn is **one progress 0–1** and
+`bookTurnPaint` draws everything from it: the leaf's `rotateY` with a lift
+(`translateZ`) and a hair of bend (`skewY`, zero at both ends), a shade on each
+face darkest at its free edge (`.bk-shade`), a glint as it lifts (`.bk-glint`),
+and the shadow it throws — a band `--at` of a page out from the spine, at
+cos θ (`.bk-cast` in each `.bk-side`). So the same turn:
+
+- **runs by itself** (`bookTurnRun`, rAF, eased) for a click, a key, the wheel
+  or the phone;
+- **follows the hand**: with the hand tool, at 100% or less in the book view, a
+  press on the outer 38% of a page that moves towards the spine starts a turn
+  whose leaf edge stays under the pointer (θ = acos of the pointer's distance
+  from the spine over a page width). Let go past 25% or with a flick and it
+  goes over; short of that it falls back (`bookTurnLand(T, 0)` restores
+  `bk.at`);
+- **never swallows a press**: `bookGo`, `bookGoTo`, `bookLayout`, a press and a
+  phone stroke call `bookTurnSettle()`, which lands a running turn at once
+  (a dragged one falls back). Until 3.1 a press during a turn was ignored.
+
+`slide`/`fade` animate the new spread's sides with WAAPI; `none` and reduced
+motion (`motionReduced()`, theme.js — use it rather than re-reading the setting
+and the media query) paint at once. The scroll view's arrows glide the camera
+(`bookGlideTo`). The reader rises in and, out of a window, settles back
+(`.bk-closing`, `closeBook.timer`). `bookTwoUp`/`bookPageSize` read the stage's
+**client** size (`bookStageSize`) — its box is scaled while it rises in.
+
+### The phone wears the app, and black is black (js/tablet.js, src/tablet.js, src/tablet/phone.html)
+
+**The bug:** `padPalette()` resolved the ink colours on `<body>`, where `text`
+ink is `var(--text)` — white in a dark theme — while a drawing note and a book
+fix their ink to the paper (§83, §87), so on the phone the black swatch and the
+line it drew were white. Now each colour is resolved **inside the open host**
+(`padHostEl`: `#bookDlg`, `#sketchDlg`, `#studio`, else `<body>`), cached
+until the host, theme, accent or paper changes (the view goes every second).
+On the board, "ink" is still the theme's text colour — the same as the app's
+own pen bar shows.
+
+The view message also carries **`theme`** (bg, panel, line, text, dim as
+`rgb()`, and the mode) and **`where`** (`board`/`sketch`/`book`/`studio`, a
+title, and for a book the page and the count). `cleanOut` in src/tablet.js lets
+a colour through only as `#hex`/`rgb()` and the title only as text (tests in
+tools/test-tablet.js). The page (`wear()`) sets them as its own variables, so
+its bar is the app's surface, lit buttons are the app's inverted text colour,
+and the head says what is open, with ‹ page / count › in a book. On a narrow
+screen (≤ 760 px) the colours fold into a tray that **overlays** the drawing —
+in flow it would change the surface's shape and make the computer refit the
+region on every open. New string: `main.padColor`.
+
+### The YouTube wallpaper shows no player (main.js `BG_STYLE`)
+
+`controls=0` hides the bar, but YouTube still draws the title and channel, the
+logo, "More videos" and a play button while it loads, and no URL parameter
+turns those off any more. The player page for `ytbg`/`ytbgs` makes the frame
+140% of the page (still 16:9) so all of that is cropped off, takes no pointer,
+and fades in 2.4 s after load, once playback has begun. Not verifiable in the
+sandbox (§4z9: YouTube refuses embeds there).
+
+### Optimised
+
+- The wallpaper loop draws a frame, then sleeps on a timer until the next is
+  due (`startWallpaper`). It used to ask for every display frame and skip most:
+  on a 165 Hz screen, 177 wake-ups a second to paint 30 → now 32. A drop's rim
+  is one pre-drawn sprite (`wpRim`) rather than a new radial gradient per drop
+  per frame. Rain went from ~10% to ~8.8% of the main thread; an idle board
+  and an open Settings measure ~0.
+- Settings rebuilds the description only when the row under the pointer
+  changes, not on every `mouseover` inside it.
+
+Tests: the Escape test asks `settingsOpen()`; the options-screen test looks for
+the card's Now and Default; tools/test-tablet.js checks the theme and `where`.
 
 ## 4o. Lining a note up with its neighbours
 

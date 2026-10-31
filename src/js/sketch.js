@@ -386,6 +386,8 @@ const SK_PAPERS = {
     c: { default: '#6d7288', red: '#ff7b7b', orange: '#ffa65a', amber: '#f0cc5a', green: '#69de8e', teal: '#5adcd6', blue: '#72afff', violet: '#b48cff', pink: '#ff8ccd' } }
 };
 const SK_PAPER_KINDS = ['light', 'dark', 'note'];
+// the pattern on a drawing's paper (3.1, Settings ▸ Drawing; mental.css §90 draws it, setSketchView moves it)
+const SK_GUIDES = ['dots', 'grid', 'lines', 'none'];
 const skPaper = () => SK_PAPERS[state.settings.sketchPaper] || null;
 // a stroke's colour on the fixed paper, as a literal; null when the theme decides ('note' paper)
 function sketchInkHex(c) {
@@ -666,11 +668,10 @@ function onSketchDown(e) {
 }
 function addSketchPoint(e) {
   const L = sk.live;
-  const w = sketchPoint(e);
+  const w = inkSteady(L.raw, sketchPoint(e));
   const last = L.raw[L.raw.length - 1];
   if (last && Math.hypot(w.x - last.x, w.y - last.y) * L.k < 0.6) return;
-  const pr = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null;
-  L.raw.push({ x: w.x, y: w.y, p: pr, t: e.timeStamp || performance.now() });
+  L.raw.push({ x: w.x, y: w.y, p: inkPressure(e), t: e.timeStamp || performance.now() });
   if (!L.frame) L.frame = requestAnimationFrame(paintSketchLive);
 }
 function paintSketchLive() {

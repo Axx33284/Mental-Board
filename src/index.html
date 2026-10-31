@@ -326,6 +326,7 @@
         <button class="set-tab" data-tab="canvas" role="tab"><span class="tab-ic"></span><span data-t="set.canvas"></span></button>
         <button class="set-tab" data-tab="notes" role="tab"><span class="tab-ic"></span><span data-t="set.notes"></span></button>
         <button class="set-tab" data-tab="drawing" role="tab"><span class="tab-ic"></span><span data-t="set.drawing"></span></button>
+        <button class="set-tab" data-tab="books" role="tab"><span class="tab-ic"></span><span data-t="set.books"></span></button>
         <button class="set-tab" data-tab="links" role="tab"><span class="tab-ic"></span><span data-t="set.links"></span></button>
         <button class="set-tab" data-tab="statuses" role="tab"><span class="tab-ic"></span><span data-t="set.statuses"></span></button>
         <button class="set-tab" data-tab="templates" role="tab"><span class="tab-ic"></span><span data-t="set.templates"></span></button>
@@ -695,6 +696,30 @@
             </div>
           </div>
           <p class="set-note dim sub" data-t="set.skPaperHint"></p>
+          <!-- 3.1: the pattern on the paper, a steadier line, a pen's pressure, full screen -->
+          <div class="set-row">
+            <label><span data-t="set.skGuide"></span></label>
+            <div class="seg" id="skGuideSeg">
+              <button data-skguide="dots" data-t="set.skGuideDots"></button>
+              <button data-skguide="grid" data-t="set.skGuideGrid"></button>
+              <button data-skguide="lines" data-t="set.skGuideLines"></button>
+              <button data-skguide="none" data-t="set.skGuideNone"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.skGuideHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.skSmooth"></span></label>
+            <div class="seg" id="skSmoothSeg">
+              <button data-sksmooth="off" data-t="set.skSmoothOff"></button>
+              <button data-sksmooth="some" data-t="set.skSmoothSome"></button>
+              <button data-sksmooth="more" data-t="set.skSmoothMore"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.skSmoothHint"></p>
+          <label class="set-check"><input type="checkbox" id="setInkPressure"><span data-t="set.inkPressure"></span></label>
+          <p class="set-note dim sub" data-t="set.inkPressureHint"></p>
+          <label class="set-check"><input type="checkbox" id="setSkFull"><span data-t="set.skFull"></span></label>
+          <p class="set-note dim sub" data-t="set.skFullHint"></p>
           <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.hwHead"></span></h3>
           <div class="set-row">
             <label><span data-t="set.hwHand"></span></label>
@@ -713,6 +738,81 @@
           <label class="set-check"><input type="checkbox" id="setHwAnimate"><span data-t="set.hwAnimate"></span></label>
           <label class="set-check"><input type="checkbox" id="setHwKeep"><span data-t="set.hwKeep"></span></label>
           <p class="set-note dim sub" data-t="set.hwKeepHint"></p>
+        </section>
+
+        <!-- Books and notebooks (3.1, js/book.js): how the reader reads and turns,
+             and what a new notebook is made of. -->
+        <section class="set-sec" data-pane="books">
+          <h3><span class="sec-ic"></span><span data-t="set.books"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.bookView"></span></label>
+            <div class="seg" id="bookViewSeg">
+              <button data-bkview="book" data-t="book.viewBook"></button>
+              <button data-bkview="scroll" data-t="book.viewScroll"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.bookViewHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.bookTurn"></span></label>
+            <div class="seg" id="bookTurnSeg">
+              <button data-bkturn="curl" data-t="set.bookTurnCurl"></button>
+              <button data-bkturn="slide" data-t="set.bookTurnSlide"></button>
+              <button data-bkturn="fade" data-t="set.bookTurnFade"></button>
+              <button data-bkturn="none" data-t="set.bookTurnNone"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.bookTurnHint"></p>
+          <div class="set-row sub">
+            <label><span data-t="set.bookSpeed"></span></label>
+            <div class="seg" id="bookSpeedSeg">
+              <button data-bkspeed="slow" data-t="set.bookSpeedSlow"></button>
+              <button data-bkspeed="normal" data-t="set.bookSpeedNormal"></button>
+              <button data-bkspeed="fast" data-t="set.bookSpeedFast"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.bookSpeedHint"></p>
+          <label class="set-check"><input type="checkbox" id="setBookDrag"><span data-t="set.bookDrag"></span></label>
+          <p class="set-note dim sub" data-t="set.bookDragHint"></p>
+          <label class="set-check"><input type="checkbox" id="setBookWheel"><span data-t="set.bookWheel"></span></label>
+          <p class="set-note dim sub" data-t="set.bookWheelHint"></p>
+          <label class="set-check"><input type="checkbox" id="setBookFull"><span data-t="set.bookFull"></span></label>
+          <p class="set-note dim sub" data-t="set.bookFullHint"></p>
+          <label class="set-check"><input type="checkbox" id="setBookNumbers"><span data-t="set.bookNumbers"></span></label>
+          <p class="set-note dim sub" data-t="set.bookNumbersHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.bookQuality"></span></label>
+            <div class="seg" id="bookQualitySeg">
+              <button data-bkquality="sharp" data-t="set.bookQualitySharp"></button>
+              <button data-bkquality="quick" data-t="set.bookQualityQuick"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.bookQualityHint"></p>
+          <h3 class="set-sub-h"><span class="sec-ic"></span><span data-t="set.nbHead"></span></h3>
+          <div class="set-row">
+            <label><span data-t="set.nbPaper"></span></label>
+            <div class="seg" id="nbPaperSeg">
+              <button data-nbpaper="ruled" data-t="set.nbPaperRuled"></button>
+              <button data-nbpaper="dots" data-t="set.nbPaperDots"></button>
+              <button data-nbpaper="grid" data-t="set.nbPaperGrid"></button>
+              <button data-nbpaper="plain" data-t="set.nbPaperPlain"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.nbPaperHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.nbShape"></span></label>
+            <div class="seg" id="nbShapeSeg">
+              <button data-nbshape="a4" data-t="set.nbShapeA4"></button>
+              <button data-nbshape="letter" data-t="set.nbShapeLetter"></button>
+              <button data-nbshape="square" data-t="set.nbShapeSquare"></button>
+              <button data-nbshape="wide" data-t="set.nbShapeWide"></button>
+            </div>
+          </div>
+          <p class="set-note dim sub" data-t="set.nbShapeHint"></p>
+          <div class="set-row">
+            <label><span data-t="set.nbPages"></span> <span class="set-val" id="nbPagesVal"></span></label>
+            <input type="range" id="nbPages" min="1" max="200" step="1" data-t-aria="set.nbPages">
+          </div>
+          <p class="set-note dim sub" data-t="set.nbPagesHint"></p>
         </section>
 
         <section class="set-sec" data-pane="links">

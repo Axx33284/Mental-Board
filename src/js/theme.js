@@ -46,7 +46,7 @@ function startThemeClock() {
     clockTheme = dark;
     applyThemeFaded(1800);           // sunrise and sunset: the slow fade
     // only when the panel is on screen: syncSettingsUI() walks every board
-    if (!$('settings').classList.contains('hidden')) syncSettingsUI();
+    if (settingsOpen()) syncSettingsUI();
   }, 60000);
 }
 
@@ -146,6 +146,11 @@ function applyTheme() {
    when motion is turned down, when the window is not on screen, and when the
    theme would not actually change (a clock tick that lands on the theme
    already showing must not flash the window). */
+// whether the app should keep still: Settings ▸ Appearance ▸ Animation, or Windows' own switch when that says Auto
+function motionReduced() {
+  const m = state.settings.motion;
+  return m === 'reduced' || (m !== 'full' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
 let themeFade = null;
 function applyThemeFaded(ms) {
   const root = document.documentElement;
@@ -203,7 +208,7 @@ const MAIN_KEYS = [
   'main.padTitle', 'main.padConnecting', 'main.padConnected', 'main.padAway',
   'main.padEnded', 'main.padReadonly', 'main.padPen', 'main.padMarker',
   'main.padBrush', 'main.padEraser', 'main.padUndo', 'main.padFingers', 'main.padFull',
-  'main.padSelect', 'main.padDelete', 'main.padPrev', 'main.padNext'
+  'main.padSelect', 'main.padDelete', 'main.padPrev', 'main.padNext', 'main.padColor'
 ];
 function sendMainStrings() {
   if (!WIN || !WIN.setStrings) return;
@@ -333,6 +338,7 @@ function applySettings() {
   document.body.dataset.notefont = s.noteFont;   // applyBoardLook() below lets the board override it
   document.body.dataset.noteshadow = s.noteShadow;
   document.body.dataset.skpaper = s.sketchPaper;  // a drawing's paper and its fixed ink (mental.css §83, sketch.js SK_PAPERS)
+  document.body.dataset.skguide = s.skGuide;      // the pattern on it (3.1, mental.css §90)
   document.body.dataset.uifont = s.uiFont;        // the app's own face (mental.css §84)
   if (typeof applyWallpaper === 'function') applyWallpaper();   // js/wallpaper.js, further down the load order
   /* 'auto' deliberately writes *nothing*. The stylesheet already answers it

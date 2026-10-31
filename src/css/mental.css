@@ -2312,23 +2312,15 @@ body.wp-nogrid #grid { display: none; }
   background-image: linear-gradient(rgba(70,120,200,.2) 1px, transparent 1px), linear-gradient(90deg, rgba(70,120,200,.2) 1px, transparent 1px);
   background-size: calc(var(--u) * 40) calc(var(--u) * 40);
 }
-/* the leaf: the page being turned on its front, the page behind it on its back */
-.bk-leaf { position: absolute; top: 24px; width: var(--pw); height: var(--ph); transform-style: preserve-3d; z-index: 2; }
-.bk-leaf.fwd { left: calc(24px + var(--pw)); transform-origin: left center; animation: bk-fwd .62s cubic-bezier(.45, .05, .35, 1) forwards; }
-.bk-leaf.back { left: 24px; transform-origin: right center; animation: bk-back .62s cubic-bezier(.45, .05, .35, 1) forwards; }
+/* the leaf: the page being turned on its front, the page behind it on its back.
+   book.js bookTurnPaint moves it and lights it from one progress (3.1, §91). */
+.bk-leaf { position: absolute; top: 24px; width: var(--pw); height: var(--ph); transform-style: preserve-3d; z-index: 2; will-change: transform; }
+.bk-leaf.fwd { left: calc(24px + var(--pw)); transform-origin: left center; }
+.bk-leaf.back { left: 24px; transform-origin: right center; }
 .bk-leaf.one.fwd { left: 24px; }   /* top and left: inside the spread's 24px padding */
-.bk-leaf > div { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.bk-leaf > div { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
 .bk-face-back { transform: rotateY(180deg); }
 .bk-leaf.one .bk-face-back { display: none; }
-/* the light across the page as it lifts */
-.bk-leaf > div::after { content: ""; position: absolute; inset: 0; pointer-events: none; animation: bk-shade .62s ease-in-out forwards; }
-.bk-leaf.fwd .bk-face-front::after { background: linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,.35)); }
-.bk-leaf.fwd .bk-face-back::after { background: linear-gradient(270deg, rgba(0,0,0,0), rgba(0,0,0,.3)); }
-.bk-leaf.back .bk-face-front::after { background: linear-gradient(270deg, rgba(0,0,0,0), rgba(0,0,0,.35)); }
-.bk-leaf.back .bk-face-back::after { background: linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,.3)); }
-@keyframes bk-fwd { from { transform: rotateY(0deg); } to { transform: rotateY(-180deg); } }
-@keyframes bk-back { from { transform: rotateY(0deg); } to { transform: rotateY(180deg); } }
-@keyframes bk-shade { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
 .bk-scroll { position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 28px 0 60px; }
 .bk-slot { flex: none; position: relative; }
 .bk-slot > .bk-page { position: absolute; inset: 0; }
@@ -2579,3 +2571,208 @@ html[dir="rtl"] #settings .set-panes :is(.set-row, .set-check):is(:hover, :focus
 .bk-scroll { overflow: visible; padding: 28px 24px 60px; }
 #bookDlg.bk-hand .bk-stage { cursor: grab; }
 .bk-stage.bk-panning, .bk-stage.bk-panning * { cursor: grabbing !important; }
+
+/* ─────────────── 90. Settings, a dialog again (3.1, js/settings.js) ───────────────
+   Back in the middle of the window over the board, not the whole of it: the
+   tabs a column down the left with a lit bar that slides to the open one
+   (placeSetInk), the rows in the middle, and on the right a card for the row
+   under the pointer — where it lives, its name, what it does, what it is now
+   and its default — or, with nothing under the pointer, what the tab is for.
+   It rises in and sinks out (openSettings / closeSettings), a pane's rows come
+   in a beat apart from the way the tabs went (--set-dir, --i), and a value
+   that is stepped slides in from that side. The look of §88 stays: condensed
+   capitals, hairlines, ‹ value › with a bar per option. Every animation here is
+   `backwards` only, so nothing is left holding a transform once it has run. */
+#settings.overlay {
+  display: grid; place-items: center; padding: clamp(12px, 2.4vw, 32px);
+  background: color-mix(in srgb, #000 48%, transparent); backdrop-filter: blur(5px);
+  animation: set-veil .24s ease-out backwards;
+}
+body[data-perf="lite"] #settings.overlay { backdrop-filter: none; }
+#settings .set-sheet {
+  width: min(1240px, 100%); height: min(840px, 100%);
+  display: grid; grid-template-columns: 224px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "head head" "nav shell" "nav foot";
+  border: 1px solid var(--rq-line); border-radius: 14px; overflow: hidden; background: var(--rq-bg);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, .5), 0 0 0 1px color-mix(in srgb, var(--text) 4%, transparent);
+  animation: set-in .44s cubic-bezier(.16, 1, .3, 1) backwards;
+}
+#settings.closing { animation: set-veil-out .2s ease-in forwards; pointer-events: none; }
+#settings.closing .set-sheet { animation: set-out .2s cubic-bezier(.5, 0, .75, 0) forwards; }
+@keyframes set-veil { from { opacity: 0; } }
+@keyframes set-veil-out { to { opacity: 0; } }
+@keyframes set-in { from { opacity: 0; transform: translateY(20px) scale(.965); } }
+@keyframes set-out { to { opacity: 0; transform: translateY(10px) scale(.98); } }
+
+/* the head: the title, the search, the close */
+#settings .sheet-head { grid-area: head; padding: 14px 16px 13px 24px; align-items: center; border-bottom: 1px solid var(--rq-line); }
+#settings .sheet-head h2 { font-size: 24px; }
+#settings .set-find { width: 280px; }
+
+/* the tabs: a column, an icon and a name each, the lit bar behind the open one */
+#settings .set-sheet .set-nav {
+  grid-area: nav; position: relative; display: flex; flex-direction: column; justify-content: flex-start; gap: 2px;
+  margin: 0; padding: 12px 10px 16px; overflow-x: hidden; overflow-y: auto; border: 0;
+  border-inline-end: 1px solid var(--rq-line); background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+#settings .set-sheet .set-nav::-webkit-scrollbar { width: 0; }
+#settings .set-sheet .set-tab {
+  flex: 0 0 auto; width: 100%; min-width: 0; height: 40px; padding: 0 12px; position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px; text-align: start;
+  border: 0; border-radius: 8px; background: none; box-shadow: none;
+  font-size: 15px; letter-spacing: .04em; color: var(--rq-dim); transition: color .2s, background-color .2s;
+}
+#settings .set-sheet .set-tab:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+#settings .set-sheet .set-tab.on { color: var(--text); background: none; }
+#settings .set-sheet .set-tab + .set-tab::before, #settings .set-sheet .set-tab::before { display: none !important; }
+#settings .set-sheet .set-tab.on::after { content: none; }
+#settings .set-sheet .set-tab .tab-ic { display: grid; width: 20px; height: 20px; flex: 0 0 20px; opacity: .8; transition: opacity .2s, transform .3s cubic-bezier(.16, 1, .3, 1); }
+#settings .set-sheet .set-tab.on .tab-ic { opacity: 1; transform: scale(1.08); }
+#settings .set-sheet .set-tab .tab-ic .mi { width: 19px; height: 19px; }
+#settings .set-tab > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-ink {
+  position: absolute; left: 10px; right: 10px; top: 0; height: 40px; border-radius: 8px; pointer-events: none;
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 18%, transparent), 0 6px 18px rgba(0, 0, 0, .18);
+}
+.set-ink::before { content: ""; position: absolute; inset-inline-start: 0; top: 25%; bottom: 25%; width: 3px; border-radius: 3px; background: var(--text); }
+.set-nav.glide .set-ink { transition: transform .4s cubic-bezier(.2, .9, .25, 1), height .4s cubic-bezier(.2, .9, .25, 1), opacity .2s; }
+body.set-searching .set-ink { opacity: 0; }
+
+/* the rows and the card side by side */
+#settings .set-sheet .set-shell { grid-area: shell; display: flex; flex-direction: row; gap: 0; padding: 0; min-height: 0; }
+#settings .set-sheet .set-panes { flex: 1 1 auto; min-width: 0; padding: 22px 24px 48px 28px; overflow-x: hidden; overflow-y: auto; }
+#settings .set-sheet .set-desc {
+  flex: 0 0 clamp(250px, 29%, 350px); max-width: none; min-height: 0; overflow-y: auto; align-self: stretch;
+  padding: 24px 22px; border: 0; border-inline-start: 1px solid var(--rq-line);
+  background: color-mix(in srgb, var(--text) 2.5%, transparent); font-size: 14px;
+}
+#settings .set-foot { grid-area: foot; display: flex; justify-content: flex-end; padding: 10px 24px 12px 28px; }
+
+/* a pane's own heading is its title; the sections under it keep the slanted tab */
+#settings .set-sheet .set-panes .set-sec > h3:first-child {
+  min-width: 0; margin: 0 0 12px; padding: 0 0 2px; background: none; clip-path: none;
+  font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase; letter-spacing: .03em;
+  font-size: 27px !important; font-weight: 500; color: var(--text) !important;
+}
+#settings .set-sheet .set-panes .set-sec > h3:first-child + * { border-top: 1px solid var(--rq-line); }
+
+/* a row: tighter than the full-screen one, rounded, and lit with a bar on its leading edge */
+#settings .set-sheet .set-panes :is(.set-row, .set-check) {
+  min-height: 52px; padding: 6px 16px 6px 20px; border-radius: 6px;
+  transition: background-color .18s, box-shadow .22s;
+}
+#settings .set-sheet .set-panes .set-check.sub { padding-inline-start: 40px; }
+#settings .set-sheet .set-panes :is(.set-row > label, .set-check) { font-size: 15.5px; }
+:root #settings .set-sheet .set-panes :is(.set-row, .set-check):is(:hover, :focus-within, :focus-visible) {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 13%, transparent), color-mix(in srgb, var(--text) 5%, transparent));
+  box-shadow: inset 3px 0 0 var(--text), inset 0 0 0 1px color-mix(in srgb, var(--text) 26%, transparent);
+}
+:root[dir="rtl"] #settings .set-sheet .set-panes :is(.set-row, .set-check):is(:hover, :focus-within, :focus-visible) {
+  background: linear-gradient(270deg, color-mix(in srgb, var(--text) 13%, transparent), color-mix(in srgb, var(--text) 5%, transparent));
+  box-shadow: inset -3px 0 0 var(--text), inset 0 0 0 1px color-mix(in srgb, var(--text) 26%, transparent);
+}
+#settings .set-sheet .stp, #settings .set-sheet .set-panes input[type="range"], #settings .set-sheet .set-panes .set-row .sel-wrap, #settings .set-sheet .set-txt {
+  width: 280px; flex-basis: 280px;
+}
+
+/* a pane comes in from the way the tabs went, its rows a beat apart */
+#settings .set-panes > [data-pane].on > * { animation: set-row .46s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: calc(var(--i, 0) * 16ms + 20ms); }
+@keyframes set-row { from { opacity: 0; transform: translateY(calc(var(--set-dir, 1) * 16px)); } }
+body.set-searching #settings .set-panes > [data-pane] > * { animation: none; }
+
+/* ‹ value ›: a new value slides in from the way it was stepped, and the lit bar grows */
+.stp-v { position: relative; }
+.stp-t { display: inline-block; }
+.stp-t.go { animation: stp-in .3s cubic-bezier(.16, 1, .3, 1) backwards; }
+.stp-v[data-d="-1"] .stp-t.go { animation-name: stp-in-back; }
+@keyframes stp-in { from { opacity: 0; transform: translateX(14px); } }
+@keyframes stp-in-back { from { opacity: 0; transform: translateX(-14px); } }
+.stp-ticks b { transition: background-color .25s, transform .3s cubic-bezier(.16, 1, .3, 1); }
+.stp-ticks b.on { transform: scaleY(1.5); }
+.stp-a { transition: color .15s, transform .15s; }
+.stp-a:active { transform: scale(.85); }
+
+/* the card */
+.sd-card { display: flex; flex-direction: column; gap: 12px; animation: sd-in .32s cubic-bezier(.16, 1, .3, 1) backwards; }
+@keyframes sd-in { from { opacity: 0; transform: translateY(8px); } }
+.sd-kick {
+  display: flex; align-items: center; gap: 8px; min-height: 18px;
+  font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase; letter-spacing: .08em; font-size: 12.5px; color: var(--rq-dim);
+}
+.sd-kick .mi { width: 16px; height: 16px; flex: 0 0 16px; }
+.sd-name { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.22; color: var(--text); }
+#settings .set-desc .sd-text { display: block; margin: 0; font-size: 14.5px; line-height: 1.58; color: var(--rq-ink); }
+.sd-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 0; }
+.sd-fact { min-width: 0; padding: 9px 11px 10px; border: 1px solid var(--rq-line); border-radius: 8px; background: color-mix(in srgb, var(--text) 4%, transparent); }
+.sd-fact dt { font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase; letter-spacing: .08em; font-size: 11px; color: var(--rq-dim); }
+.sd-fact dd { margin: 3px 0 0; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.sd-fact.sd-now { border-color: color-mix(in srgb, var(--text) 30%, transparent); }
+.sd-keys { display: flex; align-items: center; gap: 5px; margin: 0; font-size: 12.5px; color: var(--rq-dim); }
+.sd-keys span { margin-inline-start: 4px; }
+.sd-big {
+  width: 58px; height: 58px; display: grid; place-items: center; border-radius: 14px; color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent); border: 1px solid var(--rq-line);
+}
+.sd-big .mi { width: 28px; height: 28px; }
+.sd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sd-chips span { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--rq-line); font-size: 12.5px; color: var(--rq-ink); }
+.sd-hint { margin: 6px 0 0; font-family: var(--face-cond); font-stretch: condensed; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--rq-dim); }
+
+/* a smaller window: a narrower card; then the tabs as icons alone; then no card */
+@media (max-width: 1180px) {
+  #settings .set-sheet .stp, #settings .set-sheet .set-panes input[type="range"], #settings .set-sheet .set-panes .set-row .sel-wrap, #settings .set-sheet .set-txt { width: 220px; flex-basis: 220px; }
+  #settings .set-sheet .set-desc { flex-basis: 250px; }
+}
+@media (max-width: 980px) {
+  #settings .set-sheet { grid-template-columns: 64px minmax(0, 1fr); }
+  #settings .set-sheet .set-tab { justify-content: center; padding: 0; }
+  #settings .set-sheet .set-tab > span:last-child { display: none; }
+  #settings .set-find { width: 200px; }
+}
+@media (max-width: 780px) {
+  #settings .set-sheet .set-desc { display: none; }
+}
+
+/* ---- a drawing note's paper: dots, a grid, lines or nothing (3.1, Settings ▸ Drawing) ----
+   setSketchView sizes and moves whichever it is with the drawing. */
+body[data-skguide="grid"] .sk-stage {
+  background-image: linear-gradient(color-mix(in srgb, var(--ink-text, var(--text)) 11%, transparent) 1px, transparent 1px),
+                    linear-gradient(90deg, color-mix(in srgb, var(--ink-text, var(--text)) 11%, transparent) 1px, transparent 1px);
+}
+body[data-skguide="lines"] .sk-stage {
+  background-image: linear-gradient(transparent calc(100% - 1px), color-mix(in srgb, var(--ink-text, var(--text)) 13%, transparent) calc(100% - 1px));
+}
+body[data-skguide="none"] .sk-stage { background-image: none; }
+
+/* ─────────────── 91. a page that turns, and the reader coming and going (3.1, js/book.js) ───────────────
+   bookTurnPaint drives these from one progress: the shade on each face of the
+   leaf (darkest at its free edge), a glint as it lifts, and the shadow it
+   throws — a soft band just past its edge, `--at` of the way out from the
+   spine — on the page it is uncovering and on the one it lands on. */
+.bk-shade, .bk-glint, .bk-cast { position: absolute; pointer-events: none; opacity: 0; }
+.bk-shade { inset: 0; z-index: 1; }
+.bk-leaf.fwd .bk-face-front .bk-shade, .bk-leaf.back .bk-face-back .bk-shade { background: linear-gradient(90deg, rgba(0, 0, 0, .04), rgba(0, 0, 0, .58)); }
+.bk-leaf.fwd .bk-face-back .bk-shade, .bk-leaf.back .bk-face-front .bk-shade { background: linear-gradient(270deg, rgba(0, 0, 0, .04), rgba(0, 0, 0, .58)); }
+.bk-glint {
+  inset: 0; z-index: 2; mix-blend-mode: soft-light;
+  background: linear-gradient(100deg, transparent 28%, rgba(255, 255, 255, .9) 47%, transparent 64%);
+}
+.bk-cast { top: 0; bottom: 0; z-index: 1; width: min(30%, calc(100% - var(--at, 0%))); }
+/* on a right-hand page the spine is its left edge; on a left-hand page, its right */
+.bk-side.right .bk-cast, .bk-side.one .bk-cast { left: var(--at, 0%); background: linear-gradient(90deg, rgba(0, 0, 0, .62), rgba(0, 0, 0, .18) 40%, transparent); }
+.bk-side.left .bk-cast { right: var(--at, 0%); background: linear-gradient(270deg, rgba(0, 0, 0, .62), rgba(0, 0, 0, .18) 40%, transparent); }
+.bk-spread:has(> .bk-leaf.back.one) .bk-side.one .bk-cast { left: auto; right: var(--at, 0%); background: linear-gradient(270deg, rgba(0, 0, 0, .62), rgba(0, 0, 0, .18) 40%, transparent); }
+/* the pages' numbers, unless Settings ▸ Books says not */
+#bookDlg.bk-nonum .bk-no { display: none; }
+/* the paper switch on a notebook's bar says which paper it is */
+.ik-btn.bk-paper { width: auto; gap: 6px; padding: 0 9px; font-size: 12px; display: inline-flex; align-items: center; }
+/* the reader comes up out of the board, and settles back into it */
+#bookDlg:not(.hidden) { animation: bk-dlg-in .26s ease-out backwards; }
+#bookDlg:not(.hidden) .bk-stage { animation: bk-stage-in .5s cubic-bezier(.16, 1, .3, 1) backwards; }
+#bookDlg:not(.hidden) .bk-head { animation: bk-head-in .4s cubic-bezier(.16, 1, .3, 1) .05s backwards; }
+#bookDlg.bk-closing { animation: bk-dlg-out .19s ease-in forwards; pointer-events: none; }
+@keyframes bk-dlg-in { from { opacity: 0; } }
+@keyframes bk-stage-in { from { opacity: 0; transform: scale(.96) translateY(14px); } }
+@keyframes bk-head-in { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes bk-dlg-out { to { opacity: 0; transform: scale(.985); } }

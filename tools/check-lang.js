@@ -47,7 +47,10 @@ const PREFIXES = ['block.', 'icons.', 'colour.', 'accent.', 'theme.', 'hilite.',
                   'set.grid.', 'pos.', 'page.fit.',
                   /* 2.8: the slash menu's sections, and a database's layouts,
                      charts and property types (toolbars.js, database.js) */
-                  'blocks.sec.', 'db.view.', 'db.chart.', 'db.type.'];
+                  'blocks.sec.', 'db.view.', 'db.chart.', 'db.type.',
+                  /* 3.1: what a settings tab is for, and a row that had no
+                     hint of its own (settings.js settingsPaneHtml, settingsAboutOf) */
+                  'set.pane.', 'set.about.'];
 console.log(`checking ${used.size} literal keys across ${SOURCE.scriptFiles().length} script(s) + ` +
             `${SOURCE.mainFiles().length} main-process file(s) + index.html`);
 for (const k of [...used].sort()) {

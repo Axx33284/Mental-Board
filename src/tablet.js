@@ -176,7 +176,15 @@ function cleanOut(m) {
   if (!m || m.t !== 'view') return null;
   const pal = Array.isArray(m.pal) ? m.pal.slice(0, 16).filter((c) => c && typeof c.k === 'string' && typeof c.c === 'string')
     .map((c) => ({ k: c.k.slice(0, 12), c: c.c.slice(0, 40) })) : [];
-  return { t: 'view', ro: !!m.ro, pal, sel: int(m.sel, 1e6) || 0, rw: num(m.rw, 1, 20000) || 400, book: !!m.book };
+  // 3.1: the app's colours, so the phone looks like it, and what is open there (a title the phone shows as text)
+  const col = (v) => (typeof v === 'string' && /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%/]+\))$/i.test(v) ? v : null);
+  const th = m.theme && typeof m.theme === 'object' ? m.theme : {};
+  const theme = { mode: th.mode === 'light' ? 'light' : 'dark' };
+  for (const k of ['bg', 'panel', 'line', 'text', 'dim']) { const c = col(th[k]); if (c) theme[k] = c; }
+  const w = m.where && typeof m.where === 'object' ? m.where : {};
+  const where = { k: ['board', 'sketch', 'book', 'studio'].includes(w.k) ? w.k : 'board', title: typeof w.title === 'string' ? w.title.slice(0, 80) : '' };
+  if (where.k === 'book') { where.at = int(w.at, 1e5) || 1; where.n = int(w.n, 1e5) || 1; }
+  return { t: 'view', ro: !!m.ro, pal, sel: int(m.sel, 1e6) || 0, rw: num(m.rw, 1, 20000) || 400, book: !!m.book, theme, where };
 }
 
 /* ---- a WebSocket, the 30 lines of RFC 6455 this needs ----

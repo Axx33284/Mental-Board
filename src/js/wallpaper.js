@@ -67,21 +67,24 @@ function applyWallpaper() {
   wp.still = wpStill();
   startWallpaper();
 }
+/* A frame, then a timer until the next one is due, then the frame it asks for
+   (3.1). Until 3.1 the loop asked for every frame the display draws and
+   skipped most of them — on a 165 Hz screen that was 165 wake-ups a second
+   to paint 30. A hidden window draws no frames, so the loop simply waits. */
 function startWallpaper() {
-  cancelAnimationFrame(wp.raf);
+  stopWallpaper();
   wp.last = 0;
   if (wp.still) { wpStep(0, true); return; }
-  const loop = (t) => {
-    wp.raf = requestAnimationFrame(loop);
-    if (document.hidden) return;
-    if (t - wp.last < wpFrameMs()) return;
+  const frame = (t) => {
+    wp.raf = 0;
     const dt = wp.last ? Math.min(0.1, (t - wp.last) / 1000) : 0.033;
     wp.last = t;
     wpStep(dt, false);
+    wp.timer = setTimeout(() => { wp.raf = requestAnimationFrame(frame); }, Math.max(0, wpFrameMs() - (performance.now() - t) - 4));
   };
-  wp.raf = requestAnimationFrame(loop);
+  wp.raf = requestAnimationFrame(frame);
 }
-function stopWallpaper() { cancelAnimationFrame(wp.raf); wp.raf = 0; }
+function stopWallpaper() { cancelAnimationFrame(wp.raf); clearTimeout(wp.timer); wp.raf = 0; wp.timer = 0; }
 
 /* The canvas follows the viewport. At most 1.5 device pixels a CSS pixel: the
    wallpaper is blurred, wet and moving, and nobody sees the difference. */
@@ -218,6 +221,17 @@ function wpRainStep(dt) {
   }
   wp.drops = out.filter((d) => d.life > 0);
 }
+// a drop's rim, drawn once on a small canvas (3.1: it was a new gradient for every drop on every frame)
+function wpRim() {
+  if (wp.rim) return wp.rim;
+  const S = 64, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d'), h = S / 2;
+  const rim = g.createRadialGradient(h, h - h * 0.25, h * 0.35, h, h, h * 1.02);
+  rim.addColorStop(0, 'rgba(255,255,255,.04)'); rim.addColorStop(0.72, 'rgba(0,0,0,.06)'); rim.addColorStop(1, 'rgba(0,0,0,.5)');
+  g.fillStyle = rim; g.fillRect(0, 0, S, S);
+  return (wp.rim = c);
+}
 function wpDrawRain(g) {
   const k = wp.dpr, back = wp.back, lens = wp.lens;
   g.drawImage(back, 0, 0);
@@ -234,10 +248,8 @@ function wpDrawRain(g) {
       const m = 11;            // how wide a view one drop gathers
       const sx = clamp(x - rx * m, 0, lens.width - 1), sy = clamp(lens.height - y - ry * m, 0, lens.height - 1);
       g.drawImage(lens, sx, sy, Math.max(1, rx * m * 2), Math.max(1, ry * m * 2), x - rx, y - ry, rx * 2, ry * 2);
-      // the dark rim that makes it read as water, heavier underneath
-      const rim = g.createRadialGradient(x, y - ry * 0.25, rx * 0.35, x, y, Math.max(rx, ry) * 1.02);
-      rim.addColorStop(0, 'rgba(255,255,255,.04)'); rim.addColorStop(0.72, 'rgba(0,0,0,.06)'); rim.addColorStop(1, 'rgba(0,0,0,.5)');
-      g.fillStyle = rim; g.fillRect(x - rx, y - ry, rx * 2, ry * 2);
+      // the dark rim that makes it read as water, heavier underneath — one drawn rim, stretched to each drop
+      g.drawImage(wpRim(), x - rx, y - ry, rx * 2, ry * 2);
       g.restore();
       // and the light on it
       g.fillStyle = 'rgba(255,255,255,.55)';
