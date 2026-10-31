@@ -676,6 +676,8 @@
             <label><span class="row-ic"></span><span data-t="set.newNoteH"></span> <span class="set-val" id="noteHVal">190</span></label>
             <input type="range" id="noteH" min="100" max="720" step="10" data-t-aria="set.newNoteH">
           </div>
+          <label class="set-check"><input type="checkbox" id="setSmoothCaret"><span class="row-ic"></span><span data-t="set.smoothCaret"></span></label>
+          <p class="set-note dim sub" data-t="set.smoothCaretHint"></p>
           <label class="set-check"><input type="checkbox" id="setConfirmDelete"><span class="row-ic"></span><span data-t="set.confirmDelete"></span></label>
           <p class="set-note dim sub" data-t="set.confirmDeleteHint"></p>
         </section>
@@ -1049,7 +1051,7 @@
                setting to persist, on purpose — every pairing is asked for. -->
           <div class="set-row">
             <label><span class="row-ic"></span><span data-t="set.padPair"></span></label>
-            <button class="btn small" id="padBtn"><span class="b-ic"></span><span id="padBtnLabel" data-t="set.padStart"></span></button>
+            <div class="set-btns"><button class="btn small" id="padBtn"><span class="b-ic"></span><span id="padBtnLabel" data-t="set.padStart"></span></button></div>
           </div>
           <div class="pad-box hidden" id="padBox">
             <div class="pad-qr" id="padQr"></div>

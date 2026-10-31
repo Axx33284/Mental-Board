@@ -2776,3 +2776,112 @@ body[data-skguide="none"] .sk-stage { background-image: none; }
 @keyframes bk-stage-in { from { opacity: 0; transform: scale(.96) translateY(14px); } }
 @keyframes bk-head-in { from { opacity: 0; transform: translateY(-10px); } }
 @keyframes bk-dlg-out { to { opacity: 0; transform: scale(.985); } }
+
+/* ─────────────── 92. Settings: every value in one column (3.1.1) ───────────────
+   §90's rows put ‹ value ›, a slider, a list and a field in one 280 px column
+   at the end of the row; the rows that are something else drifted out of it.
+   A row's name takes the room that is left and never squeezes the value; the
+   buttons, the pair of themes and the two times sit in that column too; the
+   option bars under a long ‹ value › shrink instead of spilling; and the
+   padding studio is its own two-column block rather than a row's insides. */
+#settings .set-sheet .set-panes .set-row > label { flex: 1 1 auto; min-width: 0; }
+#settings .set-sheet .set-panes .set-row > .set-btns {
+  flex: 0 0 280px; width: 280px; margin-inline-start: auto; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0;
+}
+.stp-ticks { min-width: 0; }
+.stp-ticks b { flex: 0 1 30px; min-width: 6px; }
+/* the day and night themes, one under the other; the two times side by side */
+#settings .set-sheet .set-panes .pair-pick { flex: 0 0 280px; width: 280px; margin-inline-start: auto; display: grid; gap: 6px; }
+#settings .set-sheet .set-panes .pair-fld { width: 100%; min-width: 0; }
+#settings .set-sheet .set-panes .pair-fld .sel-wrap { width: auto; flex: 1 1 auto; min-width: 0; }
+#settings .set-sheet .set-panes .time-pair { flex: 0 0 280px; width: 280px; margin-inline-start: auto; display: flex; gap: 8px; }
+#settings .set-sheet .set-panes .time-pair .time-fld { flex: 1 1 0; min-width: 0; }
+/* the padding studio: the four sliders and their switch beside the example note */
+#settings .set-sheet .set-panes .pad-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 280px); gap: 14px 24px; align-items: center;
+  padding: 12px 16px 16px 20px;
+}
+#settings .set-sheet .set-panes .pad-row:hover { background: none; box-shadow: none; }
+#settings .pad-sliders { display: grid; gap: 10px; min-width: 0; }
+#settings .pad-sl label { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; color: var(--rq-ink); }
+#settings .pad-sl label .set-val { margin: 0; }
+#settings .set-sheet .set-panes .pad-sl input[type="range"] { width: 100%; flex: none; margin: 6px 0 0; }
+#settings .set-sheet .set-panes .pad-link.set-check {
+  min-height: 40px; margin: 2px 0 0; padding: 4px 0; border: 0; background: none !important; box-shadow: none !important;
+  font-size: 14px; font-weight: 500;
+}
+#settings .set-sheet .pad-link .stp { width: 150px; flex-basis: 150px; }
+#settings .pad-preview { width: 100%; margin: 0; }
+@media (max-width: 1180px) {
+  #settings .set-sheet .set-panes :is(.set-row > .set-btns, .pair-pick, .time-pair) { flex-basis: 220px; width: 220px; }
+}
+
+/* ─────────────── 93. smooth typing (3.1.1, js/editor.js placeCaret) ───────────────
+   The note being typed in hides its own caret, and #mbCaret glides to where
+   the next letter goes; it blinks softly once the hand is still. */
+body[data-caret="smooth"]:not(.caret-native) .note-body[contenteditable="true"] { caret-color: transparent; }
+#mbCaret {
+  position: absolute; left: 0; top: 0; z-index: 3; width: 2px; height: 18px; border-radius: 1px;
+  pointer-events: none; opacity: 0; will-change: transform;
+  transition: transform .11s cubic-bezier(.25, .8, .3, 1), height .11s ease-out, opacity .12s;
+}
+#mbCaret.on { opacity: 1; }
+#mbCaret.jump { transition: none; }
+#mbCaret.on.blink { animation: mb-caret 1.06s ease-in-out infinite; }
+@keyframes mb-caret { 0%, 45% { opacity: 1; } 55%, 95% { opacity: 0; } 100% { opacity: 1; } }
+
+/* ─────────────── 94. things on a book's page, sticky notes, and what the board shows of a book (3.1.1) ───────────────
+   A page's pictures and sticky notes (book.js bookObjEl) sit under its ink;
+   the ink layer lets the pointer through to them. Sizes inside a page are in
+   its own unit, --u, so a note's writing scales with the page. */
+.bk-ink { pointer-events: none; }
+.bk-objs { position: absolute; inset: 0; }
+.bk-obj { position: absolute; box-sizing: border-box; }
+.bk-pico img { display: block; width: 100%; height: 100%; user-select: none; box-shadow: 0 1px 3px rgba(0, 0, 0, .28); }
+.bk-sticky {
+  background: var(--st); color: #2a2620; padding: calc(var(--u) * 16) calc(var(--u) * 18);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .2), 0 calc(var(--u) * 8) calc(var(--u) * 22) rgba(0, 0, 0, .16);
+  transform: rotate(-.6deg);
+}
+.bk-sticky-t {
+  height: 100%; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--face-text); font-size: calc(var(--u) * 24); line-height: 1.35;
+}
+.bk-sticky.editing .bk-sticky-t { visibility: hidden; }
+.bk-sticky-in {
+  position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; padding: inherit; margin: 0;
+  border: 0; outline: none; resize: none; background: var(--st); color: #2a2620;
+  font-family: var(--face-text); font-size: calc(var(--u) * 24); line-height: 1.35;
+}
+.bk-sticky-in::placeholder { color: rgba(42, 38, 32, .45); }
+/* the one selected: a frame, × to remove it, a corner to size it, a note's colours */
+.bk-obj-x, .bk-obj-rz, .bk-obj-cols { display: none; }
+.bk-obj.sel { outline: 2px solid #3c78dc; outline-offset: 2px; }
+.bk-obj.sel .bk-obj-x {
+  display: grid; place-items: center; position: absolute; z-index: 2; top: -13px; right: -13px; width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; background: #1c1c1c; color: #fff; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+}
+.bk-obj-x .mi { width: 14px; height: 14px; }
+.bk-obj.sel .bk-obj-rz {
+  display: block; position: absolute; z-index: 2; right: -8px; bottom: -8px; width: 15px; height: 15px;
+  background: #fff; border: 2px solid #3c78dc; border-radius: 3px; cursor: nwse-resize;
+}
+.bk-obj.sel .bk-obj-cols { display: flex; gap: 5px; position: absolute; z-index: 2; left: 0; bottom: -30px; }
+.bk-obj-cols b { width: 20px; height: 20px; border-radius: 50%; background: var(--st); border: 1.5px solid rgba(0, 0, 0, .35); cursor: pointer; }
+.bk-obj.editing .bk-obj-cols, .bk-obj.editing .bk-obj-rz { display: none; }
+#bookDlg:is(.bk-hand, .bk-noting) .bk-obj { cursor: move; }
+#bookDlg.bk-noting .bk-stage { cursor: copy; }
+
+/* on the board: the cover, the pages last read, then the title, the pages and size, and when */
+.bk-recent { flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; padding: 8px 14px 0; min-width: 0; }
+.bk-recent.hidden { display: none; }
+.bk-recent-h { font-family: var(--face-label); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dimmer); }
+.bk-recent-row { display: flex; gap: 6px; min-width: 0; }
+.bk-thumb { position: relative; flex: 0 1 48px; min-width: 0; }
+.bk-thumb img { display: block; width: 100%; height: 50px; object-fit: cover; object-position: top; background: #fff; border-radius: 2px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.bk-thumb i { position: absolute; right: 2px; bottom: 2px; padding: 0 4px; border-radius: 6px; font-style: normal; font-size: 9.5px; line-height: 14px; background: rgba(0, 0, 0, .62); color: #fff; }
+.bk-when { font-size: 11px; color: var(--dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-when:empty { display: none; }
+
+/* a sticky note being written in a drawing note: its paper under the words */
+.sk-text-in.sticky { background: var(--st); color: #2a2620; border-radius: 2px; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); min-width: 6em; min-height: 3.75em; }

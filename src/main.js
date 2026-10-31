@@ -102,7 +102,9 @@ const S_EN = {
   'main.padDelete': 'Delete the selected strokes',
   'main.padPrev': 'Previous page of the book',
   'main.padNext': 'Next page of the book',
-  'main.padColor': 'Colour'
+  'main.padColor': 'Colour',
+  'main.padNote': 'Sticky note — tap where it goes',
+  'main.padNotePh': 'Write a note…'
 };
 let STRINGS = {};
 function t(key, vars) {
@@ -630,7 +632,8 @@ function padStrings() {
     away: t('main.padAway'), ended: t('main.padEnded'), readonly: t('main.padReadonly'),
     pen: t('main.padPen'), marker: t('main.padMarker'), brush: t('main.padBrush'), eraser: t('main.padEraser'),
     undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull'),
-    select: t('main.padSelect'), del: t('main.padDelete'), prev: t('main.padPrev'), next: t('main.padNext'), color: t('main.padColor')
+    select: t('main.padSelect'), del: t('main.padDelete'), prev: t('main.padPrev'), next: t('main.padNext'), color: t('main.padColor'),
+    note: t('main.padNote'), notePh: t('main.padNotePh')
   };
 }
 const padSend = (ch, m) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, m); };

@@ -247,6 +247,8 @@ function defaults() {
          PDF page is drawn ('sharp' or 'quick'). What a new notebook is: its
          paper, its page ('a4' 'letter' 'square' 'wide') and how many pages. */
       skGuide: 'dots', inkPressure: true, skSmooth: 'off',
+      // the cursor glides as you type, as Word's does (3.1.1, editor.js placeCaret)
+      smoothCaret: true,
       bookView: 'book', bookTurnFx: 'curl', bookSpeed: 'normal', bookDrag: true, bookWheel: true,
       bookFull: true, bookNumbers: true, bookQuality: 'sharp',
       nbPaper: 'ruled', nbShape: 'a4', nbPages: 12,
@@ -918,11 +920,12 @@ function adopt(raw, keepSettings) {
   st.pen = healPen(st.pen);
   st.sketchPen = healSketchPen(st.sketchPen);
   st.sketchFull = st.sketchFull !== false;
-  { const bp = st.bookPen || {}; st.bookPen = { tool: ['hand', 'pen', 'marker', 'brush', 'eraser'].includes(bp.tool) ? bp.tool : 'hand', color: inkColorOk(bp.color) ? bp.color : 'text', size: [0, 1, 2].includes(bp.size) ? bp.size : 1 }; }
+  { const bp = st.bookPen || {}; st.bookPen = { tool: ['hand', 'pen', 'marker', 'brush', 'eraser', 'note'].includes(bp.tool) ? bp.tool : 'hand', color: inkColorOk(bp.color) ? bp.color : 'text', size: [0, 1, 2].includes(bp.size) ? bp.size : 1 }; }
   if (!SK_PAPER_KINDS.includes(st.sketchPaper)) st.sketchPaper = 'light';
   // 3.1: Settings ▸ Drawing and ▸ Books. A book opened full screen when a drawing note did, so that is where bookFull starts.
   if (!SK_GUIDES.includes(st.skGuide)) st.skGuide = 'dots';
   st.inkPressure = st.inkPressure !== false;
+  st.smoothCaret = st.smoothCaret !== false;
   if (!INK_SMOOTH[st.skSmooth]) st.skSmooth = 'off';
   if (!BOOK_VIEWS.includes(st.bookView)) st.bookView = 'book';
   if (!BOOK_TURNS.includes(st.bookTurnFx)) st.bookTurnFx = 'curl';

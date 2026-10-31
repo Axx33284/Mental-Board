@@ -1932,6 +1932,7 @@ function wireSettings30() {
   check('setWpSound', 'wpSound');
   check('setWpGrid', 'wpGrid');
   check('setInkPressure', 'inkPressure');
+  check('setSmoothCaret', 'smoothCaret');
   check('setSkFull', 'sketchFull');
   check('setBookDrag', 'bookDrag');
   check('setBookWheel', 'bookWheel');
@@ -1997,7 +1998,7 @@ function syncSettings30() {
   on('bookQualitySeg', 'bkquality', s.bookQuality);
   on('nbPaperSeg', 'nbpaper', s.nbPaper);
   on('nbShapeSeg', 'nbshape', s.nbShape);
-  for (const [id, key] of [['setInkPressure', 'inkPressure'], ['setSkFull', 'sketchFull'], ['setBookDrag', 'bookDrag'],
+  for (const [id, key] of [['setSmoothCaret', 'smoothCaret'], ['setInkPressure', 'inkPressure'], ['setSkFull', 'sketchFull'], ['setBookDrag', 'bookDrag'],
     ['setBookWheel', 'bookWheel'], ['setBookFull', 'bookFull'], ['setBookNumbers', 'bookNumbers']]) $(id).checked = !!s[key];
   $('nbPages').value = s.nbPages;
   $('nbPagesVal').textContent = num(s.nbPages);
@@ -2166,7 +2167,7 @@ const SET_KEYS = {
   uiFontSeg: 'uiFont', skPaperSeg: 'sketchPaper', hwHandSeg: 'hwHand', wpKindSeg: 'wpKind',
   skGuideSeg: 'skGuide', skSmoothSeg: 'skSmooth', bookViewSeg: 'bookView', bookTurnSeg: 'bookTurnFx', bookSpeedSeg: 'bookSpeed',
   bookQualitySeg: 'bookQuality', nbPaperSeg: 'nbPaper', nbShapeSeg: 'nbShape',
-  setInkPressure: 'inkPressure', setSkFull: 'sketchFull', setBookDrag: 'bookDrag', setBookWheel: 'bookWheel',
+  setInkPressure: 'inkPressure', setSmoothCaret: 'smoothCaret', setSkFull: 'sketchFull', setBookDrag: 'bookDrag', setBookWheel: 'bookWheel',
   setBookFull: 'bookFull', setBookNumbers: 'bookNumbers',
   setEmbeds: 'embeds', setGuides: 'guides', setFocusMode: 'focusMode', setSounds: 'sounds', setSoftware: 'softwareRender',
   setSnap: 'snap', setCompass: 'compass', setMinimap: 'minimap', setSpell: 'spell', setConfirmDelete: 'confirmDelete',

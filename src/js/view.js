@@ -84,6 +84,7 @@ function applyView() {
   if (lvl) lvl.textContent = pct(Math.round(z * 100));
   markMoving();
   if (selImg) placeImgChrome();     // its chrome is in screen coords
+  if (editing) caretFollow(true);   // the smooth caret is in screen coords too (editor.js)
   scheduleCompass();
   applyFarMode();                   // too far out to read? drop the text
   scheduleMount();                  // pan/zoom changes which notes are on screen

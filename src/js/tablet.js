@@ -302,12 +302,30 @@ function onPadMessage(m) {
     else padUndo();
   }
   else if (m.t === 'sel') padSelection(m);
+  else if (m.t === 'sticky') padSticky(m);
   // the phone's arrows turn a book's pages
   else if (m.t === 'page') { if (padHost().kind === 'book') bookGo(m.d); }
   else if (m.t === 'size') { padSize = { a: m.a, px: m.px }; paintPadArea(); sendPadView(); padDirty(); }
   else if (m.t === 'got') padGot(m.n);
 }
 
+/* A sticky note written on the phone (3.1.1): on a book's page as one of its
+   things, in a drawing note as words on a note's paper, and on the board as a
+   note of its own. Its top left is where it was tapped. */
+function padSticky(m) {
+  const map = padMap(), w = padWorld(map, m.x, m.y);
+  if (map.kind === 'book') {
+    const at = bookPageUnder(w);
+    if (!at) return;
+    const H = BOOK_U * bk.n.book.ar, x = (w.x - at.x) / at.u, y = (w.y - at.y) / at.u;
+    bookAddObj(at.page, { id: uid(), k: 'note', x: r1(clamp(x, 0, BOOK_U - 240)), y: r1(clamp(y, 0, H - 210)), w: 240, h: 210, text: m.text, c: 'yellow' });
+  } else if (map.kind === 'sketch') addSketchSticky(m.text, w);
+  else if (map.kind === 'board') {
+    if (!padCanDraw()) return;
+    const n = addNote({ x: w.x + 140, y: w.y + 95 }, { body: '<p>' + esc(m.text).replace(/\n/g, '<br>') + '</p>', color: 'amber', edit: false });
+    if (n) { render(); saveSoon(); }
+  }
+}
 /* A phone point → world. `map` is the phone's region as it was when the
    stroke began: where it sits in the viewport, its size, and the view. */
 function padMap() {

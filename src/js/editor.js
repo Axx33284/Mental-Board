@@ -1834,3 +1834,76 @@ function sanitize(html) {
   });
   return d.innerHTML;
 }
+
+/* ─── smooth typing (3.1.1, Settings ▸ Notes ▸ Smooth typing) ───
+   The cursor glides to where the next letter goes instead of jumping there,
+   as Word's does. The native caret is made transparent on the note being
+   edited (mental.css §93) and #mbCaret, a 2 px bar in #viewport, is moved to
+   the collapsed selection's rectangle with a short transition; it blinks only
+   once the hand has been still for half a second. A selection that is not
+   collapsed shows no bar — the highlight is the cursor then.
+
+   Where the caret is comes from the selection's own rectangle; an empty line
+   has none, so it falls back to the <br> on it or the block's first line.
+   When even that fails the native caret is let back (`caret-native`) rather
+   than leaving nothing. A pan, a zoom or a scroll moves the bar at once, not
+   gliding, so it never trails the page. Off under reduced motion. */
+let caretEl = null, caretRaf = 0, caretJump = true, caretIdleT = 0;
+const smoothCaretOn = () => state.settings.smoothCaret !== false && !motionReduced();
+function caretRectOf(body) {
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed || !body.contains(sel.anchorNode)) return null;
+  const r = sel.getRangeAt(0);
+  const rects = r.getClientRects();
+  const rect = rects.length ? rects[rects.length - 1] : null;
+  if (rect && rect.height) return { x: rect.left, y: rect.top, h: rect.height };
+  // an empty line: the <br> it holds, or the start of the block it is in
+  const node = r.startContainer;
+  const child = node.nodeType === 1 ? node.childNodes[r.startOffset] : null;
+  if (child && child.nodeType === 1 && child.getBoundingClientRect().height) {
+    const b = child.getBoundingClientRect();
+    return { x: b.left, y: b.top, h: b.height };
+  }
+  const el = node.nodeType === 1 ? node : node.parentElement;
+  if (!el) return null;
+  const b = el.getBoundingClientRect(), cs = getComputedStyle(el), z = state.view.z;
+  if (!b.height) return null;
+  const lh = (parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45) * z;
+  const x = cs.direction === 'rtl' ? b.right - parseFloat(cs.paddingRight) * z : b.left + parseFloat(cs.paddingLeft) * z;
+  return { x, y: b.top + parseFloat(cs.paddingTop) * z, h: Math.min(lh, b.height) };
+}
+function placeCaret() {
+  caretRaf = 0;
+  const body = editing;
+  const on = !!body && smoothCaretOn() && document.activeElement === body;
+  document.body.dataset.caret = on ? 'smooth' : '';
+  if (!caretEl) { caretEl = document.createElement('i'); caretEl.id = 'mbCaret'; $('viewport').appendChild(caretEl); }
+  const rect = on ? caretRectOf(body) : null;
+  document.body.classList.toggle('caret-native', on && !rect);
+  const nb = rect && body.getBoundingClientRect();
+  // nothing to show, or scrolled out of sight inside a long note
+  if (!rect || rect.y + rect.h < nb.top || rect.y > nb.bottom) { caretEl.classList.remove('on'); caretJump = true; return; }
+  const vp = vpRect();
+  caretEl.classList.toggle('jump', caretJump);
+  caretEl.style.transform = `translate(${(rect.x - vp.left).toFixed(1)}px, ${(rect.y - vp.top).toFixed(1)}px)`;
+  caretEl.style.height = rect.h.toFixed(1) + 'px';
+  caretEl.style.width = clamp(2 * state.view.z, 1.5, 3).toFixed(1) + 'px';
+  caretEl.style.background = getComputedStyle(body).color;
+  caretEl.classList.add('on');
+  caretEl.classList.remove('blink');
+  clearTimeout(caretIdleT);
+  caretIdleT = setTimeout(() => caretEl.classList.add('blink'), 530);
+  if (caretJump) requestAnimationFrame(() => { caretJump = false; caretEl.classList.remove('jump'); });
+}
+// a letter typed, the arrows, a click: glide; a pan, a zoom, a scroll: jump
+function caretFollow(jump) {
+  if (jump) caretJump = true;
+  if (!caretRaf && (editing || (caretEl && caretEl.classList.contains('on')))) caretRaf = requestAnimationFrame(placeCaret);
+}
+function wireSmoothCaret() {
+  document.addEventListener('selectionchange', () => caretFollow(false));
+  document.addEventListener('input', () => caretFollow(false), true);
+  document.addEventListener('scroll', () => caretFollow(true), true);
+  document.addEventListener('focusout', () => caretFollow(true), true);
+  window.addEventListener('resize', () => caretFollow(true));
+}

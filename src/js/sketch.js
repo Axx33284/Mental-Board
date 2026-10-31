@@ -172,7 +172,8 @@ function okSketch(raw) {
   // typed or pasted words on the page (2.10): where, how big, what colour, what
   const texts = (Array.isArray(raw.texts) ? raw.texts : []).slice(0, SKETCH_TEXTS_MAX)
     .filter((x) => x && typeof x.text === 'string' && x.text.trim() && Number.isFinite(+x.x) && Number.isFinite(+x.y))
-    .map((x) => ({ x: r1(+x.x), y: r1(+x.y), size: r1(clamp(+x.size || 20, 1, 4000)), color: inkColorOk(x.color) ? x.color : 'text', text: x.text.slice(0, SKETCH_TEXT_MAX) }));
+    .map((x) => Object.assign({ x: r1(+x.x), y: r1(+x.y), size: r1(clamp(+x.size || 20, 1, 4000)), color: inkColorOk(x.color) ? x.color : 'text', text: x.text.slice(0, SKETCH_TEXT_MAX) },
+      STICKY_BG[x.note] ? { note: x.note } : {}));     // 3.1.1: words on a sticky note's paper
   if (texts.length) out.texts = texts;
   return out;
 }
@@ -199,15 +200,37 @@ function sketchTextBox(t) {
   const lines = t.text.split('\n');
   let w = 0;
   for (const l of lines) w = Math.max(w, g.measureText(l).width);
-  const box = { x: t.x, y: t.y, w: Math.max(w, t.size * 0.3), h: lines.length * t.size * SK_LINE };
+  let box = { x: t.x, y: t.y, w: Math.max(w, t.size * 0.3), h: lines.length * t.size * SK_LINE };
+  // a sticky note (3.1.1) is its paper: the words with a margin round them, never narrower than a few words
+  if (t.note) { const p = t.size * SK_NOTE_PAD; box = { x: t.x - p, y: t.y - p, w: Math.max(box.w, t.size * 6) + 2 * p, h: Math.max(box.h, t.size * 3 * SK_LINE) + 2 * p }; }
   Object.defineProperty(t, '_box', { value: box, configurable: true });
   return box;
 }
+const SK_NOTE_PAD = 0.6;             // a sticky note's margin, in font sizes
 function makeSketchTextEl(t) {
   const el = document.createElementNS(SVGNS, 'text');
   el.setAttribute('class', 'sk-text');
   el.setAttribute('font-size', t.size);
-  el.style.fill = inkColorCss(t.color);
+  el.style.fill = t.note ? STICKY_INK : inkColorCss(t.color);
+  if (t.note) {
+    // the note's paper behind its words, with the slight shadow of a real one
+    const g = document.createElementNS(SVGNS, 'g'), b = sketchTextBox(t);
+    g.setAttribute('class', 'sk-sticky');
+    const r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('x', r1(b.x)); r.setAttribute('y', r1(b.y)); r.setAttribute('width', r1(b.w)); r.setAttribute('height', r1(b.h));
+    r.setAttribute('rx', r1(t.size * 0.12));
+    r.style.fill = STICKY_BG[t.note];
+    g.appendChild(r);
+    g.appendChild(el);
+    t.text.split('\n').forEach((line, i) => {
+      const sp = document.createElementNS(SVGNS, 'tspan');
+      sp.setAttribute('x', t.x);
+      sp.setAttribute('y', r1(t.y + t.size * (SK_BASE + i * SK_LINE)));
+      sp.textContent = line || ' ';
+      el.appendChild(sp);
+    });
+    return g;
+  }
   t.text.split('\n').forEach((line, i) => {
     const sp = document.createElementNS(SVGNS, 'tspan');
     sp.setAttribute('x', t.x);
@@ -219,6 +242,7 @@ function makeSketchTextEl(t) {
 }
 function paintSketchTextOnCanvas(ctx, t, color) {
   ctx.save();
+  if (t.note) { const b = sketchTextBox(t); ctx.fillStyle = STICKY_BG[t.note]; ctx.fillRect(b.x, b.y, b.w, b.h); color = STICKY_INK; }
   ctx.fillStyle = color;
   ctx.font = `500 ${t.size}px ${SK_FONT}`;
   ctx.textBaseline = 'alphabetic';
@@ -386,6 +410,10 @@ const SK_PAPERS = {
     c: { default: '#6d7288', red: '#ff7b7b', orange: '#ffa65a', amber: '#f0cc5a', green: '#69de8e', teal: '#5adcd6', blue: '#72afff', violet: '#b48cff', pink: '#ff8ccd' } }
 };
 const SK_PAPER_KINDS = ['light', 'dark', 'note'];
+/* A sticky note's paper (3.1.1) — in a book, in a drawing note, from the
+   phone — and the ink on it: fixed colours, like a real one, whatever the theme. */
+const STICKY_BG = { yellow: '#fff0a6', pink: '#ffd3e4', blue: '#d2e7ff', green: '#d6f3cf' };
+const STICKY_INK = '#2a2620';
 // the pattern on a drawing's paper (3.1, Settings ▸ Drawing; mental.css §90 draws it, setSketchView moves it)
 const SK_GUIDES = ['dots', 'grid', 'lines', 'none'];
 const skPaper = () => SK_PAPERS[state.settings.sketchPaper] || null;
@@ -554,7 +582,7 @@ function buildSketchBar() {
     tool('select', icon('arrow_selector_tool'), te('sketch.select')) +
     tool('pen', icon('ink_pen'), te('ink.pen')) + tool('marker', icon('ink_highlighter'), te('ink.marker')) +
     tool('brush', icon('brush'), te('ink.brush')) + tool('eraser', icon('ink_eraser'), te('ink.eraser')) +
-    tool('text', icon('title'), te('sketch.text')) +
+    tool('text', icon('title'), te('sketch.text')) + tool('note', icon('sticky_note_2'), te('sketch.sticky')) +
     `<span class="ik-sep"></span>` +
     [0, 1, 2].map((i) => `<button class="ik-size${p.size === i ? ' on' : ''}" data-size="${i}" title="${sizeTips[i]}"><i style="--d:${[4, 7, 11][i]}px"></i></button>`).join('') +
     `<span class="ik-sep"></span>` +
@@ -576,7 +604,7 @@ function buildSketchBar() {
     if (sk && state.settings.sketchPen.tool !== 'select') sk.sel.clear();   // leaving the arrow lets go
     // a colour or a size picked while typing is the words' colour and size
     if (sk && sk.text && (patch.color || patch.size != null)) restyleSketchText();
-    if (sk && sk.text && patch.tool && patch.tool !== 'text') closeSketchText(true);
+    if (sk && sk.text && patch.tool && patch.tool !== 'text' && patch.tool !== 'note') closeSketchText(true);
     buildSketchBar(); saveSoon();
   };
   bar.querySelectorAll('[data-tool]').forEach((el) => onPress(el, () => set({ tool: el.dataset.tool })));
@@ -607,13 +635,13 @@ function buildSketchBar() {
     else if (act === 'fit') fitSketchView();
   }));
   $('sketchDlg').classList.toggle('sk-selecting', p.tool === 'select');
-  $('sketchDlg').classList.toggle('sk-typing', p.tool === 'text');
+  $('sketchDlg').classList.toggle('sk-typing', p.tool === 'text' || p.tool === 'note');
   if (sk) { drawSketchStrokes(); setSketchView(sk.view); }
 }
 // the drawing note's pen: the board pen's tools, and the T tool, which the board pen has not
 function healSketchPen(p) {
   const out = healPen(p);
-  if (p && p.tool === 'text') out.tool = 'text';
+  if (p && (p.tool === 'text' || p.tool === 'note')) out.tool = p.tool;
   return out;
 }
 
@@ -626,7 +654,7 @@ function sketchPoint(e) {
 function onSketchDown(e) {
   if (!sk || sk.live || sk.erase || skSurface.busy()) return;
   // a press anywhere on the page keeps the words being typed, then does what it does
-  if (sk.text) { closeSketchText(true); if (state.settings.sketchPen.tool === 'text') { e.preventDefault(); return; } }
+  if (sk.text) { closeSketchText(true); if (['text', 'note'].includes(state.settings.sketchPen.tool)) { e.preventDefault(); return; } }
   if (e.pointerType === 'pen') sk.penSeen = true;
   else if (e.pointerType === 'touch' && sk.penSeen) return;     // a palm, once a pen has been used
   if (e.button !== 0 && e.button !== 5) return;
@@ -647,11 +675,11 @@ function onSketchDown(e) {
     return;
   }
   if (p.tool === 'select') { beginSketchPick(e, at); return; }
-  if (p.tool === 'text') {
-    // on words already there: type into them; anywhere else: new words, starting where it was pressed
+  if (p.tool === 'text' || p.tool === 'note') {
+    // on words already there: type into them; anywhere else: new words (on a sticky note's paper, with N), starting where it was pressed
     endSketchStroke();
     const hit = sketchHit(at);
-    openSketchText(hit && hit.text != null ? hit : at, hit && hit.text != null ? hit : null);
+    openSketchText(hit && hit.text != null ? hit : at, hit && hit.text != null ? hit : null, p.tool === 'note' ? 'yellow' : '');
     return;
   }
   if (sk.strokes.length >= SKETCH_MAX) { toast(t('sketch.full')); return; }
@@ -980,7 +1008,7 @@ function paintSketchSel(g) {
    place and size (it follows the zoom), so what you type is where it lands.
    Enter is a new line; Escape, Ctrl+Enter, a press anywhere else or another
    tool keeps it. Emptied words are removed. One undo step per visit. */
-function openSketchText(where, item) {
+function openSketchText(where, item, note) {
   if (!sk) return;
   closeSketchText(true);
   if (!item && sk.texts.length >= SKETCH_TEXTS_MAX) { toast(t('sketch.textsFull')); return; }
@@ -992,7 +1020,8 @@ function openSketchText(where, item) {
   ta.spellcheck = state.settings.spell !== false;
   ta.value = item ? item.text : '';
   ta.setAttribute('aria-label', t('sketch.text'));
-  sk.text = { ta, item, x: where.x, y: where.y, size: item ? item.size : r1(SK_TEXT_PX[p.size] / sk.view.z), color: item ? item.color : p.color };
+  sk.text = { ta, item, x: where.x, y: where.y, size: item ? item.size : r1(SK_TEXT_PX[note ? 0 : p.size] / sk.view.z), color: item ? item.color : p.color, note: item ? item.note || '' : note || '' };
+  if (sk.text.note) { ta.classList.add('sticky'); ta.style.setProperty('--st', STICKY_BG[sk.text.note]); ta.placeholder = t('book.stickyPh'); }
   $('skStage').appendChild(ta);
   placeSketchText();
   ta.addEventListener('keydown', (e) => {
@@ -1005,11 +1034,12 @@ function openSketchText(where, item) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 function placeSketchText() {
-  const T = sk.text, v = sk.view;
-  T.ta.style.left = (v.x + T.x * v.z) + 'px';
-  T.ta.style.top = (v.y + T.y * v.z) + 'px';
+  const T = sk.text, v = sk.view, pad = T.note ? T.size * SK_NOTE_PAD : 0;
+  T.ta.style.left = (v.x + (T.x - pad) * v.z) + 'px';
+  T.ta.style.top = (v.y + (T.y - pad) * v.z) + 'px';
   T.ta.style.fontSize = (T.size * v.z) + 'px';
-  T.ta.style.color = inkColorCss(T.color);
+  T.ta.style.color = T.note ? STICKY_INK : inkColorCss(T.color);
+  T.ta.style.padding = T.note ? (pad * v.z) + 'px' : '';
 }
 // the pen's colour or size changed while typing: the words take it
 function restyleSketchText() {
@@ -1028,12 +1058,22 @@ function closeSketchText(keep) {
   const changed = it ? (v !== it.text || T.color !== it.color || T.size !== it.size) : !!v.trim();
   if (keep && changed) {
     sketchStep();
-    const made = v.trim() ? { x: r1(T.x), y: r1(T.y), size: r1(T.size), color: T.color, text: v } : null;
+    const made = v.trim() ? Object.assign({ x: r1(T.x), y: r1(T.y), size: r1(T.size), color: T.color, text: v }, T.note ? { note: T.note } : {}) : null;
     if (it) sk.texts = sk.texts.flatMap((x) => (x === it ? (made ? [made] : []) : [x]));
     else sk.texts = sk.texts.concat([made]);
     if (it && sk.sel.has(it)) { sk.sel.delete(it); if (made) sk.sel.add(made); }
   }
   drawSketchStrokes();
+}
+// a sticky note from the phone (tablet.js padSticky), its top left where it was tapped
+function addSketchSticky(text, at) {
+  const v = String(text || '').replace(/\r\n?/g, '\n').replace(/\s+$/, '').slice(0, SKETCH_TEXT_MAX);
+  if (!sk || !v.trim() || sk.texts.length >= SKETCH_TEXTS_MAX) return false;
+  closeSketchText(true);
+  sketchStep();
+  sk.texts = sk.texts.concat([{ x: r1(at.x), y: r1(at.y), size: r1(SK_TEXT_PX[0] / sk.view.z), color: 'text', text: v, note: 'yellow' }]);
+  drawSketchStrokes();
+  return true;
 }
 // words from a paste or a drop, centred where they were put
 function addSketchText(text, at) {

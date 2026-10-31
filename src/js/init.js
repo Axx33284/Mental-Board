@@ -736,7 +736,7 @@ function init() {
     if (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
     // into an open drawing note, never onto the board behind it (sketch.js)
     if (sketchOpen()) { if ($('studio').classList.contains('hidden')) onSketchPaste(e); return; }
-    if (bookOpen()) return;                                // a book takes no paste
+    if (bookOpen()) { onBookPaste(e); return; }            // a picture or words onto a page (book.js, 3.1.1)
     if (editing) return;
     if (settingsOpen()) return;
     pasteSeen = true; clearTimeout(pasteTimer);
@@ -1129,6 +1129,7 @@ function init() {
   wireSketch();
   wireHandwrite();         // a picture in a drawing, written out by hand (handwrite.js)
   wireBook();              // the book reader (book.js)
+  wireSmoothCaret();       // the cursor that glides as you type (editor.js)
   startAutosave();
   watchVpRect();
   wireExtras();

@@ -44,8 +44,9 @@ const BOOK_INK_MAX = 3000;       // strokes on one page
 const BOOK_U = 1000;             // a page is this many units wide
 const BOOK_PAPERS = ['ruled', 'dots', 'grid', 'plain'];
 const BOOK_VIEWS = ['book', 'scroll'];
-const BOOK_TOOLS = ['hand', 'pen', 'marker', 'brush', 'eraser'];
+const BOOK_TOOLS = ['hand', 'pen', 'marker', 'brush', 'eraser', 'note'];
 const BOOK_TITLE_H = 44;         // the title under the cover on the board, in note px
+const BOOK_INFO_H = 96;          // and since 3.1.1 the pages last read and the facts under it
 const BOOK_ZMIN = 0.3, BOOK_ZMAX = 6;
 const BOOK_PDF_PX = 12e6;        // the most pixels one drawn PDF page may have, at any zoom
 const BOOK_CACHE_PX = 48e6;      // and the drawn pages kept, together
@@ -75,19 +76,30 @@ function okBook(raw) {
     paper: BOOK_PAPERS.includes(raw.paper) ? raw.paper : 'ruled',
     view: BOOK_VIEWS.includes(raw.view) ? raw.view : 'book',
     at: clamp(Math.round(+raw.at || 0), 0, pages - 1),
-    ink
+    ink,
+    // 3.1.1: what lies on the pages, when it was made and last written in, the PDF's size, the pages last looked at
+    objs: okBookObjs(raw.objs, pages),
+    added: +raw.added > 0 ? +raw.added : 0,
+    edited: +raw.edited > 0 ? +raw.edited : 0,
+    size: +raw.size > 0 ? Math.round(+raw.size) : 0,
+    recent: (Array.isArray(raw.recent) ? raw.recent : []).filter((r) => r && Number.isInteger(r.p) && r.p >= 0 && r.p < pages &&
+      typeof r.img === 'string' && r.img.startsWith('data:image/jpeg;base64,') && r.img.length < 80000).slice(0, BOOK_RECENT).map((r) => ({ p: r.p, img: r.img }))
   };
 }
 // the book's files, from its body: the cover picture and (for a PDF) the PDF
 function bookFiles(n) {
   const tpl = document.createElement('template');
   tpl.innerHTML = (n && n.body) || '';
-  const img = tpl.content.querySelector('img'), a = tpl.content.querySelector('a.mb-file');
-  return { cover: img ? img.getAttribute('src') || '' : '', pdf: a ? a.getAttribute('href') || '' : '', name: a ? a.getAttribute('data-name') || '' : '' };
+  const img = tpl.content.querySelector('img:not(.bk-pic)'), a = tpl.content.querySelector('a.mb-file');
+  // the pictures laid on its pages (3.1.1), by the id their place on a page names
+  const pics = {};
+  for (const p of tpl.content.querySelectorAll('img.bk-pic[data-pic]')) pics[p.getAttribute('data-pic')] = { url: p.getAttribute('src') || '', name: p.getAttribute('data-name') || '' };
+  return { cover: img ? img.getAttribute('src') || '' : '', pdf: a ? a.getAttribute('href') || '' : '', name: a ? a.getAttribute('data-name') || '' : '', pics };
 }
-function bookBody(cover, pdf, name) {
+function bookBody(cover, pdf, name, pics) {
   return (cover ? `<img class="mb-img" src="${esc(cover)}" data-name="${esc((name || 'book').replace(/\.pdf$/i, '') + ' cover.png')}">` : '') +
-    (pdf ? `<a class="mb-file" href="${esc(pdf)}" data-name="${esc(name || 'book.pdf')}">${esc(name || 'book.pdf')}</a>` : '');
+    (pdf ? `<a class="mb-file" href="${esc(pdf)}" data-name="${esc(name || 'book.pdf')}">${esc(name || 'book.pdf')}</a>` : '') +
+    (pics || []).map((p) => `<img class="mb-img bk-pic" data-pic="${esc(p.id)}" src="${esc(p.url)}" data-name="${esc(p.name || 'picture.png')}">`).join('');
 }
 
 /* ---- making one ---- */
@@ -95,7 +107,7 @@ function bookBody(cover, pdf, name) {
 function addNotebook(worldPt) {
   if (!canEditHere()) return null;
   const s = state.settings, ar = NB_SHAPES[s.nbShape] || 1.414;
-  const book = { title: '', kind: 'blank', pages: clamp(s.nbPages || 12, 1, BOOK_PAGES_MAX), ar, paper: s.nbPaper, view: s.bookView };
+  const book = { title: '', kind: 'blank', pages: clamp(s.nbPages || 12, 1, BOOK_PAGES_MAX), ar, paper: s.nbPaper, view: s.bookView, added: Date.now() };
   const n = addNote(worldPt, { book, w: 220, h: Math.round(220 * Math.min(ar, 1.3)) + BOOK_TITLE_H, edit: false });
   if (n) openBook(n.id);
   return n;
@@ -130,8 +142,8 @@ async function bookFromFile(pick, at) {
     const pages = Math.min(doc.numPages, BOOK_PAGES_MAX);
     const w = 220;
     const n = addNote(at, {
-      book: { title: pick.name.replace(/\.pdf$/i, ''), kind: 'pdf', pages, ar, paper: 'plain', view: state.settings.bookView },
-      body: bookBody(cover, r.url, pick.name), w, h: Math.round(w * Math.min(ar, 1.8)) + BOOK_TITLE_H, edit: false
+      book: { title: pick.name.replace(/\.pdf$/i, ''), kind: 'pdf', pages, ar, paper: 'plain', view: state.settings.bookView, added: Date.now(), size: doc._mbSize || 0 },
+      body: bookBody(cover, r.url, pick.name), w, h: Math.round(w * Math.min(ar, 1.8)) + BOOK_TITLE_H + BOOK_INFO_H, edit: false
     });
     if (doc.numPages > BOOK_PAGES_MAX) toast(t('book.tooLong', { n: BOOK_PAGES_MAX }));
     else toast(t('book.made', { n: pages }));
@@ -147,10 +159,13 @@ async function bookOpenPdf(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('the PDF is not in the board\'s folder (' + res.status + ')');
   const data = new Uint8Array(await res.arrayBuffer());
-  return L.getDocument({
+  const size = data.length;              // pdf.js takes the buffer over; its size is read first
+  const doc = await L.getDocument({
     data, isEvalSupported: false,
     cMapUrl: 'assets/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: 'assets/pdfjs/standard_fonts/'
   }).promise;
+  doc._mbSize = size;
+  return doc;
 }
 
 /* ---- on the board ---- */
@@ -162,7 +177,8 @@ function fillBook(el, n) {
   el.innerHTML =
     `<div class="bk-face">` +
       `<div class="bk-cover${f.cover ? '' : ' blank'}">${f.cover ? `<img src="${esc(f.cover)}" alt="" draggable="false">` : `<span class="bk-cover-title" dir="auto"></span><i class="bk-band"></i>`}</div>` +
-      `<div class="bk-meta"><span class="bk-title" dir="auto"></span><span class="bk-count"></span></div>` +
+      `<div class="bk-recent hidden"><span class="bk-recent-h"></span><span class="bk-recent-row"></span></div>` +
+      `<div class="bk-meta"><span class="bk-title" dir="auto"></span><span class="bk-count"></span><span class="bk-when"></span></div>` +
     `</div><div class="note-status hidden"></div>${rzHtml()}`;
   paintBook(el, n);
   paintNoteStatus(el, n);
@@ -175,12 +191,26 @@ function paintBook(el, n) {
   const ct = el.querySelector('.bk-cover-title');
   if (ct) ct.textContent = B.title || '';
   const inked = Object.keys(B.ink || {}).length;
-  el.querySelector('.bk-count').textContent = t('book.pages', { n: B.pages }) + (inked ? ' · ' + t('book.written', { n: inked }) : '');
+  // the pages and the size; when it came and when it was last written in (3.1.1)
+  el.querySelector('.bk-count').textContent = [t('book.pages', { n: B.pages }), B.size && typeof fmtBytes === 'function' ? fmtBytes(B.size) : '', inked ? t('book.written', { n: inked }) : ''].filter(Boolean).join(' · ');
+  el.querySelector('.bk-when').textContent = [B.added ? t('book.added', { d: bookWhen(B.added) }) : '', B.edited ? t('book.edited', { d: bookWhen(B.edited) }) : ''].filter(Boolean).join(' · ');
+  // the pages last looked at; a double-click on one opens the book there
+  const rec = el.querySelector('.bk-recent'), row = el.querySelector('.bk-recent-row');
+  rec.classList.toggle('hidden', !(B.recent || []).length);
+  el.querySelector('.bk-recent-h').textContent = t('book.recent');
+  row.textContent = '';
+  for (const r of B.recent || []) {
+    const b = document.createElement('span');
+    b.className = 'bk-thumb';
+    b.innerHTML = `<img src="${r.img}" alt="" draggable="false"><i>${num(r.p + 1)}</i>`;
+    b.addEventListener('dblclick', () => { n.book = Object.assign({}, n.book, { at: r.p }); }, true);
+    row.appendChild(b);
+  }
 }
 // the board picture (edit-ops.js paintBoardCanvas): the cover, or a plain cover, and the title
 function paintBookOnCanvas(ctx, n, pal, font, pictures) {
   const img = pictures && pictures.get(n.id);
-  const room = { x: n.x + 8, y: n.y + 8, w: n.w - 16, h: n.h - BOOK_TITLE_H - 8 };
+  const room = { x: n.x + 8, y: n.y + 8, w: n.w - 16, h: Math.max(20, n.h - BOOK_TITLE_H - 8 - ((n.book.recent || []).length ? BOOK_INFO_H - 30 : 0)) };
   ctx.fillStyle = pal.noteBg(n.color);
   ctx.fillRect(n.x, n.y, n.w, n.h);
   if (img) {
@@ -196,7 +226,7 @@ function paintBookOnCanvas(ctx, n, pal, font, pictures) {
   ctx.fillStyle = pal.text;
   ctx.font = `600 14px ${font}`;
   ctx.textBaseline = 'middle';
-  ctx.fillText(n.book.title || t('book.untitled'), n.x + 12, n.y + n.h - BOOK_TITLE_H / 2, n.w - 24);
+  ctx.fillText(n.book.title || t('book.untitled'), n.x + 12, n.y + n.h - BOOK_TITLE_H / 2 - 6, n.w - 24);
 }
 
 /* ---- the reader ---- */
@@ -214,7 +244,9 @@ function openBook(id) {
   bk = {
     n, doc: null, docP: null, ink: Object.assign({}, B.ink), undo: [], redo: [], view: B.view, at: B.at, cam: { x: 0, y: 0, z: 1 }, fitKey: '',
     tool: BOOK_TOOLS.includes(p.tool) ? p.tool : 'hand', color: inkColorOk(p.color) ? p.color : 'text', size: [0, 1, 2].includes(p.size) ? p.size : 1,
-    live: null, erase: null, hand: null, dirty: false, undoTaken: false, turning: false, cache: new Map(), penSeen: false
+    live: null, erase: null, hand: null, dirty: false, undoTaken: false, turning: false, cache: new Map(), penSeen: false,
+    // 3.1.1: what lies on the pages, the files of its pictures, the one selected, the pages looked at, where the pointer was
+    objs: JSON.parse(JSON.stringify(B.objs || {})), picFiles: Object.assign({}, bookFiles(n).pics), sel: null, obj: null, seen: [], lastPt: null
   };
   const dlg = $('bookDlg');
   clearTimeout(closeBook.timer);
@@ -224,7 +256,14 @@ function openBook(id) {
   $('bkTitle').value = B.title;
   const f = bookFiles(n);
   if (B.kind === 'pdf' && f.pdf) {
-    bk.docP = bookOpenPdf(f.pdf).then((doc) => { if (bk && bk.n === n) { bk.doc = doc; bookLayout(); } else doc.destroy(); return doc; })
+    bk.docP = bookOpenPdf(f.pdf).then((doc) => {
+      if (bk && bk.n === n) {
+        bk.doc = doc;
+        if (!n.book.size && doc._mbSize) n.book = Object.assign({}, n.book, { size: doc._mbSize });   // a book from before 3.1.1 learns its size
+        bookLayout();
+      } else doc.destroy();
+      return doc;
+    })
       .catch((err) => { console.warn('book: the PDF did not open', err); bookSay(t('book.cannotOpen')); });
   }
   buildBookBar();
@@ -234,8 +273,12 @@ function openBook(id) {
 }
 function closeBook() {
   if (!bk) return;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#bookDlg .bk-sticky-in')) document.activeElement.blur();
+  if (bk.obj) bookObjUp(null);
   endBookStroke();
   bookTurnSettle();
+  // the pages looked at, as the board will show them — no undo step, it is not an edit
+  if (bk.seen.length) bk.n.book = Object.assign({}, bk.n.book, { recent: bookRecentFrom(bk) });
   clearTimeout(bk.sharpT);
   if (bk.dirty) commitBook();
   const { n, undoTaken, doc } = bk;
@@ -259,7 +302,13 @@ function commitBook() {
   if (!bk.undoTaken) { pushUndo(); bk.undoTaken = true; }
   const ink = {};
   for (const k of Object.keys(bk.ink)) if (bk.ink[k] && bk.ink[k].length) ink[k] = bk.ink[k];
-  n.book = Object.assign({}, n.book, { title: $('bkTitle').value.trim().slice(0, 120), ink, view: bk.view, at: bk.at });
+  // the things on the pages, and their pictures' files back into the body (3.1.1)
+  const objs = {}, pics = [];
+  for (const k of Object.keys(bk.objs)) if (bk.objs[k] && bk.objs[k].length) objs[k] = bk.objs[k];
+  for (const list of Object.values(objs)) for (const o of list) if (o.k === 'pic' && bk.picFiles[o.id]) pics.push(Object.assign({ id: o.id }, bk.picFiles[o.id]));
+  const f = bookFiles(n);
+  n.body = bookBody(f.cover, f.pdf, f.name, pics);
+  n.book = Object.assign({}, n.book, { title: $('bkTitle').value.trim().slice(0, 120), ink, objs, view: bk.view, at: bk.at, edited: Date.now() });
   bk.dirty = false;
   saveSoon();
 }
@@ -295,6 +344,7 @@ function buildBookBar() {
     `<span class="ik-sep"></span>` +
     tool('hand', 'mouse', te('book.hand')) + tool('pen', 'ink_pen', te('ink.pen')) + tool('marker', 'ink_highlighter', te('ink.marker')) +
     tool('brush', 'brush', te('ink.brush')) + tool('eraser', 'ink_eraser', te('ink.eraser')) +
+    tool('note', 'sticky_note_2', te('book.sticky')) + btn('pic', 'image', te('book.addPic')) +
     `<span class="ik-sep"></span>` +
     [0, 1, 2].map((i) => `<button class="ik-size${bk.size === i ? ' on' : ''}" data-size="${i}" title="${sizeTips[i]}"><i style="--d:${[4, 7, 11][i]}px"></i></button>`).join('') +
     ['text', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'].filter((c) => c === 'text' || COLORS.includes(c)).map(sw).join('') +
@@ -309,7 +359,7 @@ function buildBookBar() {
   const keep = () => { state.settings.bookPen = { tool: bk.tool, color: bk.color, size: bk.size }; saveSoon(); };
   bar.querySelectorAll('[data-tool]').forEach((el) => onPress(el, () => { bk.tool = el.dataset.tool; keep(); buildBookBar(); }));
   bar.querySelectorAll('[data-size]').forEach((el) => onPress(el, () => { bk.size = +el.dataset.size; keep(); buildBookBar(); }));
-  bar.querySelectorAll('[data-ink-color]').forEach((el) => onPress(el, () => { bk.color = el.dataset.inkColor; if (bk.tool === 'hand' || bk.tool === 'eraser') bk.tool = 'pen'; keep(); buildBookBar(); }));
+  bar.querySelectorAll('[data-ink-color]').forEach((el) => onPress(el, () => { bk.color = el.dataset.inkColor; if (['hand', 'eraser', 'note'].includes(bk.tool)) bk.tool = 'pen'; keep(); buildBookBar(); }));
   bar.querySelectorAll('[data-view]').forEach((el) => onPress(el, () => { if (bk.view !== el.dataset.view) { bk.view = el.dataset.view; keepBookPlace(); buildBookBar(); bookLayout(); } }));
   bar.querySelectorAll('[data-bk]').forEach((el) => onPress(el, () => {
     const act = el.dataset.bk;
@@ -323,6 +373,7 @@ function buildBookBar() {
     else if (act === 'redo') bookUndo(false);
     else if (act === 'addpage') bookAddPage();
     else if (act === 'paper') bookNextPaper();
+    else if (act === 'pic') bookAddPicturesFromBar();
     else if (act === 'clear') bookClearPage();
     else if (act === 'full') { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else $('bookDlg').requestFullscreen().catch(() => {}); }
   }));
@@ -336,8 +387,10 @@ function buildBookBar() {
   bar.querySelector('[data-bk="undo"]').disabled = !bk.undo.length;
   bar.querySelector('[data-bk="redo"]').disabled = !bk.redo.length;
   $('bookDlg').classList.toggle('bk-hand', bk.tool === 'hand');
+  $('bookDlg').classList.toggle('bk-noting', bk.tool === 'note');
 }
 function bookShowAt() {
+  bookNoteSeen(bk.view === 'book' ? bookSpreadOf(bk.at) : [bk.at]);
   const at = $('bkAt');
   if (at && document.activeElement !== at) at.value = bk.at + 1;
 }
@@ -532,6 +585,7 @@ function bookPageEl(i, S) {
     pg.appendChild(c);
     bookRenderPage(i, c, S);
   }
+  pg.appendChild(bookObjsLayer(i));             // pictures and sticky notes, under the ink (3.1.1)
   const svg = document.createElementNS(SVGNS, 'svg');
   svg.setAttribute('class', 'bk-ink');
   svg.setAttribute('viewBox', `0 0 ${BOOK_U} ${r1(BOOK_U * B.ar)}`);
@@ -845,7 +899,7 @@ function bookDragTurnEnd(G) {
 }
 /* ---- ink on a page ---- */
 function bookStep(page) {
-  bk.undo.push({ page, strokes: (bk.ink[page] || []).slice() });
+  bk.undo.push({ page, strokes: (bk.ink[page] || []).slice(), objs: (bk.objs[page] || []).slice() });
   if (bk.undo.length > 200) bk.undo.shift();
   bk.redo = [];
   bk.dirty = true;
@@ -854,11 +908,12 @@ function bookUndo(back) {
   const from = back ? bk.undo : bk.redo, to = back ? bk.redo : bk.undo;
   if (!from.length) return;
   const s = from.pop();
-  to.push({ page: s.page, strokes: (bk.ink[s.page] || []).slice() });
+  to.push({ page: s.page, strokes: (bk.ink[s.page] || []).slice(), objs: (bk.objs[s.page] || []).slice() });
   bk.ink[s.page] = s.strokes;
+  bk.objs[s.page] = s.objs || [];
   bk.dirty = true;
   commitBook();
-  if (bk.view === 'book') bookGoTo(s.page); else { bookRepaintInk(s.page); bookGoTo(s.page); }
+  if (bk.view === 'book') bookGoTo(s.page); else { bookRepaintPage(s.page); bookGoTo(s.page); }
   buildBookBar();
 }
 function bookRepaintInk(page) {
@@ -978,7 +1033,12 @@ function onBookDown(e) {
   const pg = e.target.closest && e.target.closest('#bookDlg .bk-page');
   if (e.pointerType === 'pen') bk.penSeen = true;
   else if (e.pointerType === 'touch' && bk.penSeen) return;          // a palm, once a pen has been used
-  const tool = e.pointerType === 'pen' && bk.tool === 'hand' ? 'pen' : bk.tool;   // a pen always writes
+  const tool = e.pointerType === 'pen' && ['hand', 'note'].includes(bk.tool) ? 'pen' : bk.tool;   // a pen always writes
+  // a picture or a sticky note on the page: the hand and the note tool take hold of it (3.1.1)
+  const objEl = e.target.closest && e.target.closest('#bookDlg .bk-obj');
+  if (objEl && (tool === 'hand' || tool === 'note') && e.button === 0 && !objEl.closest('.bk-leaf')) { bookObjDown(e, objEl); return; }
+  if (bk.sel && !objEl) { bk.sel = null; bookMarkSel(); }
+  if (tool === 'note' && pg && e.button === 0) { e.preventDefault(); bookNewNote(pg, e); return; }
   window.addEventListener('pointermove', onBookMove);
   window.addEventListener('pointerup', onBookUp);
   window.addEventListener('pointercancel', onBookUp);
@@ -1054,7 +1114,9 @@ function onBookKey(e) {
     return;
   }
   const ctrl = e.ctrlKey || e.metaKey, key = letterKey(e);
-  if (e.key === 'Escape') { e.preventDefault(); closeBook(); return; }
+  if (e.key === 'Escape') { e.preventDefault(); if (bk.sel) { bk.sel = null; bookMarkSel(); } else closeBook(); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && bk.sel) { e.preventDefault(); const s = bookSelected(); if (s) bookDeleteObj(s.page, s.id); return; }
+  if (e.key === 'Enter' && bk.sel) { const s = bookSelected(); if (s && bookObjOf(s.page, s.id).k === 'note') { e.preventDefault(); bookEditNote(s.page, s.id); } return; }
   if (ctrl && key === 'z') { e.preventDefault(); bookUndo(!e.shiftKey); return; }
   if (ctrl && key === 'y') { e.preventDefault(); bookUndo(false); return; }
   if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); bkSurface.zoomCentre(1.25); return; }
@@ -1067,7 +1129,7 @@ function onBookKey(e) {
   if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); bookGo(document.documentElement.dir === 'rtl' && e.key === 'ArrowLeft' ? 1 : -1); return; }
   if (e.key === 'Home') { e.preventDefault(); bookGoTo(0); return; }
   if (e.key === 'End') { e.preventDefault(); bookGoTo(bk.n.book.pages - 1); return; }
-  const tools = { h: 'hand', d: 'pen', m: 'marker', b: 'brush', e: 'eraser' };
+  const tools = { h: 'hand', d: 'pen', m: 'marker', b: 'brush', e: 'eraser', n: 'note' };
   if (tools[key]) { bk.tool = tools[key]; state.settings.bookPen = { tool: bk.tool, color: bk.color, size: bk.size }; saveSoon(); buildBookBar(); return; }
   if (e.key === '[' || e.key === ']') { bk.size = clamp(bk.size + (e.key === ']' ? 1 : -1), 0, 2); buildBookBar(); }
 }
@@ -1076,6 +1138,22 @@ function wireBook() {
   const stage = $('bkStage');
   stage.addEventListener('pointerdown', onBookDown);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 3.1.1: where a paste lands, writing in a sticky note, and pictures dropped on a page
+  stage.addEventListener('pointermove', (e) => { if (bk) bk.lastPt = { x: e.clientX, y: e.clientY }; });
+  stage.addEventListener('dblclick', (e) => {
+    const el = bk && e.target.closest && e.target.closest('#bookDlg .bk-sticky');
+    if (el && !el.classList.contains('editing')) bookEditNote(+el.closest('.bk-page').dataset.p, el.dataset.id);
+  });
+  stage.addEventListener('dragover', (e) => { if (bk && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  stage.addEventListener('drop', (e) => {
+    if (!bk || !e.dataTransfer || !e.dataTransfer.files.length) return;
+    e.preventDefault();
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const pg = (under && under.closest && under.closest('#bookDlg .bk-page')) || bookTargetPage();
+    if (!pg) return;
+    const at = bookPoint(e, pg);
+    bookPicturesFrom(e.dataTransfer.files).then((list) => { if (list.length) bookAddPictures(list, pg, at); else bookSay(t('book.pasteNothing')); });
+  });
   // the drawing note's camera: Ctrl+wheel at the pointer, Space or the middle button to drag, two fingers to pinch
   bkSurface = zoomPanSurface(stage, {
     get: () => (bk ? bk.cam : { x: 0, y: 0, z: 1 }), set: setBookView,
@@ -1089,4 +1167,321 @@ function wireBook() {
   });
   $('bkTitle').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); });
   window.addEventListener('resize', () => { if (bk) { clearTimeout(wireBook.rs); wireBook.rs = setTimeout(() => { if (bk) bookLayout(); }, 120); } });
+}
+
+/* ---- pictures and sticky notes on a page (3.1.1) ----
+   A page carries things laid on it as well as ink: a picture (a screenshot
+   pasted with Ctrl+V, a file dropped on the page or added from the bar) and a
+   sticky note (the N tool, a paste of plain text, or a phone). They are kept
+   per page in page units, `book.objs[page] = [{ id, k: 'pic'|'note', x, y, w,
+   h, text?, c? }]`, drawn on the page under the ink (`.bk-objs`), and are a
+   part of the page's undo as its strokes are.
+
+   A picture's file is in the note's body, as `<img class="bk-pic"
+   data-pic="<id>">` (bookBody) — the same reason a drawing note keeps its
+   pictures there: every pass that keeps, carries and relinks a board's files
+   reads bodies. Its address is never in `objs`.
+
+   With the hand (or the N tool) a press on one selects it; drag to move it,
+   the corner to size it (a picture keeps its shape), × to remove it, a
+   double-click on a note to write in it, a colour dot to recolour it, and
+   Delete removes the selected one. A pen always writes, over them too. */
+const BOOK_OBJS_MAX = 60;           // things on one page
+const BOOK_NOTE_MAX = 2000;         // letters in one sticky note
+function okBookObjs(raw, pages) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k of Object.keys(raw)) {
+    const i = +k;
+    if (!Number.isInteger(i) || i < 0 || i >= pages || !Array.isArray(raw[k])) continue;
+    const list = raw[k].slice(0, BOOK_OBJS_MAX).filter((o) => o && (o.k === 'pic' || o.k === 'note') && typeof o.id === 'string' &&
+      [o.x, o.y, o.w, o.h].every((v) => Number.isFinite(+v)) && +o.w > 0 && +o.h > 0)
+      .map((o) => Object.assign({ id: o.id.slice(0, 40), k: o.k, x: r1(+o.x), y: r1(+o.y), w: r1(+o.w), h: r1(+o.h) },
+        o.k === 'note' ? { text: typeof o.text === 'string' ? o.text.slice(0, BOOK_NOTE_MAX) : '', c: STICKY_BG[o.c] ? o.c : 'yellow' } : {}));
+    if (list.length) out[i] = list;
+  }
+  return out;
+}
+const bookPageH = () => BOOK_U * bk.n.book.ar;
+function bookObjEl(o) {
+  const H = bookPageH();
+  const el = document.createElement('div');
+  el.className = 'bk-obj ' + (o.k === 'pic' ? 'bk-pico' : 'bk-sticky') + (bk.sel === o.id ? ' sel' : '');
+  el.dataset.id = o.id;
+  const s = el.style;
+  s.left = (o.x / BOOK_U * 100) + '%'; s.top = (o.y / H * 100) + '%';
+  s.width = (o.w / BOOK_U * 100) + '%'; s.height = (o.h / H * 100) + '%';
+  if (o.k === 'pic') {
+    const im = document.createElement('img');
+    im.src = (bk.picFiles[o.id] || {}).url || '';
+    im.alt = ''; im.draggable = false;
+    el.appendChild(im);
+  } else {
+    el.style.setProperty('--st', STICKY_BG[o.c] || STICKY_BG.yellow);
+    const tx = document.createElement('div');
+    tx.className = 'bk-sticky-t'; tx.dir = 'auto'; tx.textContent = o.text;
+    el.appendChild(tx);
+  }
+  el.insertAdjacentHTML('beforeend', `<button class="bk-obj-x" title="${te('book.objDelete')}" aria-label="${te('book.objDelete')}">${icon('close')}</button><i class="bk-obj-rz"></i>` +
+    (o.k === 'note' ? `<span class="bk-obj-cols">${Object.keys(STICKY_BG).map((c) => `<b data-c="${c}" style="--st:${STICKY_BG[c]}"></b>`).join('')}</span>` : ''));
+  return el;
+}
+function bookObjsLayer(i) {
+  const layer = document.createElement('div');
+  layer.className = 'bk-objs';
+  for (const o of bk.objs[i] || []) if (o.k === 'note' || (bk.picFiles[o.id] || {}).url) layer.appendChild(bookObjEl(o));
+  return layer;
+}
+// a page's ink and things, drawn again wherever it is shown
+function bookRepaintPage(page) {
+  document.querySelectorAll(`#bookDlg .bk-page[data-p="${page}"]`).forEach((pg) => {
+    const old = pg.querySelector(':scope > .bk-objs');
+    if (old) old.replaceWith(bookObjsLayer(page));
+  });
+  bookRepaintInk(page);
+}
+function bookMarkSel() {
+  document.querySelectorAll('#bookDlg .bk-obj').forEach((el) => el.classList.toggle('sel', el.dataset.id === bk.sel));
+}
+function bookObjOf(page, id) { return (bk.objs[page] || []).find((o) => o.id === id) || null; }
+function bookAddObj(page, o) {
+  if ((bk.objs[page] || []).length >= BOOK_OBJS_MAX) { bookSay(t('book.pageFull')); return false; }
+  bookStep(page);
+  bk.objs[page] = (bk.objs[page] || []).concat([o]);
+  bk.sel = o.id;
+  bookRepaintPage(page);
+  commitBook(); buildBookBar();
+  return true;
+}
+function bookSetObj(page, id, patch) {
+  bookStep(page);
+  bk.objs[page] = (bk.objs[page] || []).map((o) => (o.id === id ? Object.assign({}, o, patch) : o));
+  bookRepaintPage(page);
+  commitBook(); buildBookBar();
+}
+function bookDeleteObj(page, id) {
+  if (!bookObjOf(page, id)) return;
+  bookStep(page);
+  bk.objs[page] = (bk.objs[page] || []).filter((o) => o.id !== id);
+  if (bk.sel === id) bk.sel = null;
+  bookRepaintPage(page);
+  commitBook(); buildBookBar();
+}
+// the selected one, and the page it is on
+function bookSelected() {
+  if (!bk.sel) return null;
+  for (const k of Object.keys(bk.objs)) if ((bk.objs[k] || []).some((o) => o.id === bk.sel)) return { page: +k, id: bk.sel };
+  return null;
+}
+
+/* ---- moving and sizing one ---- */
+function bookObjDown(e, el) {
+  e.preventDefault();
+  const pg = el.closest('.bk-page'), page = +pg.dataset.p, id = el.dataset.id;
+  const o = bookObjOf(page, id);
+  if (!o) return;
+  if (e.target.closest('.bk-obj-x')) { bookDeleteObj(page, id); return; }
+  const col = e.target.closest('.bk-obj-cols b');
+  if (col) { if (col.dataset.c !== o.c) bookSetObj(page, id, { c: col.dataset.c }); return; }
+  if (bk.sel !== id) { bk.sel = id; bookMarkSel(); }
+  bk.obj = {
+    page, id, el, pic: o.k === 'pic', o0: Object.assign({}, o), H: bookPageH(), k: pg.getBoundingClientRect().width / BOOK_U,
+    kind: e.target.closest('.bk-obj-rz') ? 'size' : 'move', sx: e.clientX, sy: e.clientY, pid: e.pointerId, moved: false, now: null
+  };
+  window.addEventListener('pointermove', bookObjMove);
+  window.addEventListener('pointerup', bookObjUp);
+  window.addEventListener('pointercancel', bookObjUp);
+}
+function bookObjMove(e) {
+  const G = bk && bk.obj;
+  if (!G || e.pointerId !== G.pid) return;
+  const dx = (e.clientX - G.sx) / G.k, dy = (e.clientY - G.sy) / G.k, o = G.o0;
+  if (!G.moved && Math.hypot(e.clientX - G.sx, e.clientY - G.sy) < 4) return;
+  G.moved = true;
+  let { x, y, w, h } = o;
+  if (G.kind === 'move') {
+    // it may hang off the page a little, never be lost off it
+    x = clamp(o.x + dx, -o.w * 0.75, BOOK_U - o.w * 0.25);
+    y = clamp(o.y + dy, -o.h * 0.75, G.H - o.h * 0.25);
+  } else {
+    w = clamp(o.w + dx, 40, BOOK_U * 1.5);
+    h = G.pic ? w * o.h / o.w : clamp(o.h + dy, 40, G.H * 1.5);
+  }
+  G.now = { x: r1(x), y: r1(y), w: r1(w), h: r1(h) };
+  const s = G.el.style;
+  s.left = (x / BOOK_U * 100) + '%'; s.top = (y / G.H * 100) + '%';
+  s.width = (w / BOOK_U * 100) + '%'; s.height = (h / G.H * 100) + '%';
+}
+function bookObjUp(e) {
+  const G = bk && bk.obj;
+  if (!G || (e && e.pointerId !== G.pid)) return;
+  window.removeEventListener('pointermove', bookObjMove);
+  window.removeEventListener('pointerup', bookObjUp);
+  window.removeEventListener('pointercancel', bookObjUp);
+  bk.obj = null;
+  if (G.moved && G.now) bookSetObj(G.page, G.id, G.now);
+}
+
+/* ---- a sticky note: put down, written in ---- */
+function bookNewNote(pg, e, text) {
+  const page = +pg.dataset.p, at = bookPoint(e, pg), H = bookPageH();
+  const w = 240, h = 210;
+  const o = { id: uid(), k: 'note', x: r1(clamp(at.x - 24, 0, BOOK_U - w)), y: r1(clamp(at.y - 24, 0, H - h)), w, h, text: text || '', c: 'yellow' };
+  if (!bookAddObj(page, o)) return;
+  if (!text) bookEditNote(page, o.id, true);
+}
+function bookEditNote(page, id, fresh) {
+  const o = bookObjOf(page, id);
+  const el = document.querySelector(`#bookDlg .bk-page[data-p="${page}"] .bk-obj[data-id="${id}"]`);
+  if (!o || !el) return;
+  const ta = document.createElement('textarea');
+  ta.className = 'bk-sticky-in'; ta.dir = 'auto'; ta.value = o.text;
+  ta.placeholder = t('book.stickyPh');
+  ta.spellcheck = state.settings.spell !== false;
+  el.classList.add('editing');
+  el.appendChild(ta);
+  let done = false;
+  const finish = () => {
+    if (done || !bk) return;
+    done = true;
+    const v = ta.value.replace(/\r\n?/g, '\n').replace(/\s+$/, '').slice(0, BOOK_NOTE_MAX);
+    ta.remove(); el.classList.remove('editing');
+    if (!v.trim()) {
+      // a note left empty was never there: the step that put it down goes too
+      if (fresh && bk.undo.length) { bk.undo.pop(); bk.objs[page] = (bk.objs[page] || []).filter((x) => x.id !== id); bk.sel = null; bookRepaintPage(page); commitBook(); buildBookBar(); }
+      else bookDeleteObj(page, id);
+    } else if (v !== o.text) {
+      if (fresh) { bk.objs[page] = bk.objs[page].map((x) => (x.id === id ? Object.assign({}, x, { text: v }) : x)); bookRepaintPage(page); commitBook(); }
+      else bookSetObj(page, id, { text: v });
+    }
+  };
+  ta.addEventListener('blur', finish);
+  ta.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+  ta.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Escape' || (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey))) { ev.preventDefault(); ta.blur(); }
+  });
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+/* ---- pictures: pasted, dropped, or from the bar ---- */
+// the page a paste lands on: the one under the pointer, else the page in view (the right of a spread)
+function bookTargetPage() {
+  const p = bk.lastPt;
+  const under = p && document.elementFromPoint(p.x, p.y);
+  const pg = under && under.closest && under.closest('#bookDlg .bk-page');
+  if (pg && !pg.closest('.bk-leaf')) return pg;
+  const shown = [...document.querySelectorAll('#bkSpread > .bk-side > .bk-page, #bkScroll .bk-page')];
+  return shown.find((x) => +x.dataset.p === bk.at) || shown[shown.length - 1] || null;
+}
+async function bookAddPictures(list, pg, at) {
+  if (!bk || !list.length || !pg) return;
+  const book = bk, page = +pg.dataset.p, H = bookPageH();
+  let n = 0;
+  for (const it of list) {
+    const size = await measureImage(it.dataUrl);
+    if (!size || !size.w || !size.h) { toast(t('sketch.fileFailed', { name: it.name })); continue; }
+    const url = await keepSketchPicture(it.dataUrl, it.name || 'picture.png');
+    if (bk !== book) return;
+    // as wide as it is on screen at 100%, at most most of the page, and all of it on the page
+    let w = Math.min(BOOK_U * 0.8, size.w * BOOK_U / Math.max(1, pg.getBoundingClientRect().width / bk.cam.z));
+    let h = w * size.h / size.w;
+    if (h > H * 0.8) { h = H * 0.8; w = h * size.w / size.h; }
+    const c = at || { x: BOOK_U / 2, y: H / 2 };
+    const id = uid();
+    bk.picFiles[id] = { url, name: it.name || 'picture.png' };
+    if (bookAddObj(page, { id, k: 'pic', x: r1(clamp(c.x - w / 2 + n * 24, 0, BOOK_U - w)), y: r1(clamp(c.y - h / 2 + n * 24, 0, H - h)), w: r1(w), h: r1(h) })) n++;
+  }
+}
+async function bookPicturesFrom(files) {
+  const out = [];
+  for (const f of [...(files || [])].slice(0, 12)) {
+    const ext = (/\.([a-z0-9]+)$/i.exec(f.name || '') || ['', ''])[1].toLowerCase();
+    if (!/^image\//.test(f.type) && !IMG_MIME[ext]) continue;
+    try { out.push({ name: f.name || 'screenshot.png', dataUrl: await bytesToDataUrl(new Uint8Array(await f.arrayBuffer()), f.type || IMG_MIME[ext] || 'image/png') }); } catch (_) {}
+  }
+  return out;
+}
+// Ctrl+V in the reader: a screenshot or a copied picture goes on the page, words become a sticky note
+function onBookPaste(e) {
+  if (!bk || (e.target.closest && e.target.closest('input, textarea'))) return;
+  e.preventDefault();
+  const dt = e.clipboardData;
+  const files = dt && dt.files ? [...dt.files] : [];
+  if (!files.length && dt) for (const it of dt.items || []) if (it.kind === 'file') { const f = it.getAsFile(); if (f) files.push(f); }
+  const pg = bookTargetPage();
+  if (!pg) return;
+  if (files.length) {
+    bookPicturesFrom(files).then((list) => {
+      if (!list.length) { bookSay(t('book.pasteNothing')); return; }
+      bookAddPictures(list, pg, bk.lastPt ? bookPoint({ clientX: bk.lastPt.x, clientY: bk.lastPt.y }, pg) : null);
+    });
+    return;
+  }
+  const text = dt ? dt.getData('text/plain') : '';
+  if (text && text.trim()) {
+    const r = pg.getBoundingClientRect();
+    bookNewNote(pg, bk.lastPt && bookTargetPage() === pg ? { clientX: bk.lastPt.x, clientY: bk.lastPt.y } : { clientX: r.left + r.width / 2, clientY: r.top + r.height / 3 }, text.trim().slice(0, BOOK_NOTE_MAX));
+    return;
+  }
+  bookSay(t('book.pasteNothing'));
+}
+async function bookAddPicturesFromBar() {
+  if (!FILES || !FILES.pickDrawing) return;
+  const items = await FILES.pickDrawing();
+  if (!bk || !items || !items.length) return;
+  const list = [];
+  for (const it of items) {
+    if (it.kind !== 'image' || it.error) continue;
+    list.push({ name: it.name, dataUrl: it.dataUrl || await bytesToDataUrl(it.bytes, IMG_MIME[it.ext] || 'image/png') });
+  }
+  if (!list.length) { bookSay(t('book.pasteNothing')); return; }
+  bookAddPictures(list, bookTargetPage(), null);
+}
+
+/* ---- what the board shows of a book (3.1.1) ----
+   The pages last looked at, newest first, as small pictures of the page and
+   its ink, made as the reader closes from what it already drew — a PDF page
+   from the drawn-page cache, a notebook's from its paper and its strokes —
+   and kept in the book as JPEG data (a few kB each, at most BOOK_RECENT). */
+const BOOK_RECENT = 3;
+const BOOK_THUMB_W = 120;
+function bookNoteSeen(pages) {
+  if (!bk) return;
+  for (const p of pages) if (p != null) { bk.seen = bk.seen.filter((x) => x !== p); bk.seen.unshift(p); }
+  bk.seen = bk.seen.slice(0, BOOK_RECENT);
+}
+function bookThumb(book, i) {
+  const B = book.n.book, w = BOOK_THUMB_W, h = Math.round(w * B.ar);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+  let drawn = null;
+  for (const [key, cv] of book.cache) if (key.startsWith(i + '@') && (!drawn || cv.width > drawn.width)) drawn = cv;
+  if (drawn) { try { g.drawImage(drawn, 0, 0, w, h); } catch (_) {} }
+  else if (B.kind === 'pdf') return null;                     // a PDF page never drawn this visit has no picture
+  const k = w / BOOK_U;
+  for (const o of book.objs[i] || []) if (o.k === 'note') { g.fillStyle = STICKY_BG[o.c] || STICKY_BG.yellow; g.fillRect(o.x * k, o.y * k, o.w * k, o.h * k); }
+  g.save(); g.scale(k, k);
+  const L = SK_PAPERS.light;
+  paintInkOnCanvas(g, book.ink[i] || [], (cc) => (isHex(cc) ? cc : cc === 'text' ? L.ink : L.c[cc] || L.ink));
+  g.restore();
+  try { return c.toDataURL('image/jpeg', 0.72); } catch (_) { return null; }
+}
+function bookRecentFrom(book) {
+  const old = (book.n.book.recent || []).filter((r) => !book.seen.includes(r.p));
+  const fresh = [];
+  for (const p of book.seen) { const img = bookThumb(book, p); if (img) fresh.push({ p, img }); }
+  return fresh.concat(old).slice(0, BOOK_RECENT);
+}
+// when, as the board says it: the time today, else the day
+function bookWhen(ms) {
+  if (!ms) return '';
+  const d = new Date(ms), now = new Date(), loc = state.settings.lang === 'ar' ? 'ar' : 'en-GB';
+  try {
+    if (d.toDateString() === now.toDateString()) return new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit' }).format(d);
+    return new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' }).format(d);
+  } catch (_) { return d.toLocaleDateString(); }
 }

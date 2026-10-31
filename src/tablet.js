@@ -148,6 +148,12 @@ function clean(m) {
       return f == null || x == null || y == null ? null : { t: 'zoom', f, x, y, n: int(m.n, 1e9) || 0 };
     }
     case 'undo': return { t: 'undo' };
+    // a sticky note written on the phone, and where it was tapped (3.1.1)
+    case 'sticky': {
+      const x = num(m.x, -0.5, 1.5), y = num(m.y, -0.5, 1.5);
+      const text = typeof m.text === 'string' ? m.text.replace(/[\u0000-\u0008\u000b-\u001f]/g, '').slice(0, 2000) : '';
+      return x == null || y == null || !text.trim() ? null : { t: 'sticky', x, y, text };
+    }
     // a book is open: the page before or after
     case 'page': return m.d === 1 || m.d === -1 ? { t: 'page', d: m.d } : null;
     // the phone's drawing area changed shape: its aspect, and how many device pixels wide it is
