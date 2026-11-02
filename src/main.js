@@ -1387,9 +1387,22 @@ if (!app.requestSingleInstanceLock()) {
     const ALLOWED_PERMISSIONS = new Set(['notifications', 'clipboard-sanitized-write', 'fullscreen']);
     session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(ALLOWED_PERMISSIONS.has(permission)));
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+    /* No file: load may leave this machine. `file://server/share/x.png` in a
+       note — from a board someone mailed, a folder dropped into My Boards, a
+       pasted page, a CSS url() in a style — makes Windows connect to that
+       server over SMB and offer the user's NTLM credentials. Refused here,
+       where every image, clip, stylesheet and frame passes, rather than in
+       each place a body can come from (store.isRemoteFileUrl, 3.2.1). */
+    session.defaultSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => {
+      let remote = true;
+      try { remote = store.isRemoteFileUrl(d.url); } catch (_) {}
+      cb(remote ? { cancel: true } : {});
+    });
     try { fs.mkdirSync(dataDir(), { recursive: true }); } catch (_) {}
     tidyOldCache();
     store.init(boardsRoot());
+    // a redirected Documents or an app run from a share is the user's own, not a stranger's (3.2.1)
+    try { store.trustShares([__dirname, boardsRoot(), app.getPath('documents'), app.getPath('userData')]); } catch (_) {}
     /* A 1.x board in %APPDATA% and an empty My Boards: lay it out the new way,
        once. The old file is left where it was. */
     try {

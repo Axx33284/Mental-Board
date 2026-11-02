@@ -287,6 +287,8 @@ Documents\My Boards\
   Trash\                     the bin — an ordinary board with trash: true
   Backups\<Board name>\      YYYY-MM-DD.json, one per day, newest 14; and
                              before-<version>.json, taken once per upgrade
+  Backups\<Group>\<Board>\   the same for a board in a group — the path it has
+                             above, so two boards with one name never share
 ```
 
 The whole design is those four lines: **a board is a folder, and the folder is
@@ -4356,6 +4358,31 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+Three from a review after 3.2.0 first. Each has a case in `tools/test-store.js`:
+
+- **The sync save does not rename last just because it ran last.** It runs
+  whole inside one IPC handler, and an async save that was mid-`await` (or
+  still queued on `chain`) resumes afterwards and renamed its older
+  `.async.tmp` over the top: Quit during a debounced save put the board on
+  disk as it was a few seconds before. Every sync write now stamps its file
+  with the next `writeSeq`, and `writeAtomicAsync` drops its tmp when its file
+  was stamped after the save was *asked for* (`saveAllAsync` reads the counter
+  when it is called, not when its turn on the chain comes).
+- **A board's folder name is not unique; its path under My Boards is.**
+  `snapshotDir()` used the folder name, so "Ideas" and "Work ▸ Ideas" shared
+  `Backups\Ideas\`: the second board's daily snapshot came back `skipped`, a
+  success, and the two pruned each other's fourteen days. It is now the path
+  relative to My Boards (a top-level board keeps the folder it always had).
+- **`file://server/…` is not a file, it is an SMB login.** Note bodies from a
+  board on disk or an import are drawn without `sanitize()` (that runs on
+  paste only), and the CSP allows `file:` images, so a mailed board's
+  `<img src="file://their-server/x">` or a style's `url()` made Windows offer
+  the user's NTLM hash to that server. Main cancels every `file:` request
+  naming another machine (`webRequest.onBeforeRequest` in `whenReady`,
+  `store.isRemoteFileUrl`), and `pathOfUrl()` will not open or reveal one —
+  except under the app's own folder, My Boards, Documents and userData
+  (`store.trustShares`), which a domain may have redirected to a share.
 
 Three from 3.0 first (§4z9):
 
