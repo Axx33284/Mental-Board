@@ -25,6 +25,17 @@ change fades.
 
 ![the board](src/assets/icon.png)
 
+## Download and install
+
+**Just want to use it?** Download the zip from
+[Releases](https://github.com/axx33284/mental-board/releases/latest) and
+follow **[INSTALL.md](INSTALL.md)**. It takes a minute and comes down to one
+rule: the app lives in one folder,
+`%LOCALAPPDATA%\Programs\Mental Board`, and nowhere else. There is no
+installer, and your boards stay in `Documents\My Boards`.
+
+The rest of this section is for running it from the source.
+
 ## Getting it running
 
 ```bash
@@ -63,8 +74,12 @@ double-click is always the code in this folder.
 version sits in the titlebar, so you can always confirm you are looking at the
 build you just made.
 
-Nothing downloads anything. There is no installer, no auto-updater and no
-release feed, and that is deliberate.
+The app itself never downloads anything. There is no installer and no
+auto-updater, and that is deliberate. The one download is the release zip
+(see [INSTALL.md](INSTALL.md)): the same `App\` folder, built by
+`.github/workflows/release.yml` on Windows when a version tag is pushed, and
+put in its one place by hand. Use either that or a build from source on one
+machine, never both.
 
 > **What went wrong in 1.3.** It shipped an NSIS installer, a portable exe that
 > self-extracted to `%TEMP%` on every launch, and an auto-updater that staged a

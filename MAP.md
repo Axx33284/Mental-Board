@@ -167,6 +167,8 @@ src/          the app — this is what gets packaged
 tools/        build + checks, never shipped
 admin/        double-clickable .cmd wrappers
 App/          the built app (generated; deleted and rewritten by every build)
+INSTALL.md    how someone without the source installs the release zip, and the rules (§6)
+.github/      workflows/release.yml — the zip, built on Windows for a v* tag (§6); never shipped
 ```
 
 | File | Lines | What it is |
@@ -4286,10 +4288,45 @@ never came, and the folder the build script wrote. A shortcut points at one of
 them. Nothing tells you which.
 
 All of it is deleted: no `electron-builder`, no `electron-updater`, no
-`build.nsis`, no `publish` target, no `.github/workflows/release.yml`, no
-`RELEASING.md`. **Updating is running `npm run build`.** If that ever needs to
+`build.nsis`, no `publish` target, no `RELEASING.md`. (A
+`.github/workflows/release.yml` exists again since 3.2.1, but only to build
+the one zip below — it publishes nothing the app reads.) **Updating is running `npm run build`.** If that ever needs to
 change, the thing to preserve is the property, not the tooling: one copy, one
 path to it, and a way to read the build identity off the running app.
+
+### The download: one zip, one folder, put in place by hand
+
+Someone who does not build from source needs a way in, and 1.3's answer is
+the thing above that cost a session. So the download keeps the property and
+none of the tooling:
+
+- **What it is.** `.github/workflows/release.yml` runs on `windows-latest`
+  when a `v<version>` tag is pushed (the tag must equal `package.json`'s
+  version, or nothing builds). It runs `npm run build` — the checks, `npm
+  test`, `tools/build-app.js`, so a red test means no zip — then zips `App\`
+  as one folder called `Mental Board`, with `INSTALL.md` beside the exe as
+  `INSTALL.txt`, and attaches the zip and its SHA-256 to a GitHub Release.
+  Run by hand (Actions ▸ Release ▸ Run workflow), it builds and keeps the zip
+  as an artifact without publishing.
+- **Where it goes.** `%LOCALAPPDATA%\Programs\Mental Board\` — per user, no
+  admin rights, one fixed path, so a taskbar pin never goes stale. `INSTALL.md`
+  says so, and so do its rules: one copy, never run from the zip, replace
+  never merge, quit from the tray first, boards are not in the app folder.
+- **Its PowerShell block is tested.** The workflow lifts the block out of
+  `INSTALL.md` and runs it, in Windows PowerShell 5.1, against the real zip in
+  a throwaway home: a fresh install, an update that must leave no stale file
+  behind, and the refusal when Downloads holds two zips (it must change
+  nothing). Edit the block and the release proves it still works.
+- **What it still is not.** No installer, no updater, no feed the app reads,
+  no shortcut, no portable self-extractor. The app does not know releases
+  exist. A machine that both builds from source and installs the zip has two
+  copies; `INSTALL.md` rule 7 says pick one.
+- **`IGNORE` keeps it out of the package.** `.github/` and `INSTALL.md` are
+  in it next to `MAP.md`, or the workflow would ship inside `app.asar`.
+
+Releasing is: bump `version` in `package.json`, commit, `git tag v<version>`,
+push the tag. The runner is Windows, so it is also the first place `npm
+test` runs on Windows without anyone's machine.
 
 Two things about the packaging config in `tools/build-app.js`:
 

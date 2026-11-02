@@ -54,10 +54,17 @@ theoretical.
   error }] }` per board — it never throws, so wrapping it in `try/catch` and
   assuming success is how a silent write failure disabled saving for a whole
   session. See `writeNow()` and `MAP.md` §7.
-- **There is exactly one copy of the built app, at `App/Mental Board.exe`.**
-  No installer, no auto-updater, no portable target, no publish feed, and no
-  shortcut — the build must not create one. Two builds on one machine are not
-  merely confusing: they share the single-instance lock (it is keyed to the
-  pinned userData path), so the older one silently swallows the newer one's
-  launch — it is not inert, it is a running app wearing the new one's launch.
-  If you are tempted to add any of them back, read `MAP.md` §6 first.
+- **There is exactly one copy of the built app on a machine.** For a
+  developer it is `App/Mental Board.exe`; for someone who downloads it, it is
+  `%LOCALAPPDATA%\Programs\Mental Board\Mental Board.exe`, put there by hand
+  from the release zip (`INSTALL.md`). The zip is the only download: one
+  folder, built by the same `tools/build-app.js` on a Windows runner
+  (`.github/workflows/release.yml`) when a `v<version>` tag is pushed. No
+  installer, no auto-updater, no portable target, no update feed the app
+  reads, and no shortcut — neither the build nor the workflow may create one.
+  Two builds on one machine are not merely confusing: they share the
+  single-instance lock (it is keyed to the pinned userData path), so the older
+  one silently swallows the newer one's launch — it is not inert, it is a
+  running app wearing the new one's launch. If you are tempted to add any of
+  them back, read `MAP.md` §6 first. If you change `INSTALL.md`'s PowerShell
+  block, the workflow runs it — keep it passing.
