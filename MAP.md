@@ -4359,6 +4359,17 @@ Two things that will waste your time if you don't know them:
 
 ## 7. Traps
 
+One from moving to Electron 44:
+
+- **A custom scheme is not fetchable from the page unless it says it speaks
+  CORS.** On 44 the book's `fetch('mbf://…pdf')` failed with "Cross origin
+  requests are only supported for protocol schemes: … http, https", while
+  pictures and video on the same scheme went on loading, because a plain
+  `<img>` or `<video>` is not a CORS request. `mbf` is registered with
+  `corsEnabled`, and the handler answers `Access-Control-Allow-Origin: null`
+  only to a request whose Origin is `null` — the app's own file:// page. The
+  player page on 127.0.0.1 and the frame inside it cannot read the bytes.
+
 Three from a review after 3.2.0 first. Each has a case in `tools/test-store.js`:
 
 - **The sync save does not rename last just because it ran last.** It runs
@@ -5232,10 +5243,12 @@ These were considered and left out; they are not oversights.
   An editable list or board view would be a second editor to keep in step.
 - **Pictures inside a note are not drawn in the board picture** (§4g) — only
   the ones standing on the board.
-- **Electron is 31.** Current is 44. 31 has been out of security support for a
-  long time; moving needs its own verification pass (execCommand, variable-font
-  weights and `webUtils.getPathForFile` are the behaviours the lockfile pins
-  for). Do it before a public release.
+- **Electron is 44** (44.10.1, moved from 31 after 3.2.0). Electron supports
+  the newest three majors, so 44 drops out when 47 ships — move again then.
+  The pass that moved it ran `npm test` on Linux under xvfb: the same results
+  as on 31, after one fix (`corsEnabled` on mbf://, §7). The behaviours still
+  to watch on Windows are execCommand, variable-font weights and
+  `webUtils.getPathForFile`; run `npm test` there before building.
 - **The studio bakes annotations in.** They are pixels after Apply, not
   editable objects. Re-opening starts from `data-orig` with a clean slate.
 - **No icon upload.** Icons come from the bundled Material Symbols set; adding

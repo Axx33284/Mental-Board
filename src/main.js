@@ -20,7 +20,12 @@ const tablet = require('./tablet.js');
    Registered before `ready`, as Electron requires. `standard` so the URL has
    a host and a path; `stream` so a video can seek. */
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'mbf', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+  /* `corsEnabled` since Electron 44: Chromium now refuses a fetch() from the
+     file:// page to any scheme not marked as speaking CORS ("Cross origin
+     requests are only supported for protocol schemes: … http, https"), and a
+     book opened from a PDF fetches its bytes (book.js bookOpenPdf). The
+     handler below lets only the app's own page read the bytes. */
+  { scheme: 'mbf', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
 ]);
 
 let mainWindow = null;
@@ -1422,7 +1427,17 @@ if (!app.requestSingleInstanceLock()) {
         const headers = {};
         const range = req.headers.get('range');
         if (range) headers.Range = range;
-        return net.fetch(pathToFileURL(p).href, { headers });
+        /* A fetch() from the app's page carries Origin: null (it is a file://
+           page) and needs it echoed back. Nothing else gets the header: the
+           player page on 127.0.0.1 and the YouTube frame inside it can still
+           show a picture, but cannot read a board's files. */
+        const origin = req.headers.get('origin');
+        if (origin !== 'null') return net.fetch(pathToFileURL(p).href, { headers });
+        return net.fetch(pathToFileURL(p).href, { headers }).then((r) => {
+          const h = new Headers(r.headers);
+          h.set('Access-Control-Allow-Origin', 'null');
+          return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
+        });
       } catch (_) { return new Response('', { status: 400 }); }
     });
     createWindow();
