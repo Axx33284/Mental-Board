@@ -5281,10 +5281,10 @@ These were considered and left out; they are not oversights.
   the DOM construction as well — but it puts an element in `els` that has no
   `.note-body`, which every caller would then have to know about. Not worth it
   until a real board makes it worth it.
-- **No database tables.** Tables are tables: rows, columns, text. No cell
-  merging, no column types, no sorting, no formulas, no rollups. Those are
-  Notion's *database*, which needs its own storage model and its own view layer;
-  a half-built version would be worse than none. See §4b.
+- **Tables are plain; databases have no formulas.** A table (§4b) is rows,
+  columns and text, with sorting, and nothing more. Typed columns live in a
+  *database* (2.8, §4z6: ten property types, fifteen layouts, linked views),
+  which has no formulas, rollups or relations, and no cell merging.
 - **Boards are not shared or synced, and that is the big one.** Everything
   else on the roadmap is done. Real multi-user editing needs a server, accounts,
   hosting and conflict resolution — a project rather than a feature, and a
@@ -5293,8 +5293,6 @@ These were considered and left out; they are not oversights.
 - **Few per-board settings.** Theme, language, grid and the rest are global. A
   board carries its own viewport, archive flag and lock, and since 2.0 its own
   font, text size and background (§4r).
-- **No column types or formulas in tables.** Sorting is in; the rest of a
-  database is not. See §4b.
 - **History is per note, not per board.** There is no timeline of the canvas
   itself — moving and deleting are covered by undo, which is in memory only.
 - **The agenda and the columns are views, not editors.** You can tick a note
