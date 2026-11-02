@@ -16,7 +16,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: ['claude/beautiful-heisenberg-5rs5mt']   # TEMPORARY: verification runs, removed after
   workflow_dispatch:
 
 permissions:
