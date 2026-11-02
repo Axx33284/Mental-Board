@@ -34,9 +34,9 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -138,3 +138,20 @@ jobs:
           SHA-256: ``${{ steps.zip.outputs.hash }}``
           "@
           gh release create "${{ github.ref_name }}" $n "$n.sha256" --title "Mental Board ${{ steps.zip.outputs.version }}" --notes $notes
+
+  # TEMPORARY: the same tests on the commit before Electron 44, to tell a
+  # regression from a test that was already failing. Removed after one run.
+  baseline:
+    if: github.ref == 'refs/heads/claude/beautiful-heisenberg-5rs5mt'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: a7fa6b904e56002f24eaf8234827a403548ddf15
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx electron --version
+      - run: npm run test:app
