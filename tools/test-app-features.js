@@ -2070,21 +2070,37 @@ module.exports = [
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         svg.appendChild(path); document.body.appendChild(svg);
-        const hits = cases.map(([a, b]) => {
-          path.setAttribute('d', ropePath(anchor(a, b), anchor(b, a), a, b));
-          const L = path.getTotalLength();
-          let n = 0;
-          for (let i = 1; i < 200; i++) {
-            const p = path.getPointAtLength(L * i / 200);
-            for (const q of [a, b]) if (p.x > q.x + 2 && p.x < q.x + q.w - 2 && p.y > q.y + 2 && p.y < q.y + q.h - 2) n++;
+        const inside = (p, q) => p.x > q.x + 2 && p.x < q.x + q.w - 2 && p.y > q.y + 2 && p.y < q.y + q.h - 2;
+        /* The path's own points as well as the browser's measure of it: the
+           route is lines and quadratics, so they can be walked exactly, and a
+           disagreement says which side is wrong. */
+        const walk = (d) => {
+          const t = d.match(/[MLQC]|-?\d*\.?\d+(?:e-?\d+)?/g); const pts = []; let cur = null, i = 0;
+          while (i < t.length) {
+            const c = t[i++], num = () => +t[i++];
+            if (c === 'M') { cur = { x: num(), y: num() }; }
+            else if (c === 'L') { const e = { x: num(), y: num() }; for (let k = 1; k <= 40; k++) pts.push({ x: cur.x + (e.x - cur.x) * k / 40, y: cur.y + (e.y - cur.y) * k / 40 }); cur = e; }
+            else if (c === 'Q') { const q = { x: num(), y: num() }, e = { x: num(), y: num() }; for (let k = 1; k <= 40; k++) { const u = k / 40, v = 1 - u; pts.push({ x: v * v * cur.x + 2 * v * u * q.x + u * u * e.x, y: v * v * cur.y + 2 * v * u * q.y + u * u * e.y }); } cur = e; }
+            else if (c === 'C') { const c1 = { x: num(), y: num() }, c2 = { x: num(), y: num() }, e = { x: num(), y: num() }; for (let k = 1; k <= 40; k++) { const u = k / 40, v = 1 - u; pts.push({ x: v*v*v*cur.x + 3*v*v*u*c1.x + 3*v*u*u*c2.x + u*u*u*e.x, y: v*v*v*cur.y + 3*v*v*u*c1.y + 3*v*u*u*c2.y + u*u*u*e.y }); } cur = e; }
           }
-          return n;
+          return pts;
+        };
+        const res = cases.map(([a, b]) => {
+          const d = ropePath(anchor(a, b), anchor(b, a), a, b);
+          path.setAttribute('d', d);
+          const L = path.getTotalLength();
+          let measured = 0;
+          for (let i = 1; i < 200; i++) { const p = path.getPointAtLength(L * i / 200); for (const q of [a, b]) if (inside(p, q)) measured++; }
+          const walked = walk(d).filter((p) => inside(p, a) || inside(p, b)).length;
+          return { measured, walked, d: (measured || walked) ? d : '' };
         });
+        const setting = { anchor: state.settings.linkAnchor, style: state.settings.linkStyle, cork: state.settings.cork };
         svg.remove();
         state.settings.linkAnchor = was; state.settings.linkStyle = wasStyle;
-        return hits;
+        return { res, setting };
       });
-      ok(r.every((n) => n === 0), 'points of the rope inside a note, per case: ' + JSON.stringify(r));
+      ok(r.res.every((x) => x.walked === 0), 'points of the rope inside a note: ' + JSON.stringify(r));
+      ok(r.res.every((x) => x.measured === 0), 'the browser measures the same rope inside a note: ' + JSON.stringify(r));
     });
 
     await test('2.10 a pan rewrites no rope that did not move; a moved note\'s rope does follow', async () => {
