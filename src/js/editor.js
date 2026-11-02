@@ -1872,7 +1872,14 @@ function caretRectOf(body) {
   const x = cs.direction === 'rtl' ? b.right - parseFloat(cs.paddingRight) * z : b.left + parseFloat(cs.paddingLeft) * z;
   return { x, y: b.top + parseFloat(cs.paddingTop) * z, h: Math.min(lh, b.height) };
 }
-function placeCaret() {
+/* Named paintCaret, not placeCaret: this file already has a placeCaret(node,
+   offset) that *moves* the caret, and the scripts share one global scope, so
+   a second function of that name silently replaced the first. From 3.1.1 to
+   3.2.0 every "put the caret here" in the editor — the database Backspace
+   guard, toggles, Ctrl+Shift+arrows, a paste — painted the smooth caret and
+   left the selection where it was. tools/check-dupes.js now fails the build
+   on any function declared twice. */
+function paintCaret() {
   caretRaf = 0;
   const body = editing;
   const on = !!body && smoothCaretOn() && document.activeElement === body;
@@ -1898,7 +1905,7 @@ function placeCaret() {
 // a letter typed, the arrows, a click: glide; a pan, a zoom, a scroll: jump
 function caretFollow(jump) {
   if (jump) caretJump = true;
-  if (!caretRaf && (editing || (caretEl && caretEl.classList.contains('on')))) caretRaf = requestAnimationFrame(placeCaret);
+  if (!caretRaf && (editing || (caretEl && caretEl.classList.contains('on')))) caretRaf = requestAnimationFrame(paintCaret);
 }
 function wireSmoothCaret() {
   document.addEventListener('selectionchange', () => caretFollow(false));

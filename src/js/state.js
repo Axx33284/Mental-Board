@@ -247,7 +247,7 @@ function defaults() {
          PDF page is drawn ('sharp' or 'quick'). What a new notebook is: its
          paper, its page ('a4' 'letter' 'square' 'wide') and how many pages. */
       skGuide: 'dots', inkPressure: true, skSmooth: 'off',
-      // the cursor glides as you type, as Word's does (3.1.1, editor.js placeCaret)
+      // the cursor glides as you type, as Word's does (3.1.1, editor.js paintCaret)
       smoothCaret: true,
       bookView: 'book', bookTurnFx: 'curl', bookSpeed: 'normal', bookDrag: true, bookWheel: true,
       bookFull: true, bookNumbers: true, bookQuality: 'sharp',

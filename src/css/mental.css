@@ -2816,7 +2816,7 @@ body[data-skguide="none"] .sk-stage { background-image: none; }
   #settings .set-sheet .set-panes :is(.set-row > .set-btns, .pair-pick, .time-pair) { flex-basis: 220px; width: 220px; }
 }
 
-/* ─────────────── 93. smooth typing (3.1.1, js/editor.js placeCaret) ───────────────
+/* ─────────────── 93. smooth typing (3.1.1, js/editor.js paintCaret) ───────────────
    The note being typed in hides its own caret, and #mbCaret glides to where
    the next letter goes; it blinks softly once the hand is still. */
 body[data-caret="smooth"]:not(.caret-native) .note-body[contenteditable="true"] { caret-color: transparent; }
@@ -2885,3 +2885,17 @@ body[data-caret="smooth"]:not(.caret-native) .note-body[contenteditable="true"] 
 
 /* a sticky note being written in a drawing note: its paper under the words */
 .sk-text-in.sticky { background: var(--st); color: #2a2620; border-radius: 2px; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); min-width: 6em; min-height: 3.75em; }
+
+/* ─────────────── 94. a theme card's name keeps off its edges (3.2.1) ───────────────
+   .tc-name had no side padding, so the chosen card's bold name ran wall to wall:
+   "Mental Board Light" needs 97px bold in a 101px card. An ellipsis was tried
+   and hid the one word that tells it from "Mental Board". So it keeps 4px
+   each side and a name too long for one line takes two, balanced; the cards
+   in a row stretch together, so the row stays even. */
+.tc-name { padding-inline: 4px; text-wrap: balance; overflow-wrap: anywhere; line-height: 1.25; }
+/* A card is a <button>, and a button centres what is in it: once a two-line
+   name made one card taller, every other card in the row grew a band of its
+   own surface above the preview. Top-aligned, the preview stays flush. */
+.theme-card { display: flex; flex-direction: column; justify-content: flex-start; }
+.theme-card .tc-preview { flex: none; }
+.theme-card .tc-name { flex: 1 1 auto; }

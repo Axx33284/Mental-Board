@@ -197,6 +197,7 @@ INSTALL.md    how someone without the source installs the release zip, and the r
 | `tools/check-lang.js` | 115 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Covers the renderer scripts **and the main-process files** — `main.js`, `preload.js`, `store.js`, and since 2.2 `tablet.js` and `qr.js` (`MAIN_FILES` in `tools/app-source.js`). Run via `npm run check:lang`. |
 | `tools/check-icons.js` | 95 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
+| `tools/check-dupes.js` | ~100 | Fails the build when one top-level name is declared twice across `src/js/*.js` (read in `index.html`'s order through `tools/app-source.js`). The scripts share one global scope: a second `function` silently replaces the first, and a second `const` stops the later script loading. Added after the smooth caret's `placeCaret()` replaced the editor's for two releases (§7). Run via `npm run check:dupes`. |
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
 | `tools/fake-pdf.js` | ~30 | A two-page PDF built byte by byte (text in a standard font, a filled box per page) for the 2.7 test. No real PDF is checked in. |
@@ -3698,11 +3699,16 @@ ends are pinned to the middle of the top edge, and:
   right when the ends face each other on the nearest side; with both ends on the
   top edge it sends the rope straight down through the note it just left, so on
   a column of stacked notes most of every rope is hidden behind them.
-- **Two notes in a column need the side bow.** Their pins share an x, and an arc
-  between two points with the same x collapses to a straight line that
+- **Two notes in a column need to be gone round.** Their pins share an x, and an
+  arc between two points with the same x collapses to a straight line that
   *overshoots above the higher pin* — a stray tail out of the top of the note.
-  Below 30px of horizontal separation the rope bows sideways instead, far enough
-  to clear the wider of the two cards. That is why `ropePath()` takes the two
+  Below 30px of horizontal separation `ropeAround()` takes over: up off the pin,
+  across above the card, down 30px past the wider card's edge, across in the
+  gap above the lower card, down onto its pin, every corner rounded. Until
+  3.2.1 it was one cubic bowed by half the card plus 46px, which reaches only
+  three quarters of that and leaves the pin heading down — through the upper
+  card, and over its text when the note was selected. A test samples the
+  path. That is why `ropePath()` takes the two
   rects and not just the two points.
 
 ---
@@ -4202,7 +4208,7 @@ That is also the answer to "how do I look at the app without installing it".
 |---|---|
 | See the app, on your real board | `npm start` |
 | See it on a throwaway board | `npm run sandbox` |
-| All three checks, no build | `npm run check` |
+| All four checks, no build | `npm run check` |
 | The tests (store, then the real app) | `npm test` |
 | **Update the app you double-click** | **`npm run build`** |
 
@@ -4395,6 +4401,22 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+Two from judging the design after 3.2.0:
+
+- **Two functions with one name are one function.** The scripts share a
+  global scope, so 3.1.1's smooth caret, `function placeCaret()` near the end
+  of editor.js, silently replaced `placeCaret(node, offset)` higher up — the
+  one that *moves* the caret. Every "put the caret here" (the database
+  Backspace guard, toggles, Ctrl+Shift+arrows, a paste) painted the smooth
+  caret instead and left the selection alone, and four app tests failed on
+  Windows on Electron 31 and 44 alike. The painter is `paintCaret()` now, and
+  `npm run check:dupes` fails the build on any top-level name declared twice.
+- **A card drawn only when its row changes must be told when the words do.**
+  Settings' description card (`showSettingsDesc`) skips a redraw while the
+  pointer stays in one row, so picking a language in the very pane it lives
+  in left the card in the old language. `applyLang()` calls
+  `repaintSettingsDesc()`.
 
 One from moving to Electron 44:
 

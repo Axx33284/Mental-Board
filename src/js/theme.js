@@ -245,6 +245,7 @@ function applyLang() {
   syncSettingsUI();
   renderTemplateList();     // the empty-state hint is a translated string
   if ($('setDesc')) $('setDesc').dataset.empty = t('set.descEmpty');
+  repaintSettingsDesc();    // the card beside the rows is in the old language until redrawn
   sendMainStrings();        // the tray and the file dialogs follow the window
 
   if (wasEditing) {

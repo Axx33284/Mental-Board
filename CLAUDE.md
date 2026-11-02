@@ -32,6 +32,10 @@ add a feature.**
   beats `tokens.css` because of where its `<link>` sits. Add CSS to the end of
   the last sheet (`mental.css`). Nothing may keep a second copy of either order
   — the checks parse `index.html` through `tools/app-source.js`.
+- **A top-level name in `src/js/` is declared once.** The scripts share one
+  global scope: a second `function foo` silently replaces the first
+  everywhere, and a second `const` stops the later script loading.
+  `npm run check:dupes` enforces it (MAP.md §7).
 - Notes and frames live in **world** coordinates. Never write screen pixels
   into `state`. `toWorld()` / `toScreen()` are the only converters, and
   `toScreen()` is viewport-relative (the titlebar is 38px).

@@ -81,6 +81,18 @@ function showSettingsDesc(el) {
   desc.innerHTML = html;
   desc.classList.toggle('on', !!unit);
 }
+/* The same card again, from scratch. showSettingsDesc() redraws only when the
+   row changes, so a change that is not a move — the language, picked in this
+   very pane — left the card in the old language until the pointer moved to
+   another row (3.2.1). applyLang() calls this. */
+function repaintSettingsDesc() {
+  const desc = $('setDesc');
+  if (!desc) return;
+  const unit = descUnit;
+  descUnit = undefined;
+  desc.textContent = '';
+  showSettingsDesc(unit && unit.isConnected ? unit : null);
+}
 function wireSettingsDesc() {
   const panes = $('setPanes'), desc = $('setDesc');
   if (!panes || !desc) return;
@@ -187,12 +199,15 @@ function buildThemeCard(th) {
 
    Custom is in both, and `themeById()` resolves its mode and swatch from
    settings, so it behaves like any other entry here. */
+/* Grouped under Light and Dark rather than each name wearing "· Light" or
+   "· Dark": the suffix doubled the field's width for a word the sun and moon
+   beside it already say, and the 280px column cut it off mid-word
+   ("Mental Board Light · Li"). Closed, the picker now shows only the name. */
 function themeOptions(sel) {
-  return THEMES.map((th) => {
-    const t2 = themeById(th.id);
-    const mark = t2.mode === 'dark' ? te('set.themesDark') : te('set.themesLight');
-    return `<option value="${esc(th.id)}"${th.id === sel ? ' selected' : ''}>${te('theme.' + th.id)} · ${mark}</option>`;
-  }).join('');
+  const opt = (th) => `<option value="${esc(th.id)}"${th.id === sel ? ' selected' : ''}>${te('theme.' + th.id)}</option>`;
+  const of = (mode) => THEMES.filter((th) => themeById(th.id).mode === mode).map(opt).join('');
+  return `<optgroup label="${te('set.themesLight')}">${of('light')}</optgroup>` +
+         `<optgroup label="${te('set.themesDark')}">${of('dark')}</optgroup>`;
 }
 
 /* The three colours of the chosen theme, beside its name. A dropdown showing

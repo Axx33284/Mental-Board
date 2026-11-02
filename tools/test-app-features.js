@@ -269,7 +269,8 @@ module.exports = [
         await saveNow();
 
         const { json, files } = boardToCanvas(b, 'Round trip files');
-        const target = out + '\\Round trip.canvas';
+        // Windows separates with \, everything else with / — the folder it came from says which
+        const target = out + (out.includes('\\') ? '\\' : '/') + 'Round trip.canvas';
         const w = await mbData.writeCanvas(target, json, b.id, files, 'Round trip files');
         const read = await mbData.readCanvas(target);
         if (!read || read.error) throw new Error('read: ' + JSON.stringify(read) + ' write: ' + JSON.stringify(w) + ' target: ' + target);
@@ -2050,6 +2051,40 @@ module.exports = [
       ok(r.choices === '4,5,6,10' && /10/.test(r.label), 'the four choices, labelled: ' + r.label);
       const st = fs.readFileSync(path.join(BOARDS, 'settings.json'), 'utf8');
       ok(/"autosaveMin":\s*[56]/.test(st), 'on disk');
+    });
+
+    /* Pinned to the top, a rope between two notes in a column went through the
+       upper one — and a selected note's ropes are drawn over the notes, so it
+       struck through its text. Sampled along the real path, in both
+       directions, for equal and unequal widths and a tight gap. */
+    await test('3.2.1 a rope between two notes in a column goes round them, never through', async () => {
+      const r = await page(async () => {
+        const was = state.settings.linkAnchor, wasStyle = state.settings.linkStyle;
+        state.settings.linkAnchor = 'top'; state.settings.linkStyle = 'curve';
+        const cases = [
+          [{ x: 0, y: 0, w: 280, h: 190 }, { x: 0, y: 320, w: 280, h: 190 }],
+          [{ x: 0, y: 0, w: 280, h: 190 }, { x: 10, y: 230, w: 280, h: 190 }],
+          [{ x: 0, y: 0, w: 400, h: 300 }, { x: 70, y: 380, w: 280, h: 190 }],
+          [{ x: 0, y: 500, w: 280, h: 190 }, { x: 0, y: 0, w: 280, h: 400 }]
+        ];
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        svg.appendChild(path); document.body.appendChild(svg);
+        const hits = cases.map(([a, b]) => {
+          path.setAttribute('d', ropePath(anchor(a, b), anchor(b, a), a, b));
+          const L = path.getTotalLength();
+          let n = 0;
+          for (let i = 1; i < 200; i++) {
+            const p = path.getPointAtLength(L * i / 200);
+            for (const q of [a, b]) if (p.x > q.x + 2 && p.x < q.x + q.w - 2 && p.y > q.y + 2 && p.y < q.y + q.h - 2) n++;
+          }
+          return n;
+        });
+        svg.remove();
+        state.settings.linkAnchor = was; state.settings.linkStyle = wasStyle;
+        return hits;
+      });
+      ok(r.every((n) => n === 0), 'points of the rope inside a note, per case: ' + JSON.stringify(r));
     });
 
     await test('2.10 a pan rewrites no rope that did not move; a moved note\'s rope does follow', async () => {
