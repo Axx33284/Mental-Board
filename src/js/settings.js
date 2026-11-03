@@ -1946,6 +1946,7 @@ function wireSettings30() {
   check('setHwKeep', 'hwKeep');
   check('setWpSound', 'wpSound');
   check('setWpGrid', 'wpGrid');
+  check('setWpDepth', 'wpDepth');
   check('setInkPressure', 'inkPressure');
   check('setSmoothCaret', 'smoothCaret');
   check('setSkFull', 'sketchFull');
@@ -1963,6 +1964,7 @@ function wireSettings30() {
   range('wpDim', 'wpDim', pct);
   range('wpBlur', 'wpBlur', (v) => num(v) + ' px');
   range('wpAmount', 'wpAmount', pct);
+  range('wpVolume', 'wpVolume', pct);
   // a link is kept as it is typed, and the video changes once it is a link to one
   $('wpUrl').addEventListener('input', () => {
     s().wpUrl = $('wpUrl').value.trim().slice(0, 500);
@@ -2021,16 +2023,22 @@ function syncSettings30() {
   $('setHwKeep').checked = !!s.hwKeep;
   $('setWpSound').checked = !!s.wpSound;
   $('setWpGrid').checked = !!s.wpGrid;
-  for (const [id, fmt] of [['wpOpacity', pct], ['wpDim', pct], ['wpBlur', (v) => num(v) + ' px'], ['wpAmount', pct]]) {
+  $('setWpDepth').checked = s.wpDepth !== false;
+  for (const [id, fmt] of [['wpOpacity', pct], ['wpDim', pct], ['wpBlur', (v) => num(v) + ' px'], ['wpAmount', pct], ['wpVolume', pct]]) {
     $(id).value = s[id];
     $(id + 'Val').textContent = fmt(s[id]);
   }
   if (document.activeElement !== $('wpUrl')) $('wpUrl').value = s.wpUrl;
-  const vid = s.wpKind === 'youtube', live = s.wpKind === 'rain' || s.wpKind === 'snow';
+  // a video has its own sound; the drawn kinds make theirs (3.3), with a level of their own and depth
+  const vid = s.wpKind === 'youtube', live = WP_LIVE.includes(s.wpKind);
   $('wpUrlRow').classList.toggle('hidden', !vid);
   $('wpUrlHint').classList.toggle('hidden', !vid);
-  $('wpSoundRow').classList.toggle('hidden', !vid);
+  $('wpSoundRow').classList.toggle('hidden', !vid && !live);
+  $('wpSoundHint').classList.toggle('hidden', !live);
+  $('wpVolumeRow').classList.toggle('hidden', !live || !s.wpSound);
   $('wpAmountRow').classList.toggle('hidden', !live);
+  $('wpDepthRow').classList.toggle('hidden', !live);
+  $('wpDepthHint').classList.toggle('hidden', !live);
   paintWpUrlHint();
   paintHwLangs();
   const names = s.uiFontNames || {};
@@ -2187,7 +2195,7 @@ const SET_KEYS = {
   setEmbeds: 'embeds', setGuides: 'guides', setFocusMode: 'focusMode', setSounds: 'sounds', setSoftware: 'softwareRender',
   setSnap: 'snap', setCompass: 'compass', setMinimap: 'minimap', setSpell: 'spell', setConfirmDelete: 'confirmDelete',
   setShowArchived: 'showArchived', setBackupAuto: 'backupAuto', setBackground: 'background', setCapture: 'capture',
-  setDaily: 'daily', setHwAnimate: 'hwAnimate', setHwKeep: 'hwKeep', setWpSound: 'wpSound', setWpGrid: 'wpGrid'
+  setDaily: 'daily', setHwAnimate: 'hwAnimate', setHwKeep: 'hwKeep', setWpSound: 'wpSound', setWpGrid: 'wpGrid', setWpDepth: 'wpDepth'
 };
 function settingDefaultText(unit) {
   const d = defaults().settings;
@@ -2205,7 +2213,7 @@ function settingDefaultText(unit) {
 }
 // a slider's default, written as its value is (the key is the slider's id)
 const SET_RANGES = {
-  fontScale: pct, gridFade: pct, zoomSpeed: pct, soundVol: pct, keyVol: pct, wpAmount: pct, wpOpacity: pct, wpDim: pct,
+  fontScale: pct, gridFade: pct, zoomSpeed: pct, soundVol: pct, keyVol: pct, wpAmount: pct, wpVolume: pct, wpOpacity: pct, wpDim: pct,
   wpBlur: (v) => num(v) + ' px', gridSize: num, noteW: num, noteH: num, linkWidth: num, nbPages: num
 };
 // what the row is called: its label, or the heading of the block it is

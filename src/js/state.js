@@ -264,6 +264,7 @@ function defaults() {
          a YouTube link for 'youtube', and how it sits — opacity, a darkening
          veil, blur, how much rain or snow, and whether the video has sound. */
       wpKind: 'none', wpUrl: '', wpOpacity: 100, wpDim: 25, wpBlur: 0, wpAmount: 60, wpSound: false, wpGrid: true,
+      wpVolume: 50, wpDepth: true,       // 3.3: the drawn kinds' own sound, and their layers moving apart
       /* the face the app is set in (3.0.1, mental.css §84): 'clean' — the
          reference's Neue Frutiger and Univers Condensed — 'typewriter', or 'system' */
       uiFont: 'clean',
@@ -949,6 +950,8 @@ function adopt(raw, keepSettings) {
   st.wpBlur = clamp(Math.round(+st.wpBlur || 0), 0, 20);
   st.wpAmount = clamp(Math.round(+st.wpAmount || 0), 5, 100);
   st.wpSound = !!st.wpSound;
+  st.wpVolume = clamp(Math.round(Number.isFinite(+st.wpVolume) ? +st.wpVolume : 50), 0, 100);
+  st.wpDepth = st.wpDepth !== false;
   st.wpGrid = st.wpGrid !== false;
   if (!['clean', 'typewriter', 'system'].includes(st.uiFont)) st.uiFont = 'clean';
   {

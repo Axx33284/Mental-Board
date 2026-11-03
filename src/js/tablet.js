@@ -90,7 +90,14 @@ function onPadState(st) {
        asks for a picture: identical ones are dropped in main, so this only
        ever sends something a change missed (a picture finishing loading, a
        theme fading). */
-    padViewTimer = setInterval(() => { sendPadView(); paintPadArea(); padDirty(true); }, 1000);
+    /* With a live wallpaper behind the board, no two pictures are ever the
+       same, so this tick alone would send the phone one every second; it asks
+       every third second instead (3.3, js/wallpaper.js wpAnimating). */
+    let tick = 0;
+    padViewTimer = setInterval(() => {
+      sendPadView(); paintPadArea();
+      if (!(typeof wpAnimating === 'function' && wpAnimating()) || ++tick % 3 === 0) padDirty(true);
+    }, 1000);
     paintPadArea();
     padDirty();
   }

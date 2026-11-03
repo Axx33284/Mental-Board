@@ -2907,3 +2907,7 @@ body[data-caret="smooth"]:not(.caret-native) .note-body[contenteditable="true"] 
    is alive and where the phone will land when it wakes. */
 #inkBar .ik-btn[data-ik="phone"].on { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
 #padArea.away { outline-style: dotted; opacity: .5; }
+
+/* ─────────────── 96. the night sky is drawn too (3.3, js/wallpaper.js) ───────────────
+   §85 showed the canvas for the two kinds 3.0 drew; the stars are a third. */
+#wallpaper[data-kind="stars"] #wpCanvas { display: block; }

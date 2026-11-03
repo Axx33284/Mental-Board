@@ -485,6 +485,7 @@
               <button data-wp="none" data-t="set.wpNone"></button>
               <button data-wp="rain" data-t="set.wpRain"></button>
               <button data-wp="snow" data-t="set.wpSnow"></button>
+              <button data-wp="stars" data-t="set.wpStars"></button>
               <button data-wp="youtube" data-t="set.wpYoutube"></button>
             </div>
           </div>
@@ -495,6 +496,12 @@
           </div>
           <p class="set-note dim sub" id="wpUrlHint" data-t="set.wpUrlHint"></p>
           <label class="set-check sub" id="wpSoundRow"><input type="checkbox" id="setWpSound"><span data-t="set.wpSound"></span></label>
+          <!-- 3.3: the drawn kinds make their own sound (js/wallpaper.js wpAu); a video plays its own -->
+          <p class="set-note dim sub" id="wpSoundHint" data-t="set.wpSoundHint"></p>
+          <div class="set-row sub" id="wpVolumeRow">
+            <label><span data-t="set.wpVolume"></span> <span class="set-val" id="wpVolumeVal"></span></label>
+            <input type="range" id="wpVolume" min="0" max="100" step="5" data-t-aria="set.wpVolume">
+          </div>
           <div class="set-row sub" id="wpAmountRow">
             <label><span data-t="set.wpAmount"></span> <span class="set-val" id="wpAmountVal"></span></label>
             <input type="range" id="wpAmount" min="5" max="100" step="5" data-t-aria="set.wpAmount">
@@ -515,6 +522,9 @@
           </div>
           <label class="set-check"><input type="checkbox" id="setWpGrid"><span data-t="set.wpGrid"></span></label>
           <p class="set-note dim sub" data-t="set.wpGridHint"></p>
+          <!-- 3.3: the layers move apart as the pointer leans and the board pans (js/wallpaper.js wpCamera) -->
+          <label class="set-check" id="wpDepthRow"><input type="checkbox" id="setWpDepth"><span data-t="set.wpDepth"></span></label>
+          <p class="set-note dim sub" id="wpDepthHint" data-t="set.wpDepthHint"></p>
         </section>
 
         <section class="set-sec" data-pane="canvas">

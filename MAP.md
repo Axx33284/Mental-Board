@@ -672,7 +672,7 @@ no bundler and no build step — the only thing joining them is the order
 | `page.js` | ~345 | **The page menu** at the top right, **the workflows list** beside it (`paintFlowsBtn` `openFlowsMenu`, §4z), and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
-| `wallpaper.js` | ~310 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`; since 3.1 the loop sleeps on a timer between frames and a drop's rim is one sprite (`wpRim`). See §4z9. |
+| `wallpaper.js` | ~720 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`; since 3.1 the loop sleeps on a timer between frames and a drop's rim is one sprite (`wpRim`). **3.3**: depth (`wpCamera` `wpOff`), sprites (`wpSprite` `wpGlow`), the rain's fog (`wpFrostOf`, `wp.fog`), streaks, lights, cars and lightning; the snow's gusts, glints, windows and frost (`wpFrostFrame`); the night sky (`wpSeedStars` `wpStarsStep` `wpDrawStars` `wpCurtain` `wpRidge`); and the sound (`wpAu`: `wpSoundSync` `wpRainSound` `wpWindSound` `wpNightSound` `wpThunderLater` `wpGustSound`). See §4z9. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
 | `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring), and the phone in a book (`bookPageUnder` `beginPadBookStroke` `padBookPoint`, 3.0.2). Since 3.1 the colours are resolved inside the open host and sent with the app's theme and what is open (`padHostEl` `padPalette` `padWhere`, §4z10). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
@@ -3169,6 +3169,68 @@ motion. A board's own background picture is still drawn over it.
 In the sandbox, YouTube answered "This video is unavailable" to every embed,
 the note player's too — that is YouTube refusing that machine or profile, not
 these parameters.
+
+### The wallpaper made a place (3.3)
+
+Judged as "is this somewhere": the rain was a painted picture behind glass —
+a backdrop drawn once, fixed to the screen whatever the pointer or the board
+did, nothing happening beyond the glass — and the snow was flakes over a
+gradient that built a fresh radial gradient for every near flake every frame.
+What changed, all in `js/wallpaper.js`:
+
+- **Depth.** `wpCamera()` eases `wp.cam` after the pointer (`wp.look`,
+  −½…½ across the window) and a push from each pan of the board (`wp.kick`,
+  springing back over about a second). `wpOff(depth)` is a layer's offset.
+  The backdrop and everything belonging to it are painted `wp.m` device px
+  (WP_OVER, 5% of the long side) bigger on every side so a move never shows
+  an edge. In the rain the city moves fully and the rain outside 0.55; drops
+  and fog are on the glass and never move. In the snow and the sky it is a
+  camera: the hills 0.2, near flakes up to 1, the stars 0.08, the aurora
+  0.22, the ridge 0.6. Settings ▸ Wallpaper ▸ **Depth** (`wpDepth`, on);
+  always off when motion is reduced.
+- **Rain.** Rain falls outside (`wp.streaks`, two depths, one path per depth
+  per frame), some of the city's lights breathe (`wp.lights`) and cars pass
+  in the street (`wp.cars`, headlights one way, tail lights the other). The
+  glass fogs: `wp.frost` is the city blurred and paler, at half size, shown
+  through `wp.fog` — a quarter-size mask that re-fogs with a 5 s time
+  constant and is wiped by every sliding drop along the glass it crossed
+  that frame. The wipe is one drop wide: three drops wide striped the window
+  like a curtain. Composited at half the window's size in `wp.tmp`: at full
+  size the three passes cost 15.5 ms a frame drawing without a GPU, at half
+  5.4. Not on the lite tier (no fog there). Now and then (25–80 s, dark only)
+  the sky glows from far off — a glow of at most 0.2 alpha in two decaying
+  pulses, never a flash — and thunder follows if sound is on. The drop's lens
+  now samples the city where the city *is* after the move.
+- **Snow.** Every flake is one pre-drawn soft disc (`wpGlow`) stretched, not
+  a gradient per flake: 0.6 → 0.35 ms a frame. Gusts (2–4.5 s) that the snow
+  streams on, a nearer bank of snow with glints, lit windows on the hills
+  that come and go, and frost on the window's edge (`wp.frame`, on the glass).
+- **Night sky** (`stars`, new): the Milky Way and its dust in the backdrop,
+  twinkling stars, shooting stars every few seconds, two or three aurora
+  curtains — strips of one vertical gradient along two sines, folding — and a
+  ridge of hills and pines (`wp.fore`). In a light theme, the sky before
+  dawn. 0.46 ms a frame on lite, 1 ms on full.
+- **Sound** (`wpAu`), with Settings ▸ Wallpaper ▸ Play its sound and
+  **Volume** (`wpVolume`, 50): Web Audio from one two-second buffer of pink
+  noise. Rain is a filtered bed, a hiss and drops (bursts of noise through a
+  narrow band, panned) and thunder; snow is wind, swept by two slow
+  oscillators and swelling with each gust; the sky is a hush and two
+  crickets. It fades in and out, stops when the window is hidden
+  (`visibilitychange`) and the context is suspended between. Repeating
+  sounds keep one timer each (`wpAu.loops`): a list of every timer ever set
+  grew by eight a second in the rain.
+- **The phone.** No two pictures of a moving wallpaper are the same, so the
+  phone's idle tick asks every third second instead of every second while
+  `wpAnimating()` (js/tablet.js).
+
+All of it costs nothing when hidden, is one still frame under reduced motion,
+and on the lite tier draws fewer of everything and no fog. Measured in the
+app (script time per frame, 1400 × 860): lite — rain 1.3 ms (was 1.2), snow
+0.35 (was 0.6), sky 0.46; full, drawing without a GPU — rain 5.4, snow 0.35,
+sky 1.0. Test: **3.3 the wallpaper** in `tools/test-app-features.js` — the
+sky's layers, a lean that eases and returns, a pan that kicks and springs
+back, flat with depth off, the rain's streaks, lights and fog, the sound made
+with one loop and quiet when off, still under reduced motion.
 
 ### The options screen, and the face (settings.js §3.0, mental.css §84 and §88)
 

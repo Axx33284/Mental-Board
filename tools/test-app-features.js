@@ -2570,6 +2570,53 @@ module.exports = [
       ok(!r.badLink && r.none, 'a non-link shows nothing, and none stops the loop');
     });
 
+    /* 3.3 (js/wallpaper.js): a third drawn kind, layers that move apart, the
+       rain's fog and the city behind it alive, and a sound made as it plays. */
+    await test('3.3 the wallpaper: a night sky, depth that leans and springs back, sound made as it plays, still when motion is reduced', async () => {
+      const r = await page(async () => {
+        const s = state.settings, was = { kind: s.wpKind, sound: s.wpSound, depth: s.wpDepth, motion: s.motion };
+        const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+        const out = {};
+        s.motion = 'full'; s.wpSound = false; s.wpDepth = true;
+        s.wpKind = 'stars'; applySettings();
+        await wait(400);
+        out.stars = { shown: getComputedStyle($('wpCanvas')).display !== 'none', stars: wp.stars.length, ribbons: wp.ribbons.length, ridge: !!wp.fore, moving: wpAnimating() };
+        // a lean towards the right moves the view, easing; it comes back when the pointer is gone
+        wp.look.x = 0.5; wp.look.y = 0; await wait(900);
+        out.lean = wp.cam.x;
+        wp.look.x = 0; await wait(1600);
+        out.back = wp.cam.x;
+        // a pan of the board pushes it, and the push springs back
+        state.view.x += 600; applyView(); await wait(120);
+        out.kick = Math.abs(wp.kick.x);
+        await wait(1800);
+        out.kickBack = Math.abs(wp.kick.x);
+        s.wpDepth = false; applySettings(); wp.look.x = 0.5; await wait(300);
+        out.flat = wp.cam.x === 0 && wp.cam.y === 0;
+        wp.look.x = 0; s.wpDepth = true;
+        // the rain: the rain outside, the lights that breathe, the fog (not on the lite tier)
+        s.wpKind = 'rain'; applySettings(); await wait(500);
+        out.rain = { streaks: wp.streaks.length, lights: wp.lights.length, fog: !!wp.fog || document.body.dataset.perf === 'lite' };
+        // its sound, made here; off is quiet, and the loops do not pile up
+        s.wpSound = true; applySettings(); await wait(1500);
+        out.sound = { kind: wpAu.kind, ctx: !!wpAu.ctx, loops: wpAu.loops.length };
+        s.wpSound = false; applySettings(); await wait(100);
+        out.quiet = wpAu.kind === '' && wpAu.loops.length === 0;
+        // reduced motion: painted once, and still
+        s.motion = 'reduced'; applySettings(); await wait(200);
+        out.still = wp.still && !wpAnimating();
+        s.wpKind = was.kind; s.wpSound = was.sound; s.wpDepth = was.depth; s.motion = was.motion; applySettings();
+        return out;
+      });
+      ok(r.stars.shown && r.stars.stars > 0 && r.stars.ribbons >= 2 && r.stars.ridge && r.stars.moving, 'a night sky draws: ' + JSON.stringify(r.stars));
+      ok(r.lean > 0.3 && Math.abs(r.back) < 0.15, 'a lean moves the view, easing, and it comes back: ' + JSON.stringify(r));
+      ok(r.kick > 0.05 && r.kickBack < r.kick / 4, 'a pan pushes the scene, and it springs back: ' + JSON.stringify(r));
+      ok(r.flat, 'with depth off it stays flat, whatever the pointer does');
+      ok(r.rain.streaks > 0 && r.rain.lights > 0 && r.rain.fog, 'rain: the rain outside, the lights, the fog: ' + JSON.stringify(r.rain));
+      ok(r.sound.kind === 'rain' && r.sound.ctx && r.sound.loops === 1 && r.quiet, 'its sound is made, one loop at a time, and off is quiet: ' + JSON.stringify(r));
+      ok(r.still, 'still when motion is reduced');
+    });
+
     await test('3.0 the options screen: every choice is ‹ value ›, the arrows change it, the description names its default', async () => {
       const r = await page(async () => {
         openSettings();
