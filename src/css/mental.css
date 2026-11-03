@@ -2886,7 +2886,7 @@ body[data-caret="smooth"]:not(.caret-native) .note-body[contenteditable="true"] 
 /* a sticky note being written in a drawing note: its paper under the words */
 .sk-text-in.sticky { background: var(--st); color: #2a2620; border-radius: 2px; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); min-width: 6em; min-height: 3.75em; }
 
-/* ─────────────── 94. a theme card's name keeps off its edges (3.2.1) ───────────────
+/* ─────────────── 94. a theme card's name keeps off its edges (3.3) ───────────────
    .tc-name had no side padding, so the chosen card's bold name ran wall to wall:
    "Mental Board Light" needs 97px bold in a 101px card. An ellipsis was tried
    and hid the one word that tells it from "Mental Board". So it keeps 4px

@@ -60,12 +60,16 @@ theoretical.
   session. See `writeNow()` and `MAP.md` §7.
 - **There is exactly one copy of the built app on a machine.** For a
   developer it is `App/Mental Board.exe`; for someone who downloads it, it is
-  `%LOCALAPPDATA%\Programs\Mental Board\Mental Board.exe`, put there by hand
-  from the release zip (`INSTALL.md`). The zip is the only download: one
-  folder, built by the same `tools/build-app.js` on a Windows runner
-  (`.github/workflows/release.yml`) when a `v<version>` tag is pushed. No
-  installer, no auto-updater, no portable target, no update feed the app
-  reads, and no shortcut — neither the build nor the workflow may create one.
+  `%LOCALAPPDATA%\Programs\Mental Board\Mental Board.exe`. Two downloads
+  put it there, both built from the same `App\` by `tools/build-app.js` on a
+  Windows runner (`.github/workflows/release.yml`) when a `v<version>` tag is
+  pushed: the **setup** (`tools/setup.iss`, built by `tools/build-setup.js`)
+  and the **zip**, put in place by hand (`INSTALL.md`). The setup installs
+  to that one place and no other (no folder page), replaces rather than
+  merges, refuses while the app runs, makes one Start-menu entry to that one
+  path, and uninstalls without touching `Documents\My Boards`; the workflow
+  tests all of that on the runner. No auto-updater, no portable target, no
+  update feed the app reads; `tools/build-app.js` still creates no shortcut.
   Two builds on one machine are not merely confusing: they share the
   single-instance lock (it is keyed to the pinned userData path), so the older
   one silently swallows the newer one's launch — it is not inert, it is a

@@ -1425,7 +1425,7 @@ if (!app.requestSingleInstanceLock()) {
        pasted page, a CSS url() in a style — makes Windows connect to that
        server over SMB and offer the user's NTLM credentials. Refused here,
        where every image, clip, stylesheet and frame passes, rather than in
-       each place a body can come from (store.isRemoteFileUrl, 3.2.1). */
+       each place a body can come from (store.isRemoteFileUrl, 3.3). */
     session.defaultSession.webRequest.onBeforeRequest({ urls: ['file://*/*'] }, (d, cb) => {
       let remote = true;
       try { remote = store.isRemoteFileUrl(d.url); } catch (_) {}
@@ -1434,7 +1434,7 @@ if (!app.requestSingleInstanceLock()) {
     try { fs.mkdirSync(dataDir(), { recursive: true }); } catch (_) {}
     tidyOldCache();
     store.init(boardsRoot());
-    // a redirected Documents or an app run from a share is the user's own, not a stranger's (3.2.1)
+    // a redirected Documents or an app run from a share is the user's own, not a stranger's (3.3)
     try { store.trustShares([__dirname, boardsRoot(), app.getPath('documents'), app.getPath('userData')]); } catch (_) {}
     /* A 1.x board in %APPDATA% and an empty My Boards: lay it out the new way,
        once. The old file is left where it was. */

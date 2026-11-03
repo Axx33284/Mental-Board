@@ -84,7 +84,7 @@ function showSettingsDesc(el) {
 /* The same card again, from scratch. showSettingsDesc() redraws only when the
    row changes, so a change that is not a move — the language, picked in this
    very pane — left the card in the old language until the pointer moved to
-   another row (3.2.1). applyLang() calls this. */
+   another row (3.3). applyLang() calls this. */
 function repaintSettingsDesc() {
   const desc = $('setDesc');
   if (!desc) return;

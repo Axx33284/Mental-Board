@@ -201,6 +201,8 @@ INSTALL.md    how someone without the source installs the release zip, and the r
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
 | `tools/fake-pdf.js` | ~30 | A two-page PDF built byte by byte (text in a standard font, a filled box per page) for the 2.7 test. No real PDF is checked in. |
+| `tools/setup.iss` | ~120 | **The setup file's script** (3.3, Inno Setup 6): one place (`{localappdata}\Programs\Mental Board`, no folder page), `[InstallDelete]` so an update replaces, the refusal while any `Mental Board.exe` runs, one Start-menu entry, an uninstaller that takes the app folder and nothing else. The AppId is a contract. See §6. |
+| `tools/build-setup.js` | ~60 | `npm run setup`: finds ISCC.exe, refuses an `App\` that is not this version's, writes `dist\Mental-Board-Setup-<version>.exe`. Windows only. See §6. |
 | `tools/ws-client.js` | ~60 | The phone's side of the socket, for `test-tablet.js` and the app suite's 3.3 phone test: a raw WebSocket client that parses text frames and records pictures (`bin`, `head`, and when each message arrived). |
 | `tools/test-tablet.js` | ~280 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~345 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last page test fails on any that is not expected. Then two quits, each in a fresh app driven over `--inspect` (§4k): the last edit lands and every process goes, and every process goes even when the page never answers. `npm run test:app`. |
@@ -3841,7 +3843,7 @@ ends are pinned to the middle of the top edge, and:
   Below 30px of horizontal separation `ropeAround()` takes over: up off the pin,
   across above the card, down 30px past the wider card's edge, across in the
   gap above the lower card, down onto its pin, every corner rounded. Until
-  3.2.1 it was one cubic bowed by half the card plus 46px, which reaches only
+  3.3 it was one cubic bowed by half the card plus 46px, which reaches only
   three quarters of that and leaves the pin heading down — through the upper
   card, and over its text when the note was selected. A test samples the
   path. That is why `ropePath()` takes the two
@@ -4419,7 +4421,7 @@ old version left installed is not inert.** It is a running app wearing the new
 one's launch. There is now one copy on disk and no shortcut pointing anywhere,
 which is the only arrangement where that cannot happen again.
 
-### Why there is no installer and no updater
+### Why there was no installer and is no updater
 
 1.3 shipped an NSIS installer, a portable target, a GitHub Actions release
 workflow and `electron-updater` pulling from GitHub Releases. That put up to
@@ -4431,7 +4433,7 @@ them. Nothing tells you which.
 
 All of it is deleted: no `electron-builder`, no `electron-updater`, no
 `build.nsis`, no `publish` target, no `RELEASING.md`. (A
-`.github/workflows/release.yml` exists again since 3.2.1, but only to build
+`.github/workflows/release.yml` exists again since 3.3, but only to build
 the one zip below — it publishes nothing the app reads.) **Updating is running `npm run build`.** If that ever needs to
 change, the thing to preserve is the property, not the tooling: one copy, one
 path to it, and a way to read the build identity off the running app.
@@ -4459,16 +4461,62 @@ none of the tooling:
   a throwaway home: a fresh install, an update that must leave no stale file
   behind, and the refusal when Downloads holds two zips (it must change
   nothing). Edit the block and the release proves it still works.
-- **What it still is not.** No installer, no updater, no feed the app reads,
-  no shortcut, no portable self-extractor. The app does not know releases
-  exist. A machine that both builds from source and installs the zip has two
-  copies; `INSTALL.md` rule 7 says pick one.
+- **What it still is not.** No updater, no feed the app reads, no portable
+  self-extractor. The app does not know releases exist. A machine that both
+  builds from source and installs a download has two copies; `INSTALL.md`
+  rule 7 says pick one.
 - **`IGNORE` keeps it out of the package.** `.github/` and `INSTALL.md` are
   in it next to `MAP.md`, or the workflow would ship inside `app.asar`.
 
+### The setup file (3.3)
+
+Asked for: a file you run, the way every other Windows app installs. The
+risk was never an installer as such — it was 1.3's *several* places, a
+self-extracting portable copy and an updater staging builds for a quit that
+never came. So the setup is built to the same property as the zip, and the
+zip stays: both put the same `App\` in the same one place.
+
+- **What it is.** `tools/setup.iss`, Inno Setup 6, compiled by
+  `tools/build-setup.js` (`npm run setup`, after `npm run build`) into
+  `dist\Mental-Board-Setup-<version>.exe`. The script refuses an `App\` whose
+  `BUILD.txt` is not this version's. On the runner Inno Setup 6 is on the
+  image (Windows Server 2025: 6.7.1); elsewhere `ISCC=<path>` or an install.
+- **One place.** `DefaultDirName={localappdata}\Programs\Mental Board`,
+  `DisableDirPage=yes`, `UsePreviousAppDir=no`, `PrivilegesRequired=lowest` —
+  per user, no admin, no way to pick another folder. The same path the zip
+  uses, so a zip install moves to the setup by running it.
+- **Replace, never merge.** `[InstallDelete]` empties the folder before the
+  files go in, as `tools/build-app.js` deletes `App\` rather than copying
+  over it.
+- **Never over a running copy.** `InitializeSetup` and `InitializeUninstall`
+  ask WMI for any `Mental Board.exe` and wait for it to be quit (Retry), or
+  end having changed nothing. Any copy, not only this folder's: one built
+  from source elsewhere holds the single-instance lock and would swallow the
+  new copy's first launch. Silent, the answer is Cancel, exit code 1.
+  `CloseApplications=no`: closing the app for the person could lose the last
+  seconds of typing, and its close button only hides it anyway.
+- **Shortcuts.** One Start-menu entry to that one path (a desktop one only if
+  ticked), removed by the uninstaller. This is the one place a shortcut is
+  made, and it cannot go stale: the path never changes, and the setup is
+  what keeps the folder current. `tools/build-app.js` still makes none.
+- **The uninstaller takes the app folder (`[UninstallDelete]`) and nothing
+  else.** The boards are in `Documents\My Boards`; no line in setup.iss names
+  it.
+- **The AppId** (`{6F4B2C1E-…}`) is how a newer setup finds an older one, and
+  is a contract like the pinned userData path: never change it.
+- **Tested on the runner, for real** ("The setup works as written"): a silent
+  install (exe, Start-menu entry, uninstall entry with this version, no
+  desktop icon), an update after a stale file was dropped in (gone), the
+  setup run while the installed app is running (exit code not 0, a marker
+  file untouched), and an uninstall (folder, entry and Start-menu entry gone;
+  a board planted in `Documents\My Boards` still there).
+- **Not signed.** SmartScreen warns until someone signs it; `INSTALL.md`
+  says what to press.
+
 Releasing is: bump `version` in `package.json`, commit, `git tag v<version>`,
-push the tag. The runner is Windows, so it is also the first place `npm
-test` runs on Windows without anyone's machine.
+push the tag. The release carries the setup, the zip and a SHA-256 of each.
+The runner is Windows, so it is also the first place `npm test` runs on
+Windows without anyone's machine.
 
 Two things about the packaging config in `tools/build-app.js`:
 

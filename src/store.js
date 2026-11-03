@@ -117,7 +117,7 @@ function parseFileUrl(url) {
    rename last. It runs whole inside one IPC handler, so an async write that
    was mid-`await` when it arrived resumes afterwards and renames its older tmp
    over the top: Quit during a debounced save put the board on disk as it was a
-   few seconds earlier (3.2.1). So every sync write stamps its file in
+   few seconds earlier (3.3). So every sync write stamps its file in
    `syncWrites` with the next `writeSeq`, and an async write throws its tmp
    away instead of renaming it when its file was stamped after the save was
    *asked for* — not after it started: one still queued behind the last
@@ -358,7 +358,7 @@ function saveAllAsync(payload) {
    board's folder name alone, so "Ideas" and "Work ▸ Ideas" shared one folder:
    whichever saved first each day took the day's file, the other's snapshot
    came back `skipped` (a success), and the two pruned each other's fourteen
-   days (3.2.1). A top-level board keeps the folder it always had. */
+   days (3.3). A top-level board keeps the folder it always had. */
 const KEEP_DAYS = 14;
 function snapshotDir(id) {
   const d = boardDir(id);
@@ -541,7 +541,7 @@ function readImage(url) {
    hash of your Windows password the moment the note is drawn. Main refuses
    every such load (main.js, the file: guard before createWindow) and
    pathOfUrl() below will not open or reveal one. A link to a document on
-   this machine is unaffected (3.2.1). */
+   this machine is unaffected (3.3). */
 /* The network path a file: URL names, as `//server/share/...` in lower case
    with forward slashes — or '' when it names this machine. */
 function remoteOf(url) {

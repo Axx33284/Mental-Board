@@ -10,6 +10,8 @@ node_modules/
 App/
 # where the build stages before it replaces App\
 .build/
+# the setup file tools/build-setup.js writes (npm run setup)
+dist/
 
 # the throwaway profile `npm run sandbox` writes to, and the copies the
 # admin pack's backup script drops next to itself

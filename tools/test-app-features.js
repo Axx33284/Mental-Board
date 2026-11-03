@@ -2057,7 +2057,7 @@ module.exports = [
        upper one — and a selected note's ropes are drawn over the notes, so it
        struck through its text. Sampled along the real path, in both
        directions, for equal and unequal widths and a tight gap. */
-    await test('3.2.1 a rope between two notes in a column goes round them, never through', async () => {
+    await test('3.3 a rope between two notes in a column goes round them, never through', async () => {
       const r = await page(async () => {
         const was = state.settings.linkAnchor, wasStyle = state.settings.linkStyle;
         state.settings.linkAnchor = 'top'; state.settings.linkStyle = 'curve';

@@ -1,17 +1,39 @@
 # Installing Mental Board
 
-Mental Board is one folder. There is no installer and nothing to set up: you
-put the folder in one place and run the program inside it. Your boards are not
-in that folder. They live in **`Documents\My Boards`**, so installing, updating
-or deleting the app never touches them.
-
-The one place is:
+Mental Board lives in one folder, in one place:
 
 ```
 %LOCALAPPDATA%\Programs\Mental Board\Mental Board.exe
 ```
 
-## Install (about one minute)
+Your boards are not in that folder. They live in **`Documents\My Boards`**,
+so installing, updating or uninstalling the app never touches them.
+
+There are two ways to put it there. Both put it in the same place, so pick
+one: the **setup file** does it for you, the **zip** is the same app as a
+folder you put in place yourself.
+
+## The easy way: the setup file
+
+1. Download **`Mental-Board-Setup-<version>.exe`** from the Releases page:
+   <https://github.com/axx33284/mental-board/releases/latest>
+2. Run it. Windows may say *"Windows protected your PC"*, because the app is
+   not code-signed: click **More info ▸ Run anyway**.
+3. That is all. It needs no administrator, adds Mental Board to the Start
+   menu, and offers to start it. It does not ask where to install: there is
+   only one place.
+
+**Update:** quit the app (right-click its tray icon ▸ **Quit**), then run the
+new setup. It replaces the old copy — it never keeps both. If the app is still
+running, the setup says so and waits for you to quit it.
+
+**Uninstall:** Windows **Settings ▸ Apps ▸ Installed apps ▸ Mental Board ▸
+Uninstall**. The app's folder and its Start-menu entry go; your boards stay
+in `Documents\My Boards` until you delete that folder yourself.
+
+## Without the setup: the zip
+
+### Install (about one minute)
 
 1. Download **`Mental-Board-<version>-windows-x64.zip`** from the Releases
    page, into your **Downloads** folder:
@@ -51,7 +73,7 @@ The one place is:
 
 Then delete the zip from Downloads.
 
-## Update
+### Update
 
 1. **Quit the app.** Closing the window only hides it in the tray: right-click
    the tray icon (by the clock, behind **^** if hidden) ▸ **Quit**.
@@ -64,7 +86,7 @@ is in the titlebar and in `BUILD.txt` inside the folder. If the titlebar still
 shows the old version, an old copy is still running. Quit it from the tray and
 start again.
 
-## Uninstall
+### Uninstall
 
 Quit the app, then delete `%LOCALAPPDATA%\Programs\Mental Board`. Your boards
 stay in `Documents\My Boards` until you delete that folder too.
@@ -75,7 +97,8 @@ These are short because each one has already cost someone their notes or an
 afternoon.
 
 1. **One copy, one place.** Mental Board lives in
-   `%LOCALAPPDATA%\Programs\Mental Board` and nowhere else. Never keep a second
+   `%LOCALAPPDATA%\Programs\Mental Board` and nowhere else — the setup
+   and the zip both put it there. Never keep a second
    copy, such as one in Downloads, an "old" folder, or a `Mental Board (2)`.
    Two copies share one lock, so starting the new one just brings the old
    one's window to the front. It looks exactly like the update did nothing.
@@ -96,6 +119,10 @@ afternoon.
 7. **Building from source instead?** Then `App\Mental Board.exe` in your
    checkout is your one copy (see the README). Use either that or the
    download, never both on one machine.
+8. **Installed with the setup? Update with the setup.** The zip's quick way
+   would replace the folder but not the entry in Installed apps, which would
+   then point at an uninstaller that is gone. A zip install can move to the
+   setup at any time: the setup replaces it.
 
 ## If something is wrong
 
