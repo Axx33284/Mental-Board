@@ -375,7 +375,8 @@ async function quitSuite() {
     seed();
     PORT = await freePort();
     const electron = require('electron');            // the path to the binary, from node
-    child = spawn(electron, ['.', `--user-data-dir=${UDD}`, `--remote-debugging-port=${PORT}`], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
+    // --pad-host: the phone's server on loopback, so a test can be the phone (main.js PAD_TEST_HOST)
+    child = spawn(electron, ['.', `--user-data-dir=${UDD}`, `--remote-debugging-port=${PORT}`, '--pad-host=127.0.0.1'], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
     await connect();
     await send('Runtime.enable');
     await send('Log.enable');

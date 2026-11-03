@@ -2591,5 +2591,89 @@ module.exports = [
       ok(/Default/.test(r.desc) && /Now/.test(r.desc) && r.desc.length > 30, 'the description card: what it is now and its default: ' + r.desc);
       ok(r.face === 'clean', 'the app is set in the clean face (Frutiger, Univers Condensed): ' + r.face);
     });
+  },
+
+  /* 3.3 — the phone over a real socket. The suite's app listens on loopback
+     (--pad-host, main.js PAD_TEST_HOST) and this is the phone: the pairing,
+     the pictures and their two qualities, their pace while the pen draws,
+     undo and redo, and a phone back over its own half-open socket. Everything
+     on the computer's side is the real path — main's capture and JPEG, the
+     socket, the renderer's pump — with nothing stubbed. */
+  async ({ page, test, ok, sleep }) => {
+    const { wsConnect } = require('./ws-client.js');
+    const until = async (fn, ms) => { for (let t = 0; t < ms; t += 25) { if (fn()) return true; await sleep(25); } return false; };
+    await test('3.3 a phone over a real socket: sharp when still, paced while the pen draws, redo, and a takeover', async () => {
+      const info = await page(async () => {
+        const b = makeBoard('Phone');
+        state.boards.push(b);
+        await switchBoard(b.id);
+        state.view = { x: 0, y: 0, z: 1 }; applyView();
+        addNote({ x: 0, y: 0 }, { body: '<h3>Under the pen</h3><p>Words to read on the phone.</p>', color: 'blue', edit: false });
+        await startPad();
+        return { state: padInfo.state, url: padInfo.url || '' };
+      });
+      ok(info.state === 'waiting' && /^http:\/\/127\.0\.0\.1:\d+\/t\/[0-9a-f]{32}$/.test(info.url), 'pairing on loopback: ' + JSON.stringify(info));
+      const u = new URL(info.url), origin = `http://127.0.0.1:${u.port}`, token = u.pathname.split('/').pop();
+      const a = await wsConnect(`${origin}/ws/${token}`, origin);
+      ok(a.status === 101, 'the phone is in: ' + a.status);
+      // the real page says `got` for every picture it shows; without it the next one waits 1.5 s
+      const acked = new Set();
+      const acker = setInterval(() => {
+        for (const m of a.got) if (m.t === 'frame' && m.img && !acked.has(m.n)) { acked.add(m.n); a.send({ t: 'got', n: m.n }); }
+      }, 15);
+      try {
+        ok(await until(() => a.got.some((m) => m.t === 'hello'), 3000), 'hello');
+        const hello = a.got.find((m) => m.t === 'hello');
+        a.send({ t: 'size', a: 0.5, px: 1000 });
+        const pics = (from) => a.got.slice(from || 0).filter((m) => m.t === 'frame' && m.img);
+        ok(await until(() => a.got.some((m) => m.bin), 5000), 'a picture arrives');
+        ok(await until(() => pics().some((m) => m.q === 'still'), 3000), 'once the board is still, a sharp picture follows: ' + JSON.stringify(pics().map((m) => m.q)));
+        const sharp = a.got.filter((m) => m.bin).pop().bin;
+        // the "Phone connected" toast is in the region and fades: wait until nothing has changed for 2.5 s
+        for (let i = 0; i < 6; i++) { const n0 = pics().length; await sleep(2500); if (pics().length === n0) break; }
+        const idle = pics().length;
+        await sleep(2600);
+        ok(pics().length === idle, 'a still board sends nothing more, even with the once-a-second tick asking: ' +
+          JSON.stringify(a.got.filter((m) => m.t === 'frame' || m.bin).map((m) => (m.bin ? m.bin : m.q + (m.img ? '' : '-') + '@' + m.at))));
+
+        // a line drawn for 1.2 s: the phone draws it itself, so pictures keep out of the pen's way
+        const iDown = a.got.length;
+        a.send({ t: 'down', id: 'e1', k: 1, x: 0.3, y: 0.3, p: 0.5, tool: 'pen', size: 1, color: 'text' });
+        for (let i = 1; i <= 24; i++) { a.send({ t: 'move', id: 'e1', pts: [0.3 + i * 0.01, 0.3 + i * 0.008, 0.5] }); await sleep(50); }
+        const during = pics(iDown).length;
+        const iUp = a.got.length, tUp = Date.now();
+        a.send({ t: 'up', id: 'e1' });
+        ok(await until(() => pics(iUp).length > 0, 2000), 'a picture as the pen lifts');
+        const lift = Date.now() - tUp;
+        ok(during <= 4, `at most four pictures during a 1.2 s line (one per ${450} ms), not one per 90 ms: ${during}`);
+        ok(lift < 700, 'the picture after the pen lifts is not held back by the slow pace: ' + lift + ' ms');
+        ok(await until(() => pics(iUp).some((m) => m.q === 'still' && m.k >= 1), 3000), 'the still picture after the line says it has the line in it');
+
+        const drawn = await page(() => ({ n: state.ink.length, id: state.ink[0] && state.ink[0].id }));
+        ok(drawn.n === 1, 'the line landed: ' + JSON.stringify(drawn));
+        a.send({ t: 'undo' });
+        await sleep(300);
+        ok((await page(() => state.ink.length)) === 0, 'undo takes it back');
+        a.send({ t: 'redo' });
+        await sleep(300);
+        const back = await page(() => ({ n: state.ink.length, id: state.ink[0] && state.ink[0].id, last: padMine[padMine.length - 1] }));
+        ok(back.n === 1 && back.id === drawn.id && back.last === drawn.id, 'redo puts the same line back, and undo can take it again: ' + JSON.stringify(back));
+        ok(sharp > 0, 'a sharp picture has bytes: ' + sharp);
+
+        // the phone slept: its socket is still open here when it comes back with `resume`
+        const c = await wsConnect(`${origin}/ws/r/${hello.resume}`, origin);
+        ok(c.status === 101, 'back in over the half-open socket: ' + c.status);
+        ok(await until(() => a.isClosed(), 3000), 'the old socket is let go');
+        const st = await page(() => padInfo.state);
+        ok(st === 'connected', 'still paired, never away: ' + st);
+        await page(() => PAD.stop());
+        ok(await until(() => c.isClosed(), 3000), 'Stop ends it');
+        ok(c.got.some((m) => m.t === 'bye'), 'with a bye');
+      } finally {
+        clearInterval(acker);
+        try { a.sock.destroy(); } catch (_) {}
+        await page(() => { if (padInfo.state !== 'off') PAD.stop(); });
+      }
+    });
   }
 ];

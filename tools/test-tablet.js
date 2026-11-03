@@ -85,51 +85,8 @@ function readBack(sym) {
   return new TextDecoder().decode(Uint8Array.from(out));
 }
 
-/* ---- a WebSocket client small enough to see every byte of ---- */
-function wsConnect(url, origin) {
-  return new Promise((resolve) => {
-    const u = new URL(url);
-    const req = http.request({
-      host: u.hostname, port: u.port, path: u.pathname, headers: {
-        Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13',
-        'Sec-WebSocket-Key': crypto.randomBytes(16).toString('base64'), Origin: origin, 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) Chrome/130'
-      }
-    });
-    req.on('response', (res) => resolve({ status: res.statusCode }));
-    req.on('error', (err) => resolve({ status: 0, error: err.code }));
-    req.on('upgrade', (res, sock, head) => {
-      const got = [];
-      let buf = Buffer.alloc(0), closed = false;
-      // the frames that arrived with the 101 come in `head`, not as data
-      const take = (d) => {
-        buf = Buffer.concat([buf, d]);
-        while (buf.length >= 2) {
-          let len = buf[1] & 0x7f, off = 2;
-          if (len === 126) { if (buf.length < 4) break; len = buf.readUInt16BE(2); off = 4; }
-          else if (len === 127) { if (buf.length < 10) break; len = buf.readUInt32BE(6); off = 10; }
-          if (buf.length < off + len) break;
-          const op = buf[0] & 0x0f;
-          if (op === 1) got.push(JSON.parse(buf.subarray(off, off + len).toString()));
-          if (op === 2) got.push({ bin: len, head: buf.subarray(off, off + 2).toString('hex') });
-          if (op === 8) closed = true;
-          buf = buf.subarray(off + len);
-        }
-      };
-      sock.on('data', take);
-      if (head && head.length) take(head);
-      sock.on('close', () => { closed = true; });
-      const send = (obj) => {
-        const body = Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj));
-        const mask = crypto.randomBytes(4);
-        const head = body.length < 126 ? Buffer.from([0x81, 0x80 | body.length]) : Buffer.from([0x81, 0x80 | 126, body.length >> 8, body.length & 255]);
-        const m = Buffer.from(body); for (let i = 0; i < m.length; i++) m[i] ^= mask[i & 3];
-        sock.write(Buffer.concat([head, mask, m]));
-      };
-      resolve({ status: 101, sock, got, send, isClosed: () => closed });
-    });
-    req.end();
-  });
-}
+/* the phone's side of the socket: tools/ws-client.js, shared with the app suite */
+const { wsConnect } = require('./ws-client.js');
 const get = (url) => new Promise((resolve) => {
   http.get(url, (res) => { let b = ''; res.on('data', (d) => { b += d; }); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: b })); })
     .on('error', (err) => resolve({ status: 0, error: err.code }));
@@ -193,6 +150,7 @@ async function until(fn, ms) {
     assert.deepStrictEqual(v.where, { k: 'book', title: 'Physics', at: 3, n: 12 }, 'where the computer is, and nothing else');
     assert.deepStrictEqual(tablet.clean({ t: 'page', d: -1 }), { t: 'page', d: -1 });
     assert.strictEqual(tablet.clean({ t: 'page', d: 40 }), null, 'a page turn is one page');
+    assert.deepStrictEqual(tablet.clean({ t: 'redo', x: 1 }), { t: 'redo' }, 'redo, and nothing riding on it (3.3)');
     assert.strictEqual(tablet.clean({ t: 'eval', code: '1' }), null);
     assert.strictEqual(tablet.clean('down'), null);
     assert.strictEqual(tablet.cleanOut({ t: 'board', notes: [] }), null, 'nothing but the view goes to the phone');
@@ -267,9 +225,26 @@ async function until(fn, ms) {
     assert.ok(b.got.some((m) => m.t === 'view'), 'told the view again on the way back');
     assert.deepStrictEqual(tablet.sendFrame({ n: 3 }, jpeg), { sent: true }, 'a phone that came back gets the picture again');
 
+    /* 3.3: the phone slept and left its socket half open here; it comes back
+       with `resume` before the old one is noticed. The new socket takes over —
+       no "away" in between — and the old one is let go. The token still opens
+       nothing, and a wrong secret is still refused while one is open. */
+    const awayBefore = states.filter((x) => x.state === 'away').length;
+    assert.strictEqual((await wsConnect(`${origin}/ws/r/${'0'.repeat(32)}`, origin)).status, 403, 'a wrong secret, with a socket open');
+    assert.strictEqual((await wsConnect(`${origin}/ws/${token}`, origin)).status, 403, 'the token, with a socket open');
+    const c = await wsConnect(`${origin}/ws/r/${hello.resume}`, origin);
+    assert.strictEqual(c.status, 101, 'the same phone, back over its own half-open socket');
+    assert.ok(await until(() => b.isClosed()), 'the old socket is let go');
+    await until(() => c.got.some((m) => m.t === 'view'));
+    assert.strictEqual(states.filter((x) => x.state === 'away').length, awayBefore, 'no "away" for a takeover');
+    assert.strictEqual(states[states.length - 1].state, 'connected');
+    c.send({ t: 'redo' });
+    await until(() => msgs.some((m) => m.t === 'redo'));
+    assert.ok(msgs.some((m) => m.t === 'redo'), 'the new socket is heard');
+
     tablet.stop('stopped');
-    await until(() => b.isClosed());
-    assert.ok(b.got.some((m) => m.t === 'bye'), 'bye');
+    await until(() => c.isClosed());
+    assert.ok(c.got.some((m) => m.t === 'bye'), 'bye');
     assert.strictEqual(states[states.length - 1].state, 'off');
     assert.strictEqual((await get(r.url)).status, 0, 'nothing listening after Stop');
   });

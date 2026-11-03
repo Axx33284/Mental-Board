@@ -1429,6 +1429,7 @@ function paletteCommands() {
     { kind: 'cmd', ic: 'search', label: t('pal.find'), run: () => openFind() },
     { kind: 'cmd', ic: 'fit_screen', label: t('menu.fit'), run: () => zoomToFitAll() },
     { kind: 'cmd', ic: 'settings', label: t('set.title'), run: () => openSettings() },
+    ...(window.mbPad ? [{ kind: 'cmd', ic: 'smartphone', label: t('pal.pairPhone'), run: () => pairPhoneNow() }] : []),
     ...userTemplates().map((x) => ({
       kind: 'cmd', ic: x.icon || 'sticky_note_2', label: t('pal.template', { name: templateName(x) }),
       run: () => applyTemplate(x.id)

@@ -2899,3 +2899,11 @@ body[data-caret="smooth"]:not(.caret-native) .note-body[contenteditable="true"] 
 .theme-card { display: flex; flex-direction: column; justify-content: flex-start; }
 .theme-card .tc-preview { flex: none; }
 .theme-card .tc-name { flex: 1 1 auto; }
+
+/* ─────────────── 95. the phone, 3.3 (js/tablet.js, MAP.md §4x) ───────────────
+   The pen bar's phone button lit while a phone is paired, as the drawing
+   note's bar lights a tool; and the phone's outline kept, dotted and quieter,
+   while the phone is away — asleep, most often — so it is plain the pairing
+   is alive and where the phone will land when it wakes. */
+#inkBar .ik-btn[data-ik="phone"].on { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+#padArea.away { outline-style: dotted; opacity: .5; }

@@ -179,7 +179,7 @@ INSTALL.md    how someone without the source installs the release zip, and the r
 | `src/preload.js` | ~130 | The bridge. Six `contextBridge` globals (`mbPad` since 2.2), every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
 | `src/tablet.js` | ~360 | **A phone as a drawing tablet** (2.2). Runs in main, plain Node: picks the LAN address, serves the phone's page, speaks just enough WebSocket, enforces the pairing (one token, one phone, `resume` after a drop, Origin, private peers only), checks every message (`clean()`), sends the pictures of the board (`sendFrame()`, identical ones skipped) and stops by itself. See §4x. |
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
-| `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
+| `src/tablet/phone.html` | ~720 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, two- and three-finger taps for undo and redo, and its own strokes drawn until a picture has them. Since 3.3 it rides out a sleeping phone (retries for half an hour, replaces a socket gone quiet) and names its gestures once. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
 | `src/js/*.js` | ~19900 | All app logic, in 28 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
@@ -201,7 +201,8 @@ INSTALL.md    how someone without the source installs the release zip, and the r
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
 | `tools/fake-pdf.js` | ~30 | A two-page PDF built byte by byte (text in a standard font, a filled box per page) for the 2.7 test. No real PDF is checked in. |
-| `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
+| `tools/ws-client.js` | ~60 | The phone's side of the socket, for `test-tablet.js` and the app suite's 3.3 phone test: a raw WebSocket client that parses text frames and records pictures (`bin`, `head`, and when each message arrived). |
+| `tools/test-tablet.js` | ~280 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~345 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last page test fails on any that is not expected. Then two quits, each in a fresh app driven over `--inspect` (§4k): the last edit lands and every process goes, and every process goes even when the page never answers. `npm run test:app`. |
 | `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds; and **2.8** (§4z6): the slash menu's sections, picture and ranking; a database inserted, pressed in a closed note, opened as a page, kept on disk and undone; a paste of one, a crafted one, the Backspace guard, search and Markdown; a linked view writing to its source, and all fifteen layouts. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
@@ -2080,8 +2081,9 @@ All of it is in `src/tablet.js`'s header; each point has a test in
 - **Off by default, never persisted, and it stops by itself.** Nothing listens
   until Pair. It stops on Stop, on quit, on a renderer reload or crash
   (`did-start-navigation` main frame, `render-process-gone`), five minutes
-  after Pair if nobody scanned, and a minute after the phone drops off if it
-  does not come back. There is no setting to leave on by accident.
+  after Pair if nobody scanned, and **thirty minutes** after the phone drops
+  off if it does not come back (one minute until 3.3 — see below for why).
+  There is no setting to leave on by accident.
 - **One phone, one use of the token.** 128 random bits in the QR code open
   exactly one WebSocket. That socket is handed a second secret, `resume`, the
   only way back in after a Wi-Fi blip (the page keeps it in `sessionStorage`).
@@ -2139,6 +2141,78 @@ the phone is the network, not the renderer), and the renderer paints the live
 stroke on the next animation frame. On a home Wi-Fi network the round trip is
 a few milliseconds; the spikes, when they come, are the phone's Wi-Fi power
 saving, which a steady stream of pen events mostly keeps awake.
+
+### 3.3: a phone that sleeps, pictures that keep out of the pen's way, redo
+
+Judged against how a phone is actually used, five things held the phone back.
+All five are fixed, and each has a test.
+
+- **A sleeping phone ended the pairing.** A phone's screen goes dark after
+  30 s – 2 min and the page cannot keep it awake (plain `http`, no Wake Lock).
+  The PC waited **one minute** (`RESUME_MS`) and the page gave up after
+  **five tries, about eight seconds** — so any pause to think meant walking
+  back to Settings ▸ Extra and scanning again. Now the PC keeps the door
+  open thirty minutes, and the page retries for as long as that (back-off
+  capped at 5 s), at once on `visibilitychange`, `online` and `pageshow`.
+  It ends only on `bye`, a code that never got in, or after 31 minutes.
+  After 20 s away it says the pairing may have ended (`main.padAwayLong`).
+  The cost is a listening socket for longer after a drop; the only way in is
+  still `resume`, 128 bits held by that one phone.
+- **A dead socket that looked alive.** A phone that slept leaves its socket
+  half open; the page now forgets one that has heard nothing for 7 s (the PC
+  answers every 2-second ping) and opens another. **The server lets the
+  holder of `resume` replace its own open socket** (`onUpgrade`): before,
+  "one socket at a time" refused the phone until SILENT_MS noticed the old
+  one. A takeover is not an "away". The token never takes over.
+- **Pictures competed with the pen.** Every painted segment of a phone stroke
+  called `padDirty()`, so a 1.2 s line triggered **14 pictures** — a capture
+  and a JPEG encode on main, the thread that reads the pen's socket, and Wi-Fi
+  airtime the pen's messages wait behind — for pictures the phone did not
+  need, since it draws its own line under the pen. While a phone *line* is
+  live (not the eraser or the arrow, whose results the phone only sees in the
+  pictures) pictures are `PAD_PEN_GAP_MS` = 450 ms apart: **at most four**
+  for the same line. A waiting picture is brought forward when the pen lifts
+  (`padShot.due`), so the PC's own rendering of the line lands at once.
+- **One JPEG quality for everything.** Quality 72 showed 8 × 8 blocks in the
+  dark background and fringes on text once the phone scaled it 2–3×. Now a
+  picture taken while the board moves is quality 70 (`PAD_Q.move` in
+  main.js), and once it has been still for `PAD_STILL_MS` the renderer asks
+  for `still`, quality 90. Measured on a 370 × 822 slice: 28 KB at 72, 39 KB
+  at 90, once per pause; the encode is ~2 ms either way, the capture ~13 ms.
+  The idle tick asks for `still` too, so it hashes equal and sends nothing.
+  `padDirty(true)` is that tick and the pump's own retries — not a change.
+- **No redo, and gestures nobody could see.** The phone's undo now keeps what
+  it took (`padUndone`) and `redo` (a button beside undo, and a three-finger
+  tap) puts it back as one `ink` step, same id and points; a new stroke
+  forgets it. The editors have no redo of their own, so it is the board's
+  only. Two- and three-finger taps are judged when the last finger lifts
+  (until 3.3 the first finger up of three already undid), both buzz on
+  Android (`navigator.vibrate`), and the gestures are named on a card when
+  the phone connects (`#hint`, gone at the first touch or after 9 s).
+- **Pairing was three clicks deep.** The pen bar has a phone button and the
+  palette (Ctrl+P) has "Pair a phone": both call `pairPhoneNow()`, which opens
+  Settings ▸ Extra with the pairing already started and scrolls the code into
+  view. The button is lit while a phone is paired, and the outline stays,
+  dotted, while the phone is away (`#padArea.away`).
+
+Also found on the way: `set.padHint` was written twice in each catalogue —
+the phone panel's explanation and the note-padding sliders' hint — and the
+second silently won, so Settings ▸ Extra never said what the phone is sent.
+The sliders' key is `set.notePadHint` now, and `npm run check:lang` fails on
+any key written twice (§7).
+
+**Tests.** `tools/test-tablet.js`: `redo` is cleaned; a wrong secret and the
+token are refused while a socket is open; the holder of `resume` takes over
+an open socket with no "away", and is heard. `tools/test-app-features.js`
+**3.3** is the phone over a real socket against the running app (`--pad-host`,
+honoured only with `--user-data-dir`, main.js `PAD_TEST_HOST`): a picture,
+then a `still` one, then silence however long the idle tick asks; at most
+four pictures during a 1.2 s line and one within 700 ms of the pen lifting;
+a `still` picture that says it has the line (`k`); undo and redo of the same
+line; a takeover; Stop with a `bye`. The phone page itself was driven in
+Chromium at 412 × 915 with touch: the card, the two- and three-finger taps,
+and a socket gone quiet for 8 s replaced over `resume` in 6.5 s.
+`tools/ws-client.js` is the phone's side of the socket for both suites.
 
 ### Verified
 

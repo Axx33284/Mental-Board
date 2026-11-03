@@ -208,7 +208,8 @@ const MAIN_KEYS = [
   'main.padTitle', 'main.padConnecting', 'main.padConnected', 'main.padAway',
   'main.padEnded', 'main.padReadonly', 'main.padPen', 'main.padMarker',
   'main.padBrush', 'main.padEraser', 'main.padUndo', 'main.padFingers', 'main.padFull',
-  'main.padSelect', 'main.padDelete', 'main.padPrev', 'main.padNext', 'main.padColor', 'main.padNote', 'main.padNotePh'
+  'main.padSelect', 'main.padDelete', 'main.padPrev', 'main.padNext', 'main.padColor', 'main.padNote', 'main.padNotePh',
+  'main.padRedo', 'main.padAwayLong', 'main.padHint1', 'main.padHint2', 'main.padHint3'
 ];
 function sendMainStrings() {
   if (!WIN || !WIN.setStrings) return;

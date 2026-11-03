@@ -109,7 +109,12 @@ const S_EN = {
   'main.padNext': 'Next page of the book',
   'main.padColor': 'Colour',
   'main.padNote': 'Sticky note — tap where it goes',
-  'main.padNotePh': 'Write a note…'
+  'main.padNotePh': 'Write a note…',
+  'main.padRedo': 'Redo (or tap with three fingers)',
+  'main.padAwayLong': 'Still reconnecting. If the computer stopped the pairing, pair again from Settings ▸ Extra.',
+  'main.padHint1': 'The pen draws — hold its button to erase',
+  'main.padHint2': 'One finger moves the board, two fingers zoom',
+  'main.padHint3': 'Tap with two fingers to undo, three to redo'
 };
 let STRINGS = {};
 function t(key, vars) {
@@ -638,15 +643,29 @@ function padStrings() {
     pen: t('main.padPen'), marker: t('main.padMarker'), brush: t('main.padBrush'), eraser: t('main.padEraser'),
     undo: t('main.padUndo'), fingers: t('main.padFingers'), full: t('main.padFull'),
     select: t('main.padSelect'), del: t('main.padDelete'), prev: t('main.padPrev'), next: t('main.padNext'), color: t('main.padColor'),
-    note: t('main.padNote'), notePh: t('main.padNotePh')
+    note: t('main.padNote'), notePh: t('main.padNotePh'),
+    redo: t('main.padRedo'), awayLong: t('main.padAwayLong'),
+    hint1: t('main.padHint1'), hint2: t('main.padHint2'), hint3: t('main.padHint3')
   };
 }
+/* A test or sandbox copy can pair over loopback: `--pad-host=127.0.0.1`, so
+   tools/test-app.js can be the phone with nothing but a socket (a container
+   has no Wi-Fi address). Honoured only with --user-data-dir, and only for an
+   address tablet.js would accept from a peer anyway — the real app always
+   listens on the LAN address the person picked. */
+const PAD_TEST_HOST = (() => {
+  if (!userDataOverridden) return '';
+  const a = process.argv.find((x) => x.startsWith('--pad-host='));
+  const v = a ? a.slice('--pad-host='.length) : '';
+  return tablet.isPrivate(v) ? v : '';
+})();
 const padSend = (ch, m) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, m); };
 const fromMain = (e) => mainWindow && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents;
 ipcMain.handle('pad:start', (e, address) => {
   if (!fromMain(e)) return { ok: false, error: 'sender' };
   return tablet.start({
     address: typeof address === 'string' ? address : '',
+    host: PAD_TEST_HOST || undefined,
     strings: padStrings(),
     onMessage: (m) => padSend('pad:msg', m),
     onState: (s) => padSend('pad:state', s)
@@ -665,11 +684,20 @@ ipcMain.handle('pad:addresses', () => tablet.addresses());
    tablet.js, which sends it unless it is the picture the phone already has.
    Captured here because only main can; the renderer never sees the JPEG. The
    region is clamped to the window, and the picture to at most PAD_MAX_H pixels
-   tall — a portrait slice of a 1080p window is about 450 × 1000 and 60 KB. */
+   tall — a portrait slice of a 1080p window is about 450 × 1000 and 60 KB.
+
+   Two qualities (3.3). While the board moves, a picture is gone in a tenth of
+   a second and quality 70 is plenty. Once it has been still for a moment the
+   renderer asks for `still`, and that one is quality 90: the phone shows it
+   at two or three times its size, and at 72 the 8 × 8 blocks of the dark
+   background and the fringes on text were plain to see. Measured on a
+   370 × 822 slice: 28 KB at 72, 39 KB at 90, sent once per pause — and an
+   identical still picture is never sent twice (sendFrame's hash). */
 const PAD_MAX_H = 1100;
+const PAD_Q = { move: 70, still: 90 };
 ipcMain.handle('pad:frame', async (e, req) => {
   if (!fromMain(e) || !req || !req.rect) return { sent: false };
-  const meta = { n: req.n, nav: req.nav, k: req.k };
+  const meta = { n: req.n, nav: req.nav, k: req.k, q: req.q };
   try {
     const [W, H] = mainWindow.getContentSize();
     const r = req.rect;
@@ -679,7 +707,7 @@ ipcMain.handle('pad:frame', async (e, req) => {
     if (img.isEmpty()) return tablet.sendFrame(meta, null);
     const size = img.getSize();
     if (size.height > PAD_MAX_H) img = img.resize({ height: PAD_MAX_H, quality: 'good' });
-    return tablet.sendFrame(meta, img.toJPEG(72));
+    return tablet.sendFrame(meta, img.toJPEG(req.q === 'still' ? PAD_Q.still : PAD_Q.move));
   } catch (_) { return tablet.sendFrame(meta, null); }
 });
 

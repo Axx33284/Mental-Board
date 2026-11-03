@@ -20,6 +20,19 @@
      hovers, and the computer leaves its ring out of the pictures it sends, so
      there is one circle under the pen, not three.
 
+     It survives a sleeping phone (3.3): a phone's screen goes dark after half
+     a minute and the socket goes with it, so the page keeps trying to come
+     back — at once when the screen wakes or the Wi-Fi returns, every few
+     seconds otherwise — for as long as the computer keeps the door open
+     (thirty minutes, src/tablet.js RESUME_MS). A socket that looks open but has
+     heard nothing for seven seconds is a dead one and is replaced. The pairing
+     only ends when the computer says so, or the code was never good.
+
+     Undo has a twin (3.3): redo, on the bar and as a three-finger tap, brings
+     back the phone's own last undone stroke. Both gestures buzz where the
+     phone can, since nothing else says a tap with no button was heard. The
+     gestures are named once, on a card that goes at the first touch.
+
      It wears the app (3.1): the computer sends its theme's colours with every
      view, so the bar is the app's own surface, text and hairlines, light or
      dark; a tool that is on is lit the way the app lights one (the text colour
@@ -123,6 +136,15 @@
   .nb-acts button { appearance: none; border: 0; width: 40px; height: 36px; border-radius: 6px; display: grid; place-items: center; background: rgba(0, 0, 0, .08); color: #2a2620; }
   .nb-acts button:last-child { background: #2a2620; color: #fff0a6; }
   .nb-acts svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  /* the gestures, said once when the phone connects, gone at the first touch (3.3) */
+  #hint { position: absolute; left: 50%; top: 14px; z-index: 3; transform: translateX(-50%); width: min(340px, calc(100% - 28px));
+    padding: 12px 14px; display: grid; gap: 9px; pointer-events: none; color: var(--text);
+    background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .32); transition: opacity .35s, transform .35s; }
+  #hint.gone { opacity: 0; transform: translate(-50%, -8px); }
+  #hint div { display: flex; align-items: center; gap: 10px; font-size: 13.5px; line-height: 1.35; }
+  #hint svg { flex: none; width: 20px; height: 20px; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  @media (prefers-reduced-motion: reduce) { #hint, #msg.show, body.tray #swatches { transition: none; animation: none; } }
 </style>
 </head>
 <body>
@@ -156,11 +178,17 @@
   <span class="sep"></span>
   <div class="grp">
     <button id="undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/></svg></button>
+    <button id="redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3"/></svg></button>
     <button id="fingers"><svg viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v4c0 4-2 7-6 7s-6-3-7-6l-1-3a1.6 1.6 0 013-1l1 2"/></svg></button>
     <button id="full"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   </div>
 </div>
 <div id="frame"><canvas id="cv"></canvas><div id="msg"></div>
+  <div id="hint" class="hidden" aria-live="polite">
+    <div><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg><span id="hint1"></span></div>
+    <div><svg viewBox="0 0 24 24"><path d="M9 11V5a2 2 0 014 0v6m0-2a2 2 0 014 0v4c0 4-2 7-6 7s-6-3-7-6l-1-3a1.6 1.6 0 013-1l1 2"/></svg><span id="hint2"></span></div>
+    <div><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/></svg><span id="hint3"></span></div>
+  </div>
   <div id="noteBox" class="hidden"><textarea id="noteIn" dir="auto"></textarea>
     <div class="nb-acts"><button id="noteNo"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button><button id="noteOk"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></button></div>
   </div>
@@ -171,7 +199,8 @@ const S = __STRINGS__;
 const $ = (id) => document.getElementById(id);
 const tip = { select: S.select, pen: S.pen, marker: S.marker, brush: S.brush, eraser: S.eraser, note: S.note };
 document.querySelectorAll('[data-tool]').forEach((b) => { b.title = b.ariaLabel = tip[b.dataset.tool] || ''; });
-for (const [id, k] of [['undo', 'undo'], ['fingers', 'fingers'], ['full', 'full'], ['del', 'del'], ['pgPrev', 'prev'], ['pgNext', 'next'], ['colorBtn', 'color']]) $(id).title = $(id).ariaLabel = S[k] || '';
+for (const [id, k] of [['undo', 'undo'], ['redo', 'redo'], ['fingers', 'fingers'], ['full', 'full'], ['del', 'del'], ['pgPrev', 'prev'], ['pgNext', 'next'], ['colorBtn', 'color']]) $(id).title = $(id).ariaLabel = S[k] || '';
+$('hint1').textContent = S.hint1 || ''; $('hint2').textContent = S.hint2 || ''; $('hint3').textContent = S.hint3 || '';
 
 /* ---- what the pen is ---- */
 const pen = { tool: 'pen', size: 1, color: 'text' };
@@ -227,7 +256,13 @@ function setTool(tool) {
 }
 document.querySelectorAll('[data-tool]').forEach((b) => press(b, () => setTool(b.dataset.tool)));
 document.querySelectorAll('[data-size]').forEach((b) => press(b, () => { pen.size = +b.dataset.size; paintBar(); }));
-press($('undo'), () => send({ t: 'undo' }));
+/* A tap with no button under it says nothing back, so undo and redo buzz
+   where the phone can (Android; elsewhere vibrate() is not there). */
+const buzz = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {} };
+function undo() { send({ t: 'undo' }); buzz(10); }
+function redo() { send({ t: 'redo' }); buzz([8, 40, 8]); }
+press($('undo'), undo);
+press($('redo'), redo);
 press($('del'), () => send({ t: 'sel', act: 'delete' }));
 press($('pgPrev'), () => send({ t: 'page', d: -1 }));
 press($('pgNext'), () => send({ t: 'page', d: 1 }));
@@ -380,18 +415,47 @@ function drawStroke(s, ahead) {
   ctx.stroke();
 }
 
-/* ---- the connection ---- */
+/* ---- the connection ----
+   A phone that sleeps takes its socket with it, and a page that gave up after
+   a few tries (as this one did until 3.3) ended the pairing every time the
+   screen went dark for longer than a pause. So: try again with a back-off
+   that tops out at five seconds, at once when the screen wakes or the Wi-Fi
+   comes back, and for as long as the computer keeps the door open — thirty
+   minutes (src/tablet.js RESUME_MS), a minute more here. A socket that looks
+   open but has heard nothing for seven seconds (the computer answers every
+   ping) is a dead one: it is forgotten and a new one replaces it, which the
+   computer allows for the phone that holds `resume`. The pairing ends when
+   the computer says so (`bye`), when a code that was never good is refused,
+   or when the door has certainly closed. */
 const token = (location.pathname.match(/\/t\/([0-9a-f]{32})$/) || [])[1] || '';
-let ws = null, open = false, ended = false, tries = 0;
+const GIVE_UP_MS = 31 * 60 * 1000, DEAD_MS = 7000, SLOW_OPEN_MS = 8000, LONG_AWAY_MS = 20000;
+let ws = null, open = false, ended = false, tries = 0, retry = 0;
+let everOpen = false, awaySince = 0, lastHeard = 0, opening = 0;
 let resume = '';
 try { resume = sessionStorage.getItem('mb-resume-' + token) || ''; } catch (_) {}
+function end() {
+  ended = true; clearTimeout(retry);
+  setStatus('off', S.ended); showMsg(S.ended);
+}
 function connect() {
-  if (ended) return;
-  setStatus('bad', S.connecting);
-  ws = new WebSocket(`ws://${location.host}/ws/${resume ? 'r/' + resume : token}`);
-  ws.binaryType = 'blob';
-  ws.onopen = () => { open = true; tries = 0; setStatus('ok', S.connected); layout(); };
-  ws.onmessage = (ev) => {
+  clearTimeout(retry); retry = 0;
+  if (ended || ws) return;
+  setStatus('bad', awaySince ? S.away : S.connecting);
+  let sock;
+  try { sock = new WebSocket(`ws://${location.host}/ws/${resume ? 'r/' + resume : token}`); } catch (_) { later(); return; }
+  ws = sock; opening = performance.now();
+  sock.binaryType = 'blob';
+  sock.onopen = () => {
+    if (ws !== sock) return;
+    open = true; everOpen = true; tries = 0; awaySince = 0; lastHeard = performance.now();
+    setStatus('ok', S.connected);
+    showMsg(readOnly ? S.readonly : '');
+    layout();
+    showHint();
+  };
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return;
+    lastHeard = performance.now();
     if (typeof ev.data !== 'string') { onFrameImage(ev.data); return; }
     let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
     if (m.t === 'hello') { resume = m.resume; try { sessionStorage.setItem('mb-resume-' + token, resume); } catch (_) {} }
@@ -407,22 +471,71 @@ function connect() {
       showMsg(readOnly ? S.readonly : '');
     }
     else if (m.t === 'pong') $('rtt').textContent = Math.max(0, Math.round(performance.now() - m.n)) + ' ms';
-    else if (m.t === 'bye') { ended = true; setStatus('off', S.ended); showMsg(S.ended); }
+    else if (m.t === 'bye') end();
   };
-  ws.onclose = () => {
-    open = false;
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    ws = null; open = false;
     $('rtt').textContent = '';
     if (ended) return;
-    // refused before it ever opened, with no way back in: this pairing is over
-    if (tries > 4 || (!resume && tries > 1)) { ended = true; setStatus('off', S.ended); showMsg(S.ended); return; }
-    setStatus('bad', S.away);
-    setTimeout(connect, Math.min(4000, 300 * 2 ** tries++));
+    // a code that never let us in, and no secret to come back with: this pairing is over
+    if (!resume && !everOpen && tries > 1) { end(); return; }
+    away();
   };
 }
-function send(m) { if (open && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+function away() {
+  if (!awaySince) awaySince = Date.now();
+  if (Date.now() - awaySince > GIVE_UP_MS) { end(); return; }
+  setStatus('bad', S.away);
+  if (Date.now() - awaySince > LONG_AWAY_MS) showMsg(S.awayLong || S.away);
+  later();
+}
+function later() {
+  clearTimeout(retry);
+  retry = setTimeout(connect, Math.min(5000, 300 * 2 ** Math.min(tries++, 5)));
+}
+// a socket that looks open but is not, or one that never finishes opening: forget it, without waiting for its close
+function drop() {
+  const old = ws;
+  ws = null; open = false;
+  if (old) { old.onopen = old.onmessage = old.onclose = old.onerror = null; try { old.close(); } catch (_) {} }
+}
+function wake() {
+  if (ended) return;
+  if (ws && open && performance.now() - lastHeard > DEAD_MS) drop();
+  if (!ws) { tries = 0; if (everOpen && !awaySince) awaySince = Date.now(); connect(); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
+window.addEventListener('online', wake);
+window.addEventListener('pageshow', wake);
+function send(m) { if (open && ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 function setStatus(cls, text) { $('status').className = cls; $('stText').textContent = text || ''; }
-function showMsg(text) { $('msg').textContent = text || ''; $('msg').classList.toggle('show', !!text); }
-setInterval(() => send({ t: 'ping', n: performance.now() }), 2000);
+function showMsg(text) { $('msg').textContent = text || ''; $('msg').classList.toggle('show', !!text); if (text) hideHint(); }
+setInterval(() => {
+  if (ended) return;
+  const now = performance.now();
+  if (ws && open && now - lastHeard > DEAD_MS) { drop(); away(); return; }
+  if (ws && !open && now - opening > SLOW_OPEN_MS) { drop(); away(); return; }
+  send({ t: 'ping', n: now });
+}, 2000);
+
+/* ---- the gestures, said once (3.3) ---- */
+let hintShown = false, hintT = 0;
+function showHint() {
+  if (hintShown || !S.hint1 || readOnly) return;
+  hintShown = true;
+  const h = $('hint');
+  h.classList.add('gone'); h.classList.remove('hidden');
+  requestAnimationFrame(() => requestAnimationFrame(() => h.classList.remove('gone')));
+  hintT = setTimeout(hideHint, 9000);
+}
+function hideHint() {
+  clearTimeout(hintT);
+  const h = $('hint');
+  if (h.classList.contains('hidden') || h.classList.contains('gone')) return;
+  h.classList.add('gone');
+  setTimeout(() => h.classList.add('hidden'), 400);
+}
 
 /* ---- the pen ----
    A stroke is down → move… → up, each move carrying every point the browser
@@ -484,6 +597,7 @@ $('noteNo').addEventListener('click', () => closeNote(false));
 $('noteBox').addEventListener('pointerdown', (e) => e.stopPropagation());
 
 frame.addEventListener('pointerdown', (e) => {
+  hideHint();
   if (document.body.classList.contains('tray')) { document.body.classList.remove('tray'); paintBar(); }
   // with the note tool any touch of the glass — pen, finger or mouse — puts a note there
   if (pen.tool === 'note') {
@@ -546,13 +660,16 @@ function hover(e) {
    a fingertip (Android reports the contact's size). Both are ignored for as
    long as they stay down. */
 const touches = new Map();  // pointerId -> { x, y, sx, sy, palm }
-let tapStart = 0, tapMoved = false, navQ = null;
+/* `tap`: two or three fingers down together. Judged when the last of them
+   lifts — two that did not move undo, three redo (3.3; until then the first
+   finger up of three already undid). */
+let tap = null, navQ = null;
 function touchDown(e) {
   const palm = performance.now() - lastPen < 600 || Math.max(e.width || 0, e.height || 0) > 48;
   const p = norm(e);
   touches.set(e.pointerId, { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, palm });
-  const live = [...touches.values()].filter((t) => !t.palm);
-  if (live.length === 2) { tapStart = performance.now(); tapMoved = false; }
+  const live = [...touches.values()].filter((t) => !t.palm).length;
+  if (live >= 2) { if (!tap) tap = { t: performance.now(), n: live, moved: false }; else tap.n = Math.max(tap.n, live); }
   try { frame.setPointerCapture(e.pointerId); } catch (_) {}
 }
 function touchMove(e) {
@@ -561,7 +678,7 @@ function touchMove(e) {
   const live = [...touches.entries()].filter(([, v]) => !v.palm);
   const before = live.map(([, v]) => ({ x: v.x, y: v.y }));
   const p = norm(e);
-  if (Math.hypot(e.clientX - t.sx, e.clientY - t.sy) > 10) tapMoved = true;
+  if (tap && Math.hypot(e.clientX - t.sx, e.clientY - t.sy) > 10) tap.moved = true;
   t.x = p.x; t.y = p.y;
   const after = live.map(([, v]) => ({ x: v.x, y: v.y }));
   const q = navQ || (navQ = { dx: 0, dy: 0, f: 1, cx: 0.5, cy: 0.5 });
@@ -594,14 +711,15 @@ function touchMove(e) {
 function touchUp(e) {
   const t = touches.get(e.pointerId);
   touches.delete(e.pointerId);
-  // two fingers down and up again without moving: undo, as in most drawing apps
-  if (t && !t.palm && tapStart && !tapMoved && performance.now() - tapStart < 300) { send({ t: 'undo' }); tapStart = 0; }
-  if (!touches.size) tapStart = 0;
+  if (!t || t.palm || [...touches.values()].some((v) => !v.palm)) return;
+  // the last finger up: two or three down and up again without moving undo or redo, as drawing apps do
+  if (tap && !tap.moved && performance.now() - tap.t < 350) { if (tap.n >= 3) redo(); else undo(); }
+  tap = null;
 }
 
 paintSwatches();
 layout();
-if (token) connect(); else { ended = true; setStatus('off', S.ended); showMsg(S.ended); }
+if (token) connect(); else end();
 </script>
 </body>
 </html>
