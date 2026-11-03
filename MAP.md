@@ -167,7 +167,8 @@ src/          the app — this is what gets packaged
 tools/        build + checks, never shipped
 admin/        double-clickable .cmd wrappers
 App/          the built app (generated; deleted and rewritten by every build)
-INSTALL.md    how someone without the source installs the release zip, and the rules (§6)
+INSTALL.md    how someone without the source installs: the setup file, or the zip, and the rules (§6)
+REVIEW.md     a scored review of the whole app at 3.3, with the evidence and what to do next
 .github/      workflows/release.yml — the zip, built on Windows for a v* tag (§6); never shipped
 ```
 
@@ -4585,6 +4586,25 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+Three from 3.3:
+
+- **A catalogue key written twice is not an error — the second wins.** Each
+  `assets/lang/*.js` is one object literal. `set.padHint` was both the phone
+  pairing's explanation and the note-padding sliders' hint, so the pairing
+  panel showed the sliders' text and never said what the phone is sent.
+  `npm run check:lang` now reads each catalogue's keys with a tokenizer and
+  fails on a key written twice.
+- **`data-t-aria` is applied once, to what exists then.** `applyStaticText()`
+  turns it into `aria-label`; markup built afterwards (the accent picker in
+  `buildAccentSwatches`, the status rows in `renderStatusList`) carried the
+  attribute and no name. Built HTML that needs a name sets `aria-label`
+  itself as well.
+- **A control hidden from everyone must leave something that says what it
+  is.** The ‹ value › rows hide their buttons (`.seg-under`) and mark their
+  arrows `aria-hidden`; until 3.3 a screen reader heard the row's words and
+  nothing said it could be changed. Each row is `role="slider"` with its name
+  and the option as `aria-valuetext`, kept up by `paintStepper()`.
 
 Two from judging the design after 3.2.0:
 

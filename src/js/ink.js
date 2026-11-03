@@ -204,7 +204,6 @@ function drawInk() {
   if (!ordered) ink.forEach((s) => { const el = inkEls.get(s.id); if (el) svg.appendChild(el); });
   if (typeof padDirty === 'function') padDirty();
 }
-function resetInk() { inkEls.clear(); const svg = $('inkSvg'); if (svg) svg.textContent = ''; }
 function inkViewRect() {
   const r = visibleWorldRect();
   const m = (r.x1 - r.x0) * 0.25;

@@ -753,7 +753,7 @@ function renderStatusList() {
   wrap.innerHTML = state.statuses.map((s, i) => `
     <div class="st-row" data-id="${esc(s.id)}">
       <button class="st-swatch" data-color="${esc(s.color)}" data-act="colour" title="${te('status.colour')}"></button>
-      <input class="st-name" value="${esc(statusName(s))}" maxlength="40" data-t-aria="status.rename">
+      <input class="st-name" value="${esc(statusName(s))}" maxlength="40" data-t-aria="status.rename" aria-label="${te('status.rename')}">
       <button class="st-act${s.done ? ' on' : ''}" data-act="done" title="${te('status.doneHint')}"><span class="b-ic"></span></button>
       <button class="st-act" data-act="up" ${i === 0 ? 'disabled' : ''} title="${te('status.up')}"><span class="b-ic"></span></button>
       <button class="st-act" data-act="down" ${i === state.statuses.length - 1 ? 'disabled' : ''} title="${te('status.down')}"><span class="b-ic"></span></button>
@@ -847,7 +847,8 @@ function buildAccentSwatches() {
        picker behind it — not a separate control below the row. Mixing your own
        is one of the choices, so it belongs among them. */
     `<label class="sw-own${cur === 'custom' ? ' on' : ''}" title="${te('set.accentOwn')}" style="background:${esc(state.settings.accentCustom)}">` +
-      `${icon('colorize')}<input type="color" id="accentPick" value="${esc(state.settings.accentCustom)}" data-t-aria="set.accentOwn">` +
+      // named here: this is built after applyStaticText() has turned data-t-aria into labels (3.3)
+      `${icon('colorize')}<input type="color" id="accentPick" value="${esc(state.settings.accentCustom)}" data-t-aria="set.accentOwn" aria-label="${te('set.accentOwn')}">` +
     `</label>`;
   $('accentSwatches').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.settings.accent = b.dataset.accent; applyTheme(); syncSettingsUI(); saveSoon();
@@ -2122,6 +2123,13 @@ function stepperize() {
     // the row answers the arrow keys, as an options screen does
     const row = seg.closest('.set-row');
     row.tabIndex = 0;
+    /* …and says what it is (3.3): the arrows are hidden from a screen reader
+       and the buttons under them are hidden from everyone, so until now the
+       row was announced as its words and nothing said it could be changed.
+       It is a slider over the options: its name, where it is, and the option
+       as words — kept up by paintStepper(). */
+    row.setAttribute('role', 'slider');
+    row.setAttribute('aria-valuemin', '0');
     row.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(rtlFlip(e.key === 'ArrowRight' ? 1 : -1)); }
     });
@@ -2155,6 +2163,14 @@ function paintStepper(stp) {
     const bs = [...stp._seg.querySelectorAll('button')];
     const i = bs.findIndex((b) => b.classList.contains('on'));
     paintStepValue(stp, i >= 0 ? bs[i].textContent.trim() : '', i);
+    const row = stp.closest('.set-row[role="slider"]');
+    if (row) {
+      const lab = row.querySelector(':scope > label');
+      row.setAttribute('aria-label', lab ? lab.textContent.trim() : '');
+      row.setAttribute('aria-valuemax', String(Math.max(0, bs.length - 1)));
+      row.setAttribute('aria-valuenow', String(Math.max(0, i)));
+      row.setAttribute('aria-valuetext', i >= 0 ? bs[i].textContent.trim() : '');
+    }
     const ticks = stp.querySelector('.stp-ticks');
     if (ticks.childElementCount !== bs.length) ticks.innerHTML = '<b></b>'.repeat(bs.length);
     [...ticks.children].forEach((b, k) => b.classList.toggle('on', k === i));

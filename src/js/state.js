@@ -137,13 +137,9 @@ function syncActiveBoard() {
    and the Settings word count all call syncActiveBoard(), so opening any of
    them marked the board as freshly updated.
 
-   Stamping is now something a caller asks for, and writeNow() is the one that
-   asks — after it has compared, so it only ever fires when something really
-   did change. */
-function touchActiveBoard() {
-  const b = activeBoard();
-  if (b && !isLocked(b)) b.updatedAt = Date.now();
-}
+   Stamping is now done in one place, writeNow(), after it has compared — so it
+   only ever fires when something really did change. (The helper that once did
+   it, touchActiveBoard(), had no caller left and is gone, 3.3.) */
 
 function defaults() {
   const first = makeBoard('', 'sticky_note_2');
