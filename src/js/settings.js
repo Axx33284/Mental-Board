@@ -81,6 +81,18 @@ function showSettingsDesc(el) {
   desc.innerHTML = html;
   desc.classList.toggle('on', !!unit);
 }
+/* The same card again, from scratch. showSettingsDesc() redraws only when the
+   row changes, so a change that is not a move — the language, picked in this
+   very pane — left the card in the old language until the pointer moved to
+   another row (3.3). applyLang() calls this. */
+function repaintSettingsDesc() {
+  const desc = $('setDesc');
+  if (!desc) return;
+  const unit = descUnit;
+  descUnit = undefined;
+  desc.textContent = '';
+  showSettingsDesc(unit && unit.isConnected ? unit : null);
+}
 function wireSettingsDesc() {
   const panes = $('setPanes'), desc = $('setDesc');
   if (!panes || !desc) return;
@@ -187,12 +199,15 @@ function buildThemeCard(th) {
 
    Custom is in both, and `themeById()` resolves its mode and swatch from
    settings, so it behaves like any other entry here. */
+/* Grouped under Light and Dark rather than each name wearing "· Light" or
+   "· Dark": the suffix doubled the field's width for a word the sun and moon
+   beside it already say, and the 280px column cut it off mid-word
+   ("Mental Board Light · Li"). Closed, the picker now shows only the name. */
 function themeOptions(sel) {
-  return THEMES.map((th) => {
-    const t2 = themeById(th.id);
-    const mark = t2.mode === 'dark' ? te('set.themesDark') : te('set.themesLight');
-    return `<option value="${esc(th.id)}"${th.id === sel ? ' selected' : ''}>${te('theme.' + th.id)} · ${mark}</option>`;
-  }).join('');
+  const opt = (th) => `<option value="${esc(th.id)}"${th.id === sel ? ' selected' : ''}>${te('theme.' + th.id)}</option>`;
+  const of = (mode) => THEMES.filter((th) => themeById(th.id).mode === mode).map(opt).join('');
+  return `<optgroup label="${te('set.themesLight')}">${of('light')}</optgroup>` +
+         `<optgroup label="${te('set.themesDark')}">${of('dark')}</optgroup>`;
 }
 
 /* The three colours of the chosen theme, beside its name. A dropdown showing
@@ -738,7 +753,7 @@ function renderStatusList() {
   wrap.innerHTML = state.statuses.map((s, i) => `
     <div class="st-row" data-id="${esc(s.id)}">
       <button class="st-swatch" data-color="${esc(s.color)}" data-act="colour" title="${te('status.colour')}"></button>
-      <input class="st-name" value="${esc(statusName(s))}" maxlength="40" data-t-aria="status.rename">
+      <input class="st-name" value="${esc(statusName(s))}" maxlength="40" data-t-aria="status.rename" aria-label="${te('status.rename')}">
       <button class="st-act${s.done ? ' on' : ''}" data-act="done" title="${te('status.doneHint')}"><span class="b-ic"></span></button>
       <button class="st-act" data-act="up" ${i === 0 ? 'disabled' : ''} title="${te('status.up')}"><span class="b-ic"></span></button>
       <button class="st-act" data-act="down" ${i === state.statuses.length - 1 ? 'disabled' : ''} title="${te('status.down')}"><span class="b-ic"></span></button>
@@ -832,7 +847,8 @@ function buildAccentSwatches() {
        picker behind it — not a separate control below the row. Mixing your own
        is one of the choices, so it belongs among them. */
     `<label class="sw-own${cur === 'custom' ? ' on' : ''}" title="${te('set.accentOwn')}" style="background:${esc(state.settings.accentCustom)}">` +
-      `${icon('colorize')}<input type="color" id="accentPick" value="${esc(state.settings.accentCustom)}" data-t-aria="set.accentOwn">` +
+      // named here: this is built after applyStaticText() has turned data-t-aria into labels (3.3)
+      `${icon('colorize')}<input type="color" id="accentPick" value="${esc(state.settings.accentCustom)}" data-t-aria="set.accentOwn" aria-label="${te('set.accentOwn')}">` +
     `</label>`;
   $('accentSwatches').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.settings.accent = b.dataset.accent; applyTheme(); syncSettingsUI(); saveSoon();
@@ -1931,6 +1947,7 @@ function wireSettings30() {
   check('setHwKeep', 'hwKeep');
   check('setWpSound', 'wpSound');
   check('setWpGrid', 'wpGrid');
+  check('setWpDepth', 'wpDepth');
   check('setInkPressure', 'inkPressure');
   check('setSmoothCaret', 'smoothCaret');
   check('setSkFull', 'sketchFull');
@@ -1948,6 +1965,7 @@ function wireSettings30() {
   range('wpDim', 'wpDim', pct);
   range('wpBlur', 'wpBlur', (v) => num(v) + ' px');
   range('wpAmount', 'wpAmount', pct);
+  range('wpVolume', 'wpVolume', pct);
   // a link is kept as it is typed, and the video changes once it is a link to one
   $('wpUrl').addEventListener('input', () => {
     s().wpUrl = $('wpUrl').value.trim().slice(0, 500);
@@ -2006,16 +2024,22 @@ function syncSettings30() {
   $('setHwKeep').checked = !!s.hwKeep;
   $('setWpSound').checked = !!s.wpSound;
   $('setWpGrid').checked = !!s.wpGrid;
-  for (const [id, fmt] of [['wpOpacity', pct], ['wpDim', pct], ['wpBlur', (v) => num(v) + ' px'], ['wpAmount', pct]]) {
+  $('setWpDepth').checked = s.wpDepth !== false;
+  for (const [id, fmt] of [['wpOpacity', pct], ['wpDim', pct], ['wpBlur', (v) => num(v) + ' px'], ['wpAmount', pct], ['wpVolume', pct]]) {
     $(id).value = s[id];
     $(id + 'Val').textContent = fmt(s[id]);
   }
   if (document.activeElement !== $('wpUrl')) $('wpUrl').value = s.wpUrl;
-  const vid = s.wpKind === 'youtube', live = s.wpKind === 'rain' || s.wpKind === 'snow';
+  // a video has its own sound; the drawn kinds make theirs (3.3), with a level of their own and depth
+  const vid = s.wpKind === 'youtube', live = WP_LIVE.includes(s.wpKind);
   $('wpUrlRow').classList.toggle('hidden', !vid);
   $('wpUrlHint').classList.toggle('hidden', !vid);
-  $('wpSoundRow').classList.toggle('hidden', !vid);
+  $('wpSoundRow').classList.toggle('hidden', !vid && !live);
+  $('wpSoundHint').classList.toggle('hidden', !live);
+  $('wpVolumeRow').classList.toggle('hidden', !live || !s.wpSound);
   $('wpAmountRow').classList.toggle('hidden', !live);
+  $('wpDepthRow').classList.toggle('hidden', !live);
+  $('wpDepthHint').classList.toggle('hidden', !live);
   paintWpUrlHint();
   paintHwLangs();
   const names = s.uiFontNames || {};
@@ -2099,6 +2123,13 @@ function stepperize() {
     // the row answers the arrow keys, as an options screen does
     const row = seg.closest('.set-row');
     row.tabIndex = 0;
+    /* …and says what it is (3.3): the arrows are hidden from a screen reader
+       and the buttons under them are hidden from everyone, so until now the
+       row was announced as its words and nothing said it could be changed.
+       It is a slider over the options: its name, where it is, and the option
+       as words — kept up by paintStepper(). */
+    row.setAttribute('role', 'slider');
+    row.setAttribute('aria-valuemin', '0');
     row.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(rtlFlip(e.key === 'ArrowRight' ? 1 : -1)); }
     });
@@ -2132,6 +2163,14 @@ function paintStepper(stp) {
     const bs = [...stp._seg.querySelectorAll('button')];
     const i = bs.findIndex((b) => b.classList.contains('on'));
     paintStepValue(stp, i >= 0 ? bs[i].textContent.trim() : '', i);
+    const row = stp.closest('.set-row[role="slider"]');
+    if (row) {
+      const lab = row.querySelector(':scope > label');
+      row.setAttribute('aria-label', lab ? lab.textContent.trim() : '');
+      row.setAttribute('aria-valuemax', String(Math.max(0, bs.length - 1)));
+      row.setAttribute('aria-valuenow', String(Math.max(0, i)));
+      row.setAttribute('aria-valuetext', i >= 0 ? bs[i].textContent.trim() : '');
+    }
     const ticks = stp.querySelector('.stp-ticks');
     if (ticks.childElementCount !== bs.length) ticks.innerHTML = '<b></b>'.repeat(bs.length);
     [...ticks.children].forEach((b, k) => b.classList.toggle('on', k === i));
@@ -2172,7 +2211,7 @@ const SET_KEYS = {
   setEmbeds: 'embeds', setGuides: 'guides', setFocusMode: 'focusMode', setSounds: 'sounds', setSoftware: 'softwareRender',
   setSnap: 'snap', setCompass: 'compass', setMinimap: 'minimap', setSpell: 'spell', setConfirmDelete: 'confirmDelete',
   setShowArchived: 'showArchived', setBackupAuto: 'backupAuto', setBackground: 'background', setCapture: 'capture',
-  setDaily: 'daily', setHwAnimate: 'hwAnimate', setHwKeep: 'hwKeep', setWpSound: 'wpSound', setWpGrid: 'wpGrid'
+  setDaily: 'daily', setHwAnimate: 'hwAnimate', setHwKeep: 'hwKeep', setWpSound: 'wpSound', setWpGrid: 'wpGrid', setWpDepth: 'wpDepth'
 };
 function settingDefaultText(unit) {
   const d = defaults().settings;
@@ -2190,7 +2229,7 @@ function settingDefaultText(unit) {
 }
 // a slider's default, written as its value is (the key is the slider's id)
 const SET_RANGES = {
-  fontScale: pct, gridFade: pct, zoomSpeed: pct, soundVol: pct, keyVol: pct, wpAmount: pct, wpOpacity: pct, wpDim: pct,
+  fontScale: pct, gridFade: pct, zoomSpeed: pct, soundVol: pct, keyVol: pct, wpAmount: pct, wpVolume: pct, wpOpacity: pct, wpDim: pct,
   wpBlur: (v) => num(v) + ' px', gridSize: num, noteW: num, noteH: num, linkWidth: num, nbPages: num
 };
 // what the row is called: its label, or the heading of the block it is

@@ -167,6 +167,9 @@ src/          the app — this is what gets packaged
 tools/        build + checks, never shipped
 admin/        double-clickable .cmd wrappers
 App/          the built app (generated; deleted and rewritten by every build)
+INSTALL.md    how someone without the source installs: the setup file, or the zip, and the rules (§6)
+REVIEW.md     a scored review of the whole app at 3.3, with the evidence and what to do next
+.github/      workflows/release.yml — the zip, built on Windows for a v* tag (§6); never shipped
 ```
 
 | File | Lines | What it is |
@@ -177,7 +180,7 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `src/preload.js` | ~130 | The bridge. Six `contextBridge` globals (`mbPad` since 2.2), every one a thin IPC call — since 2.0 nothing here touches the disk, so the id→folder map `mbf://` is served from lives in one process. |
 | `src/tablet.js` | ~360 | **A phone as a drawing tablet** (2.2). Runs in main, plain Node: picks the LAN address, serves the phone's page, speaks just enough WebSocket, enforces the pairing (one token, one phone, `resume` after a drop, Origin, private peers only), checks every message (`clean()`), sends the pictures of the board (`sendFrame()`, identical ones skipped) and stops by itself. See §4x. |
 | `src/qr.js` | ~200 | A QR encoder for the pairing URL — byte mode, level M, versions 1–6, no dependency. See §4x. |
-| `src/tablet/phone.html` | ~370 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, and its own strokes drawn until a picture has them. No text of its own — the `main.pad*` strings are injected. See §4x. |
+| `src/tablet/phone.html` | ~720 | The page the phone opens: a full-screen surface showing the board's pictures, pen in with pressure and hover, the pen button as an eraser, the arrow (select/move/recolour/delete), palm rejection, fingers to pan and zoom, two- and three-finger taps for undo and redo, and its own strokes drawn until a picture has them. Since 3.3 it rides out a sleeping phone (retries for half an hour, replaces a socket gone quiet) and names its gestures once. No text of its own — the `main.pad*` strings are injected. See §4x. |
 | `src/index.html` | ~1060 | The entire DOM: canvas, every overlay, every menu. Static; JS only fills it in. **Carries no user-visible text and no glyphs** — every string is a `data-t*` key, every icon is an empty slot filled by `STATIC_ICONS`. It also holds the two load orders, and both are load-bearing: see §4 and §5. |
 | `src/js/*.js` | ~19900 | All app logic, in 28 plain scripts sharing one global scope. See §4. |
 | `src/css/*.css` | ~4300 | All styling, in 9 sheets whose link order is the cascade. See §5. |
@@ -195,10 +198,14 @@ App/          the built app (generated; deleted and rewritten by every build)
 | `tools/check-lang.js` | 115 | Fails the build on a missing key, a drifted translation, a plural gap, or a template part with no string behind it. Covers the renderer scripts **and the main-process files** — `main.js`, `preload.js`, `store.js`, and since 2.2 `tablet.js` and `qr.js` (`MAIN_FILES` in `tools/app-source.js`). Run via `npm run check:lang`. |
 | `tools/check-icons.js` | 95 | Fails the build on a downloaded icon nothing draws, or a drawn icon nothing downloaded. Run via `npm run check:icons`. |
 | `tools/check-crlf.js` | 101 | Fails the build on a `.cmd` file with LF endings, which `cmd.exe` misparses into nonsense. Run via `npm run check:crlf`. |
+| `tools/check-dupes.js` | ~100 | Fails the build when one top-level name is declared twice across `src/js/*.js` (read in `index.html`'s order through `tools/app-source.js`). The scripts share one global scope: a second `function` silently replaces the first, and a second `const` stops the later script loading. Added after the smooth caret's `placeCaret()` replaced the editor's for two releases (§7). Run via `npm run check:dupes`. |
 | `tools/test-store.js` | ~330 | **Tests for store.js**, plain Node against a temporary My Boards: atomic writes, per-board failures, scan and the unreadable state, renames and groups, path escapes, attach and cleanup, snapshots, both migrations (and one whose writes fail), export, the mirror, a backup into itself, JSON Canvas files, a Samsung note read down to its stroke deltas. `npm run test:store`. |
 | `tools/fake-sdocx.js` | ~85 | A small Samsung Notes file built byte by byte — a title, bold text, an inline picture, a stroke, a square and a garbage object — for both test files. No real Samsung file is checked in. |
 | `tools/fake-pdf.js` | ~30 | A two-page PDF built byte by byte (text in a standard font, a filled box per page) for the 2.7 test. No real PDF is checked in. |
-| `tools/test-tablet.js` | ~260 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
+| `tools/setup.iss` | ~120 | **The setup file's script** (3.3, Inno Setup 6): one place (`{localappdata}\Programs\Mental Board`, no folder page), `[InstallDelete]` so an update replaces, the refusal while any `Mental Board.exe` runs, one Start-menu entry, an uninstaller that takes the app folder and nothing else. The AppId is a contract. See §6. |
+| `tools/build-setup.js` | ~60 | `npm run setup`: finds ISCC.exe, refuses an `App\` that is not this version's, writes `dist\Mental-Board-Setup-<version>.exe`. Windows only. See §6. |
+| `tools/ws-client.js` | ~60 | The phone's side of the socket, for `test-tablet.js` and the app suite's 3.3 phone test: a raw WebSocket client that parses text frames and records pictures (`bin`, `head`, and when each message arrived). |
+| `tools/test-tablet.js` | ~280 | **Tests for the phone-as-tablet server and the QR encoder**, plain Node on 127.0.0.1: every symbol read back (format, finders, RS syndromes, bytes), then the pairing — the page and its CSP, a wrong token, a wrong Origin, a second socket, a spent token, `resume`, a message that is not ours, the pictures (numbers then JPEG, one over 64 KB, an identical one skipped), an unmasked frame, and Stop closing the port. `npm run test:tablet`. |
 | `tools/test-app.js` | ~345 | **Tests that need the real app.** Launches Electron with a throwaway `--user-data-dir`, seeds an unreadable board, drives the page over CDP: `applySaveResult()` with every shape of answer, a real failed write and its retry, dates, cleanup refusing an unreadable board, a delete whose bin cannot be written. Captures every page error; the last page test fails on any that is not expected. Then two quits, each in a fresh app driven over `--inspect` (§4k): the last edit lands and every process goes, and every process goes even when the page never answers. `npm run test:app`. |
 | `tools/test-app-features.js` | ~600 | The feature suites test-app.js runs: a smoke pass over every panel in every theme and in Arabic, the views (§4u), video and the board picture, JSON Canvas (§4t), Samsung Notes (§4w: onto the board and off again with one undo; the rich-text translation), and **2.1** (§4v): a note with no head, following a rope, `/link` at the caret, links to notes, ropes through copy/cut/paste/duplicate, the paste ghost, columns, a locked workflow on disk, ink on disk with undo and the eraser, the wheel in a long note, the Mono accent, menu sounds; and **2.8** (§4z6): the slash menu's sections, picture and ranking; a database inserted, pressed in a closed note, opened as a page, kept on disk and undone; a paste of one, a crafted one, the Backspace guard, search and Markdown; a linked view writing to its source, and all fifteen layouts. The suite stubs `toSystemClipboard` — a test copy must never land on the real clipboard. |
 | `tools/build-app.js` | 210 | Builds `src/` into `App/`, verifies the packaged payload, repoints the shortcuts. Run via `npm run build`. See §6. |
@@ -287,6 +294,8 @@ Documents\My Boards\
   Trash\                     the bin — an ordinary board with trash: true
   Backups\<Board name>\      YYYY-MM-DD.json, one per day, newest 14; and
                              before-<version>.json, taken once per upgrade
+  Backups\<Group>\<Board>\   the same for a board in a group — the path it has
+                             above, so two boards with one name never share
 ```
 
 The whole design is those four lines: **a board is a folder, and the folder is
@@ -666,7 +675,7 @@ no bundler and no build step — the only thing joining them is the order
 | `page.js` | ~345 | **The page menu** at the top right, **the workflows list** beside it (`paintFlowsBtn` `openFlowsMenu`, §4z), and what a board decides for itself: `applyBoardLook()` (font, small text, background), `openPageMenu`, `copyBoardContent`, groups (`openMoveTo` / `moveBoardToGroup`), the inline rename. See §4r. |
 | `canvas.js` | ~430 | **JSON Canvas** — `boardToCanvas` / `exportCanvas`, `canvasToBoard` / `importCanvas` / `importCanvasFile`, and the two translators `noteToMarkdown` and `markdownToNote`. See §4t. |
 | `samsung.js` | ~300 | **Samsung Notes** — `importSamsung` (the page menu) / `importSamsungFiles` (also the canvas drop), `samsungToBoard` (one workflow: the text note, the pictures, the ink), `samsungStroke`, and the rich-text translation `richToHtml` / `runsHtml` / `samsungHref`. See §4w. |
-| `wallpaper.js` | ~310 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`; since 3.1 the loop sleeps on a timer between frames and a drop's rim is one sprite (`wpRim`). See §4z9. |
+| `wallpaper.js` | ~720 | **The live wallpaper** (3.0): `applyWallpaper` (from `applySettings`), the loop (`startWallpaper` `wpStep`), the backdrop and its lens (`wpBackdrop` `wpLensOf`), rain (`wpSeedRain` `wpRainStep` `wpDrawRain`), snow (`wpSeedSnow` `wpSnowStep` `wpDrawSnow`), the YouTube frame, `wireWallpaper`; since 3.1 the loop sleeps on a timer between frames and a drop's rim is one sprite (`wpRim`). **3.3**: depth (`wpCamera` `wpOff`), sprites (`wpSprite` `wpGlow`), the rain's fog (`wpFrostOf`, `wp.fog`), streaks, lights, cars and lightning; the snow's gusts, glints, windows and frost (`wpFrostFrame`); the night sky (`wpSeedStars` `wpStarsStep` `wpDrawStars` `wpCurtain` `wpRidge`); and the sound (`wpAu`: `wpSoundSync` `wpRainSound` `wpWindSound` `wpNightSound` `wpThunderLater` `wpGustSound`). See §4z9. |
 | `views.js` | ~355 | **The minimap** (`drawMinimap`, `scheduleMinimap`, `wireMinimap`), **the agenda** (`openAgenda`, `renderAgenda`, `datedNotes`), **the board as columns** (`openKanban`, `renderKanban`), and `noteTitle()`. See §4u. |
 | `tablet.js` | ~270 | **The phone as a tablet, the renderer's half** (2.2): the pairing panel (`wirePad` `startPad` `paintPadPanel` `qrSvg`), the phone's region (`padRect` `paintPadArea`, 2.2.1), the pictures (`padDirty` → `padPump` → `mbPad.frame`, `padGot`), what the phone is told (`sendPadView` `padPalette` `padCanDraw`), and what it says (`onPadMessage` → `beginPadStroke` / `movePadStroke` / `endPadStroke`, `padErase`, the arrow `beginPadPick` + `padSelection`, `padUndo`, `padPan`, the hover ring), and the phone in a book (`bookPageUnder` `beginPadBookStroke` `padBookPoint`, 3.0.2). Since 3.1 the colours are resolved inside the open host and sent with the app's theme and what is open (`padHostEl` `padPalette` `padWhere`, §4z10). Strokes go into `state.ink` exactly as ink.js puts them there. See §4x. |
 | `init.js` | ~1440 | Pointer routing, the keyboard map, `init()`, `wireExtras()`, `STATIC_ICONS`, the canvas drop (`onCanvasDrop` → `noteFromDroppedFile` / `noteFromTaken`, `addMediaFromPicker`, `measureVideo`) — every event listener in one place — including, since 2.1, the rope press, the pen's pointer and keys, and Ctrl+V's hold (§4v). **Start here when a click does nothing.** |
@@ -2075,8 +2084,9 @@ All of it is in `src/tablet.js`'s header; each point has a test in
 - **Off by default, never persisted, and it stops by itself.** Nothing listens
   until Pair. It stops on Stop, on quit, on a renderer reload or crash
   (`did-start-navigation` main frame, `render-process-gone`), five minutes
-  after Pair if nobody scanned, and a minute after the phone drops off if it
-  does not come back. There is no setting to leave on by accident.
+  after Pair if nobody scanned, and **thirty minutes** after the phone drops
+  off if it does not come back (one minute until 3.3 — see below for why).
+  There is no setting to leave on by accident.
 - **One phone, one use of the token.** 128 random bits in the QR code open
   exactly one WebSocket. That socket is handed a second secret, `resume`, the
   only way back in after a Wi-Fi blip (the page keeps it in `sessionStorage`).
@@ -2134,6 +2144,78 @@ the phone is the network, not the renderer), and the renderer paints the live
 stroke on the next animation frame. On a home Wi-Fi network the round trip is
 a few milliseconds; the spikes, when they come, are the phone's Wi-Fi power
 saving, which a steady stream of pen events mostly keeps awake.
+
+### 3.3: a phone that sleeps, pictures that keep out of the pen's way, redo
+
+Judged against how a phone is actually used, five things held the phone back.
+All five are fixed, and each has a test.
+
+- **A sleeping phone ended the pairing.** A phone's screen goes dark after
+  30 s – 2 min and the page cannot keep it awake (plain `http`, no Wake Lock).
+  The PC waited **one minute** (`RESUME_MS`) and the page gave up after
+  **five tries, about eight seconds** — so any pause to think meant walking
+  back to Settings ▸ Extra and scanning again. Now the PC keeps the door
+  open thirty minutes, and the page retries for as long as that (back-off
+  capped at 5 s), at once on `visibilitychange`, `online` and `pageshow`.
+  It ends only on `bye`, a code that never got in, or after 31 minutes.
+  After 20 s away it says the pairing may have ended (`main.padAwayLong`).
+  The cost is a listening socket for longer after a drop; the only way in is
+  still `resume`, 128 bits held by that one phone.
+- **A dead socket that looked alive.** A phone that slept leaves its socket
+  half open; the page now forgets one that has heard nothing for 7 s (the PC
+  answers every 2-second ping) and opens another. **The server lets the
+  holder of `resume` replace its own open socket** (`onUpgrade`): before,
+  "one socket at a time" refused the phone until SILENT_MS noticed the old
+  one. A takeover is not an "away". The token never takes over.
+- **Pictures competed with the pen.** Every painted segment of a phone stroke
+  called `padDirty()`, so a 1.2 s line triggered **14 pictures** — a capture
+  and a JPEG encode on main, the thread that reads the pen's socket, and Wi-Fi
+  airtime the pen's messages wait behind — for pictures the phone did not
+  need, since it draws its own line under the pen. While a phone *line* is
+  live (not the eraser or the arrow, whose results the phone only sees in the
+  pictures) pictures are `PAD_PEN_GAP_MS` = 450 ms apart: **at most four**
+  for the same line. A waiting picture is brought forward when the pen lifts
+  (`padShot.due`), so the PC's own rendering of the line lands at once.
+- **One JPEG quality for everything.** Quality 72 showed 8 × 8 blocks in the
+  dark background and fringes on text once the phone scaled it 2–3×. Now a
+  picture taken while the board moves is quality 70 (`PAD_Q.move` in
+  main.js), and once it has been still for `PAD_STILL_MS` the renderer asks
+  for `still`, quality 90. Measured on a 370 × 822 slice: 28 KB at 72, 39 KB
+  at 90, once per pause; the encode is ~2 ms either way, the capture ~13 ms.
+  The idle tick asks for `still` too, so it hashes equal and sends nothing.
+  `padDirty(true)` is that tick and the pump's own retries — not a change.
+- **No redo, and gestures nobody could see.** The phone's undo now keeps what
+  it took (`padUndone`) and `redo` (a button beside undo, and a three-finger
+  tap) puts it back as one `ink` step, same id and points; a new stroke
+  forgets it. The editors have no redo of their own, so it is the board's
+  only. Two- and three-finger taps are judged when the last finger lifts
+  (until 3.3 the first finger up of three already undid), both buzz on
+  Android (`navigator.vibrate`), and the gestures are named on a card when
+  the phone connects (`#hint`, gone at the first touch or after 9 s).
+- **Pairing was three clicks deep.** The pen bar has a phone button and the
+  palette (Ctrl+P) has "Pair a phone": both call `pairPhoneNow()`, which opens
+  Settings ▸ Extra with the pairing already started and scrolls the code into
+  view. The button is lit while a phone is paired, and the outline stays,
+  dotted, while the phone is away (`#padArea.away`).
+
+Also found on the way: `set.padHint` was written twice in each catalogue —
+the phone panel's explanation and the note-padding sliders' hint — and the
+second silently won, so Settings ▸ Extra never said what the phone is sent.
+The sliders' key is `set.notePadHint` now, and `npm run check:lang` fails on
+any key written twice (§7).
+
+**Tests.** `tools/test-tablet.js`: `redo` is cleaned; a wrong secret and the
+token are refused while a socket is open; the holder of `resume` takes over
+an open socket with no "away", and is heard. `tools/test-app-features.js`
+**3.3** is the phone over a real socket against the running app (`--pad-host`,
+honoured only with `--user-data-dir`, main.js `PAD_TEST_HOST`): a picture,
+then a `still` one, then silence however long the idle tick asks; at most
+four pictures during a 1.2 s line and one within 700 ms of the pen lifting;
+a `still` picture that says it has the line (`k`); undo and redo of the same
+line; a takeover; Stop with a `bye`. The phone page itself was driven in
+Chromium at 412 × 915 with touch: the card, the two- and three-finger taps,
+and a socket gone quiet for 8 s replaced over `resume` in 6.5 s.
+`tools/ws-client.js` is the phone's side of the socket for both suites.
 
 ### Verified
 
@@ -3091,6 +3173,68 @@ In the sandbox, YouTube answered "This video is unavailable" to every embed,
 the note player's too — that is YouTube refusing that machine or profile, not
 these parameters.
 
+### The wallpaper made a place (3.3)
+
+Judged as "is this somewhere": the rain was a painted picture behind glass —
+a backdrop drawn once, fixed to the screen whatever the pointer or the board
+did, nothing happening beyond the glass — and the snow was flakes over a
+gradient that built a fresh radial gradient for every near flake every frame.
+What changed, all in `js/wallpaper.js`:
+
+- **Depth.** `wpCamera()` eases `wp.cam` after the pointer (`wp.look`,
+  −½…½ across the window) and a push from each pan of the board (`wp.kick`,
+  springing back over about a second). `wpOff(depth)` is a layer's offset.
+  The backdrop and everything belonging to it are painted `wp.m` device px
+  (WP_OVER, 5% of the long side) bigger on every side so a move never shows
+  an edge. In the rain the city moves fully and the rain outside 0.55; drops
+  and fog are on the glass and never move. In the snow and the sky it is a
+  camera: the hills 0.2, near flakes up to 1, the stars 0.08, the aurora
+  0.22, the ridge 0.6. Settings ▸ Wallpaper ▸ **Depth** (`wpDepth`, on);
+  always off when motion is reduced.
+- **Rain.** Rain falls outside (`wp.streaks`, two depths, one path per depth
+  per frame), some of the city's lights breathe (`wp.lights`) and cars pass
+  in the street (`wp.cars`, headlights one way, tail lights the other). The
+  glass fogs: `wp.frost` is the city blurred and paler, at half size, shown
+  through `wp.fog` — a quarter-size mask that re-fogs with a 5 s time
+  constant and is wiped by every sliding drop along the glass it crossed
+  that frame. The wipe is one drop wide: three drops wide striped the window
+  like a curtain. Composited at half the window's size in `wp.tmp`: at full
+  size the three passes cost 15.5 ms a frame drawing without a GPU, at half
+  5.4. Not on the lite tier (no fog there). Now and then (25–80 s, dark only)
+  the sky glows from far off — a glow of at most 0.2 alpha in two decaying
+  pulses, never a flash — and thunder follows if sound is on. The drop's lens
+  now samples the city where the city *is* after the move.
+- **Snow.** Every flake is one pre-drawn soft disc (`wpGlow`) stretched, not
+  a gradient per flake: 0.6 → 0.35 ms a frame. Gusts (2–4.5 s) that the snow
+  streams on, a nearer bank of snow with glints, lit windows on the hills
+  that come and go, and frost on the window's edge (`wp.frame`, on the glass).
+- **Night sky** (`stars`, new): the Milky Way and its dust in the backdrop,
+  twinkling stars, shooting stars every few seconds, two or three aurora
+  curtains — strips of one vertical gradient along two sines, folding — and a
+  ridge of hills and pines (`wp.fore`). In a light theme, the sky before
+  dawn. 0.46 ms a frame on lite, 1 ms on full.
+- **Sound** (`wpAu`), with Settings ▸ Wallpaper ▸ Play its sound and
+  **Volume** (`wpVolume`, 50): Web Audio from one two-second buffer of pink
+  noise. Rain is a filtered bed, a hiss and drops (bursts of noise through a
+  narrow band, panned) and thunder; snow is wind, swept by two slow
+  oscillators and swelling with each gust; the sky is a hush and two
+  crickets. It fades in and out, stops when the window is hidden
+  (`visibilitychange`) and the context is suspended between. Repeating
+  sounds keep one timer each (`wpAu.loops`): a list of every timer ever set
+  grew by eight a second in the rain.
+- **The phone.** No two pictures of a moving wallpaper are the same, so the
+  phone's idle tick asks every third second instead of every second while
+  `wpAnimating()` (js/tablet.js).
+
+All of it costs nothing when hidden, is one still frame under reduced motion,
+and on the lite tier draws fewer of everything and no fog. Measured in the
+app (script time per frame, 1400 × 860): lite — rain 1.3 ms (was 1.2), snow
+0.35 (was 0.6), sky 0.46; full, drawing without a GPU — rain 5.4, snow 0.35,
+sky 1.0. Test: **3.3 the wallpaper** in `tools/test-app-features.js` — the
+sky's layers, a lean that eases and returns, a pan that kicks and springs
+back, flat with depth off, the rain's streaks, lights and fog, the sound made
+with one loop and quiet when off, still under reduced motion.
+
 ### The options screen, and the face (settings.js §3.0, mental.css §84 and §88)
 
 Settings is the whole window under the titlebar, after the reference's
@@ -3694,11 +3838,16 @@ ends are pinned to the middle of the top edge, and:
   right when the ends face each other on the nearest side; with both ends on the
   top edge it sends the rope straight down through the note it just left, so on
   a column of stacked notes most of every rope is hidden behind them.
-- **Two notes in a column need the side bow.** Their pins share an x, and an arc
-  between two points with the same x collapses to a straight line that
+- **Two notes in a column need to be gone round.** Their pins share an x, and an
+  arc between two points with the same x collapses to a straight line that
   *overshoots above the higher pin* — a stray tail out of the top of the note.
-  Below 30px of horizontal separation the rope bows sideways instead, far enough
-  to clear the wider of the two cards. That is why `ropePath()` takes the two
+  Below 30px of horizontal separation `ropeAround()` takes over: up off the pin,
+  across above the card, down 30px past the wider card's edge, across in the
+  gap above the lower card, down onto its pin, every corner rounded. Until
+  3.3 it was one cubic bowed by half the card plus 46px, which reaches only
+  three quarters of that and leaves the pin heading down — through the upper
+  card, and over its text when the note was selected. A test samples the
+  path. That is why `ropePath()` takes the two
   rects and not just the two points.
 
 ---
@@ -4198,7 +4347,7 @@ That is also the answer to "how do I look at the app without installing it".
 |---|---|
 | See the app, on your real board | `npm start` |
 | See it on a throwaway board | `npm run sandbox` |
-| All three checks, no build | `npm run check` |
+| All four checks, no build | `npm run check` |
 | The tests (store, then the real app) | `npm test` |
 | **Update the app you double-click** | **`npm run build`** |
 
@@ -4273,7 +4422,7 @@ old version left installed is not inert.** It is a running app wearing the new
 one's launch. There is now one copy on disk and no shortcut pointing anywhere,
 which is the only arrangement where that cannot happen again.
 
-### Why there is no installer and no updater
+### Why there was no installer and is no updater
 
 1.3 shipped an NSIS installer, a portable target, a GitHub Actions release
 workflow and `electron-updater` pulling from GitHub Releases. That put up to
@@ -4284,10 +4433,91 @@ never came, and the folder the build script wrote. A shortcut points at one of
 them. Nothing tells you which.
 
 All of it is deleted: no `electron-builder`, no `electron-updater`, no
-`build.nsis`, no `publish` target, no `.github/workflows/release.yml`, no
-`RELEASING.md`. **Updating is running `npm run build`.** If that ever needs to
+`build.nsis`, no `publish` target, no `RELEASING.md`. (A
+`.github/workflows/release.yml` exists again since 3.3, but only to build
+the one zip below — it publishes nothing the app reads.) **Updating is running `npm run build`.** If that ever needs to
 change, the thing to preserve is the property, not the tooling: one copy, one
 path to it, and a way to read the build identity off the running app.
+
+### The download: one zip, one folder, put in place by hand
+
+Someone who does not build from source needs a way in, and 1.3's answer is
+the thing above that cost a session. So the download keeps the property and
+none of the tooling:
+
+- **What it is.** `.github/workflows/release.yml` runs on `windows-latest`
+  when a `v<version>` tag is pushed (the tag must equal `package.json`'s
+  version, or nothing builds). It runs `npm run build` — the checks, `npm
+  test`, `tools/build-app.js`, so a red test means no zip — then zips `App\`
+  as one folder called `Mental Board`, with `INSTALL.md` beside the exe as
+  `INSTALL.txt`, and attaches the zip and its SHA-256 to a GitHub Release.
+  Run by hand (Actions ▸ Release ▸ Run workflow), it builds and keeps the zip
+  as an artifact without publishing.
+- **Where it goes.** `%LOCALAPPDATA%\Programs\Mental Board\` — per user, no
+  admin rights, one fixed path, so a taskbar pin never goes stale. `INSTALL.md`
+  says so, and so do its rules: one copy, never run from the zip, replace
+  never merge, quit from the tray first, boards are not in the app folder.
+- **Its PowerShell block is tested.** The workflow lifts the block out of
+  `INSTALL.md` and runs it, in Windows PowerShell 5.1, against the real zip in
+  a throwaway home: a fresh install, an update that must leave no stale file
+  behind, and the refusal when Downloads holds two zips (it must change
+  nothing). Edit the block and the release proves it still works.
+- **What it still is not.** No updater, no feed the app reads, no portable
+  self-extractor. The app does not know releases exist. A machine that both
+  builds from source and installs a download has two copies; `INSTALL.md`
+  rule 7 says pick one.
+- **`IGNORE` keeps it out of the package.** `.github/` and `INSTALL.md` are
+  in it next to `MAP.md`, or the workflow would ship inside `app.asar`.
+
+### The setup file (3.3)
+
+Asked for: a file you run, the way every other Windows app installs. The
+risk was never an installer as such — it was 1.3's *several* places, a
+self-extracting portable copy and an updater staging builds for a quit that
+never came. So the setup is built to the same property as the zip, and the
+zip stays: both put the same `App\` in the same one place.
+
+- **What it is.** `tools/setup.iss`, Inno Setup 6, compiled by
+  `tools/build-setup.js` (`npm run setup`, after `npm run build`) into
+  `dist\Mental-Board-Setup-<version>.exe`. The script refuses an `App\` whose
+  `BUILD.txt` is not this version's. On the runner Inno Setup 6 is on the
+  image (Windows Server 2025: 6.7.1); elsewhere `ISCC=<path>` or an install.
+- **One place.** `DefaultDirName={localappdata}\Programs\Mental Board`,
+  `DisableDirPage=yes`, `UsePreviousAppDir=no`, `PrivilegesRequired=lowest` —
+  per user, no admin, no way to pick another folder. The same path the zip
+  uses, so a zip install moves to the setup by running it.
+- **Replace, never merge.** `[InstallDelete]` empties the folder before the
+  files go in, as `tools/build-app.js` deletes `App\` rather than copying
+  over it.
+- **Never over a running copy.** `InitializeSetup` and `InitializeUninstall`
+  ask WMI for any `Mental Board.exe` and wait for it to be quit (Retry), or
+  end having changed nothing. Any copy, not only this folder's: one built
+  from source elsewhere holds the single-instance lock and would swallow the
+  new copy's first launch. Silent, the answer is Cancel, exit code 1.
+  `CloseApplications=no`: closing the app for the person could lose the last
+  seconds of typing, and its close button only hides it anyway.
+- **Shortcuts.** One Start-menu entry to that one path (a desktop one only if
+  ticked), removed by the uninstaller. This is the one place a shortcut is
+  made, and it cannot go stale: the path never changes, and the setup is
+  what keeps the folder current. `tools/build-app.js` still makes none.
+- **The uninstaller takes the app folder (`[UninstallDelete]`) and nothing
+  else.** The boards are in `Documents\My Boards`; no line in setup.iss names
+  it.
+- **The AppId** (`{6F4B2C1E-…}`) is how a newer setup finds an older one, and
+  is a contract like the pinned userData path: never change it.
+- **Tested on the runner, for real** ("The setup works as written"): a silent
+  install (exe, Start-menu entry, uninstall entry with this version, no
+  desktop icon), an update after a stale file was dropped in (gone), the
+  setup run while the installed app is running (exit code not 0, a marker
+  file untouched), and an uninstall (folder, entry and Start-menu entry gone;
+  a board planted in `Documents\My Boards` still there).
+- **Not signed.** SmartScreen warns until someone signs it; `INSTALL.md`
+  says what to press.
+
+Releasing is: bump `version` in `package.json`, commit, `git tag v<version>`,
+push the tag. The release carries the setup, the zip and a SHA-256 of each.
+The runner is Windows, so it is also the first place `npm test` runs on
+Windows without anyone's machine.
 
 Two things about the packaging config in `tools/build-app.js`:
 
@@ -4356,6 +4586,77 @@ Two things that will waste your time if you don't know them:
 ---
 
 ## 7. Traps
+
+Three from 3.3:
+
+- **A catalogue key written twice is not an error — the second wins.** Each
+  `assets/lang/*.js` is one object literal. `set.padHint` was both the phone
+  pairing's explanation and the note-padding sliders' hint, so the pairing
+  panel showed the sliders' text and never said what the phone is sent.
+  `npm run check:lang` now reads each catalogue's keys with a tokenizer and
+  fails on a key written twice.
+- **`data-t-aria` is applied once, to what exists then.** `applyStaticText()`
+  turns it into `aria-label`; markup built afterwards (the accent picker in
+  `buildAccentSwatches`, the status rows in `renderStatusList`) carried the
+  attribute and no name. Built HTML that needs a name sets `aria-label`
+  itself as well.
+- **A control hidden from everyone must leave something that says what it
+  is.** The ‹ value › rows hide their buttons (`.seg-under`) and mark their
+  arrows `aria-hidden`; until 3.3 a screen reader heard the row's words and
+  nothing said it could be changed. Each row is `role="slider"` with its name
+  and the option as `aria-valuetext`, kept up by `paintStepper()`.
+
+Two from judging the design after 3.2.0:
+
+- **Two functions with one name are one function.** The scripts share a
+  global scope, so 3.1.1's smooth caret, `function placeCaret()` near the end
+  of editor.js, silently replaced `placeCaret(node, offset)` higher up — the
+  one that *moves* the caret. Every "put the caret here" (the database
+  Backspace guard, toggles, Ctrl+Shift+arrows, a paste) painted the smooth
+  caret instead and left the selection alone, and four app tests failed on
+  Windows on Electron 31 and 44 alike. The painter is `paintCaret()` now, and
+  `npm run check:dupes` fails the build on any top-level name declared twice.
+- **A card drawn only when its row changes must be told when the words do.**
+  Settings' description card (`showSettingsDesc`) skips a redraw while the
+  pointer stays in one row, so picking a language in the very pane it lives
+  in left the card in the old language. `applyLang()` calls
+  `repaintSettingsDesc()`.
+
+One from moving to Electron 44:
+
+- **A custom scheme is not fetchable from the page unless it says it speaks
+  CORS.** On 44 the book's `fetch('mbf://…pdf')` failed with "Cross origin
+  requests are only supported for protocol schemes: … http, https", while
+  pictures and video on the same scheme went on loading, because a plain
+  `<img>` or `<video>` is not a CORS request. `mbf` is registered with
+  `corsEnabled`, and the handler answers `Access-Control-Allow-Origin: null`
+  only to a request whose Origin is `null` — the app's own file:// page. The
+  player page on 127.0.0.1 and the frame inside it cannot read the bytes.
+
+Three from a review after 3.2.0 first. Each has a case in `tools/test-store.js`:
+
+- **The sync save does not rename last just because it ran last.** It runs
+  whole inside one IPC handler, and an async save that was mid-`await` (or
+  still queued on `chain`) resumes afterwards and renamed its older
+  `.async.tmp` over the top: Quit during a debounced save put the board on
+  disk as it was a few seconds before. Every sync write now stamps its file
+  with the next `writeSeq`, and `writeAtomicAsync` drops its tmp when its file
+  was stamped after the save was *asked for* (`saveAllAsync` reads the counter
+  when it is called, not when its turn on the chain comes).
+- **A board's folder name is not unique; its path under My Boards is.**
+  `snapshotDir()` used the folder name, so "Ideas" and "Work ▸ Ideas" shared
+  `Backups\Ideas\`: the second board's daily snapshot came back `skipped`, a
+  success, and the two pruned each other's fourteen days. It is now the path
+  relative to My Boards (a top-level board keeps the folder it always had).
+- **`file://server/…` is not a file, it is an SMB login.** Note bodies from a
+  board on disk or an import are drawn without `sanitize()` (that runs on
+  paste only), and the CSP allows `file:` images, so a mailed board's
+  `<img src="file://their-server/x">` or a style's `url()` made Windows offer
+  the user's NTLM hash to that server. Main cancels every `file:` request
+  naming another machine (`webRequest.onBeforeRequest` in `whenReady`,
+  `store.isRemoteFileUrl`), and `pathOfUrl()` will not open or reveal one —
+  except under the app's own folder, My Boards, Documents and userData
+  (`store.trustShares`), which a domain may have redirected to a share.
 
 Three from 3.0 first (§4z9):
 
@@ -5184,10 +5485,10 @@ These were considered and left out; they are not oversights.
   the DOM construction as well — but it puts an element in `els` that has no
   `.note-body`, which every caller would then have to know about. Not worth it
   until a real board makes it worth it.
-- **No database tables.** Tables are tables: rows, columns, text. No cell
-  merging, no column types, no sorting, no formulas, no rollups. Those are
-  Notion's *database*, which needs its own storage model and its own view layer;
-  a half-built version would be worse than none. See §4b.
+- **Tables are plain; databases have no formulas.** A table (§4b) is rows,
+  columns and text, with sorting, and nothing more. Typed columns live in a
+  *database* (2.8, §4z6: ten property types, fifteen layouts, linked views),
+  which has no formulas, rollups or relations, and no cell merging.
 - **Boards are not shared or synced, and that is the big one.** Everything
   else on the roadmap is done. Real multi-user editing needs a server, accounts,
   hosting and conflict resolution — a project rather than a feature, and a
@@ -5196,8 +5497,6 @@ These were considered and left out; they are not oversights.
 - **Few per-board settings.** Theme, language, grid and the rest are global. A
   board carries its own viewport, archive flag and lock, and since 2.0 its own
   font, text size and background (§4r).
-- **No column types or formulas in tables.** Sorting is in; the rest of a
-  database is not. See §4b.
 - **History is per note, not per board.** There is no timeline of the canvas
   itself — moving and deleting are covered by undo, which is in memory only.
 - **The agenda and the columns are views, not editors.** You can tick a note
@@ -5205,10 +5504,12 @@ These were considered and left out; they are not oversights.
   An editable list or board view would be a second editor to keep in step.
 - **Pictures inside a note are not drawn in the board picture** (§4g) — only
   the ones standing on the board.
-- **Electron is 31.** Current is 44. 31 has been out of security support for a
-  long time; moving needs its own verification pass (execCommand, variable-font
-  weights and `webUtils.getPathForFile` are the behaviours the lockfile pins
-  for). Do it before a public release.
+- **Electron is 44** (44.10.1, moved from 31 after 3.2.0). Electron supports
+  the newest three majors, so 44 drops out when 47 ships — move again then.
+  The pass that moved it ran `npm test` on Linux under xvfb: the same results
+  as on 31, after one fix (`corsEnabled` on mbf://, §7). The behaviours still
+  to watch on Windows are execCommand, variable-font weights and
+  `webUtils.getPathForFile`; run `npm test` there before building.
 - **The studio bakes annotations in.** They are pixels after Apply, not
   editable objects. Re-opening starts from `data-orig` with a clean slate.
 - **No icon upload.** Icons come from the bundled Material Symbols set; adding

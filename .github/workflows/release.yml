@@ -1,0 +1,215 @@
+# The downloads: a setup file and a zip of the one app folder, attached to a
+# GitHub Release.
+#
+# This is NOT the 1.3 release pipeline come back. There is no updater, no
+# portable self-extractor and no update feed. Both downloads carry exactly what
+# `npm run build` writes to App\ — built by the same tools/build-app.js, behind
+# the same checks and tests — and both put it in the same one place,
+# %LOCALAPPDATA%\Programs\Mental Board:
+#   - the setup (tools/setup.iss, Inno Setup 6, built by tools/build-setup.js)
+#     installs there and nowhere else, replaces rather than merges, refuses
+#     while the app runs, and uninstalls without touching the boards;
+#   - the zip is one folder called "Mental Board", with the install rules
+#     beside the exe (INSTALL.md → INSTALL.txt), put in place by hand.
+# Both are tested here, on the runner, before anything is published. MAP.md §6.
+#
+#   git tag v3.3.0 && git push origin v3.3.0   → builds, then publishes the Release
+#   Actions ▸ Release ▸ Run workflow            → builds, keeps both as artifacts only
+#
+# The tag must match package.json's version, or nothing is built.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: The tag is the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$v" -ne "${{ github.ref_name }}") {
+            Write-Error "Tag ${{ github.ref_name }} does not match package.json version $v. Bump the version, commit, then tag."
+            exit 1
+          }
+
+      - name: Install the toolchain
+        run: npm ci --no-audit --no-fund
+
+      # npm run build = the three checks, npm test (store, tablet, the real app),
+      # then tools/build-app.js. A failing test means no zip.
+      - name: Check, test and build App\
+        run: npm run build
+
+      - name: Zip the one folder
+        id: zip
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $name = "Mental-Board-$v-windows-x64.zip"
+          $stage = Join-Path $env:RUNNER_TEMP 'zip'
+          $folder = Join-Path $stage 'Mental Board'
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          Copy-Item -Path 'App\*' -Destination $folder -Recurse
+          Copy-Item -Path 'INSTALL.md' -Destination (Join-Path $folder 'INSTALL.txt')
+          if (-not (Test-Path (Join-Path $folder 'Mental Board.exe'))) { Write-Error 'Mental Board.exe is not in the build'; exit 1 }
+          Compress-Archive -Path $folder -DestinationPath $name -CompressionLevel Optimal
+          $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name" | Out-File -Encoding ascii "$name.sha256"
+          "name=$name" >> $env:GITHUB_OUTPUT
+          "hash=$hash" >> $env:GITHUB_OUTPUT
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      # INSTALL.md's PowerShell block is what people paste, so it is run here
+      # exactly as written — in Windows PowerShell 5.1, which is what Start ▸
+      # PowerShell opens — against a throwaway home: a fresh install, an update
+      # that must replace rather than merge, and the refusal with two zips.
+      - name: The install rules work as written
+        run: |
+          $md = Get-Content INSTALL.md -Raw
+          $m = [regex]::Match($md, '```powershell\r?\n([\s\S]*?)```')
+          if (-not $m.Success) { Write-Error 'INSTALL.md has no PowerShell block'; exit 1 }
+          $code = Join-Path $env:RUNNER_TEMP 'install.ps1'
+          $m.Groups[1].Value | Out-File -Encoding utf8 $code
+          $fake = Join-Path $env:RUNNER_TEMP 'fakehome'
+          New-Item -ItemType Directory -Force "$fake\Downloads", "$fake\Local" | Out-Null
+          Copy-Item "${{ steps.zip.outputs.name }}" "$fake\Downloads\"
+          $env:USERPROFILE = $fake
+          $env:HOMEDRIVE = Split-Path $fake -Qualifier
+          $env:HOMEPATH = Split-Path $fake -NoQualifier
+          $env:LOCALAPPDATA = "$fake\Local"
+          $exe = "$fake\Local\Programs\Mental Board\Mental Board.exe"
+          $run = { powershell.exe -NoProfile -ExecutionPolicy Bypass -File $code | Out-String }
+
+          $out = & $run; Write-Host $out
+          if (-not (Test-Path $exe)) { Write-Error "fresh install: $exe is not there"; exit 1 }
+
+          'left by an old build' | Out-File "$fake\Local\Programs\Mental Board\stale.txt"
+          $out = & $run; Write-Host $out
+          if (-not (Test-Path $exe)) { Write-Error 'update: the exe is gone'; exit 1 }
+          if (Test-Path "$fake\Local\Programs\Mental Board\stale.txt") { Write-Error 'update merged into the old folder instead of replacing it'; exit 1 }
+
+          Copy-Item "$fake\Downloads\${{ steps.zip.outputs.name }}" "$fake\Downloads\Mental-Board-0.0.0-windows-x64.zip"
+          'marker' | Out-File "$fake\Local\Programs\Mental Board\marker.txt"
+          $out = & $run; Write-Host $out
+          if ($out -notmatch 'Keep exactly one') { Write-Error 'two zips were not refused'; exit 1 }
+          if (-not (Test-Path "$fake\Local\Programs\Mental Board\marker.txt")) { Write-Error 'a refused install still changed the folder'; exit 1 }
+          Write-Host 'install, update and refusal all behave as INSTALL.md says'
+
+      # the setup file: tools/build-setup.js, from the same App\ (Inno Setup 6 is on the runner image)
+      - name: Build the setup file
+        id: setup
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc) -and -not (Get-Command iscc -ErrorAction SilentlyContinue)) { choco install innosetup -y --no-progress }
+          node tools/build-setup.js
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $v = "${{ steps.zip.outputs.version }}"
+          $name = "Mental-Board-Setup-$v.exe"
+          Copy-Item "dist\$name" $name
+          $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name" | Out-File -Encoding ascii "$name.sha256"
+          "name=$name" >> $env:GITHUB_OUTPUT
+          "hash=$hash" >> $env:GITHUB_OUTPUT
+
+      # The setup run for real on this runner, the way a person runs it, silently:
+      # a fresh install (the exe, the Start-menu entry, the uninstall entry), an
+      # update that must replace rather than merge, a refusal while the app runs
+      # that changes nothing, and an uninstall that takes the app and leaves a
+      # board in Documents\My Boards where it was.
+      - name: The setup works as written
+        run: |
+          $v = "${{ steps.zip.outputs.version }}"
+          $setup = (Resolve-Path "${{ steps.setup.outputs.name }}").Path
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Mental Board'
+          $exe = Join-Path $app 'Mental Board.exe'
+          $menu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Mental Board.lnk'
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F4B2C1E-8D3A-4E7B-9C5F-1A2B3C4D5E6F}_is1'
+          $board = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Boards\Kept\board.json'
+          New-Item -ItemType Directory -Force (Split-Path $board) | Out-Null
+          '{"mbBoard":2,"id":"kept1","name":"Kept","notes":[]}' | Out-File -Encoding ascii $board
+          function Install { (Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru).ExitCode }
+          function Fail($m) { Write-Error $m; exit 1 }
+
+          $code = Install
+          if ($code -ne 0) { Fail "a fresh install exited $code" }
+          if (-not (Test-Path $exe)) { Fail "fresh install: $exe is not there" }
+          if (-not (Test-Path $menu)) { Fail 'fresh install: no Start-menu entry' }
+          if (-not (Test-Path $key)) { Fail 'fresh install: no uninstall entry' }
+          if ((Get-ItemProperty $key).DisplayVersion -ne $v) { Fail 'the uninstall entry has the wrong version' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mental Board.lnk')) { Fail 'a desktop icon nobody asked for' }
+
+          'left by an old build' | Out-File (Join-Path $app 'stale.txt')
+          $code = Install
+          if ($code -ne 0) { Fail "the update exited $code" }
+          if (Test-Path (Join-Path $app 'stale.txt')) { Fail 'the update merged into the old folder instead of replacing it' }
+          if (-not (Test-Path $exe)) { Fail 'the update lost the exe' }
+
+          $ud = Join-Path $env:RUNNER_TEMP 'mb-running'
+          $running = Start-Process -FilePath $exe -ArgumentList "--user-data-dir=$ud" -PassThru
+          Start-Sleep -Seconds 8
+          'marker' | Out-File (Join-Path $app 'marker.txt')
+          $code = Install
+          Get-Process 'Mental Board' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          if ($code -eq 0) { Fail 'the setup ran over a copy that was running' }
+          if (-not (Test-Path (Join-Path $app 'marker.txt'))) { Fail 'a refused setup still changed the folder' }
+
+          Start-Process -FilePath (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait | Out-Null
+          # the uninstaller hands over to a copy of itself in %TEMP% and returns at once: wait for it to finish
+          for ($i = 0; $i -lt 60 -and ((Test-Path $app) -or (Test-Path $key)); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) { Fail 'uninstall left the app folder' }
+          if (Test-Path $menu) { Fail 'uninstall left the Start-menu entry' }
+          if (Test-Path $key) { Fail 'uninstall left its entry' }
+          if (-not (Test-Path $board)) { Fail 'uninstalling touched Documents\My Boards' }
+          Write-Host 'install, update, refusal while running and uninstall all behave as the setup promises'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mental-Board-${{ steps.zip.outputs.version }}-windows
+          path: |
+            ${{ steps.setup.outputs.name }}
+            ${{ steps.setup.outputs.name }}.sha256
+            ${{ steps.zip.outputs.name }}
+            ${{ steps.zip.outputs.name }}.sha256
+          if-no-files-found: error
+
+      - name: Publish the Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $n = "${{ steps.zip.outputs.name }}"
+          $su = "${{ steps.setup.outputs.name }}"
+          $notes = @"
+          **Download ``$su`` and run it.** It installs Mental Board for you, no admin needed, in one place — ``%LOCALAPPDATA%\Programs\Mental Board`` — and puts it in the Start menu. Run it again to update: it replaces the old copy. Quit Mental Board first (tray icon ▸ Quit).
+
+          Your boards stay in ``Documents\My Boards`` — installing, updating or uninstalling never touches them.
+
+          No setup? ``$n`` is the same app as one folder: follow [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/INSTALL.md). Use one or the other, never both.
+
+          SHA-256 ``$su``: ``${{ steps.setup.outputs.hash }}``
+          SHA-256 ``$n``: ``${{ steps.zip.outputs.hash }}``
+          "@
+          gh release create "${{ github.ref_name }}" $su "$su.sha256" $n "$n.sha256" --title "Mental Board ${{ steps.zip.outputs.version }}" --notes $notes

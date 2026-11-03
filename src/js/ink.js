@@ -204,7 +204,6 @@ function drawInk() {
   if (!ordered) ink.forEach((s) => { const el = inkEls.get(s.id); if (el) svg.appendChild(el); });
   if (typeof padDirty === 'function') padDirty();
 }
-function resetInk() { inkEls.clear(); const svg = $('inkSvg'); if (svg) svg.textContent = ''; }
 function inkViewRect() {
   const r = visibleWorldRect();
   const m = (r.x1 - r.x0) * 0.25;
@@ -250,6 +249,8 @@ function setPen(patch) {
 }
 const penSizePx = () => INK_SIZES[state.settings.pen.tool][state.settings.pen.size];
 
+// padInfo is js/tablet.js's, further down the load order: read when the bar is built, never at load
+const inkPadPaired = () => typeof padInfo === 'object' && padInfo.state !== 'off';
 function buildInkBar() {
   const bar = $('inkBar');
   const p = state.settings.pen;
@@ -272,6 +273,8 @@ function buildInkBar() {
     `<button class="ik-btn" data-ik="layer" title="${te(b && b.inkBehind ? 'ink.toFront' : 'ink.toBack')}">${icon(b && b.inkBehind ? 'flip_to_front' : 'flip_to_back')}</button>` +
     `<button class="ik-btn${inkSel.size ? '' : ' hidden'}" data-ik="delsel" title="${te('ink.deleteSel')}">${icon('delete')}</button>` +
     `<button class="ik-btn" data-ik="clear" title="${te('ink.clear')}">${icon('delete_sweep')}</button>` +
+    // a phone with a pen as the tablet for this pen (3.3, js/tablet.js pairPhoneNow), lit while one is paired
+    (window.mbPad ? `<button class="ik-btn${inkPadPaired() ? ' on' : ''}" data-ik="phone" title="${te(inkPadPaired() ? 'ink.phoneOn' : 'ink.phone')}">${icon('smartphone')}</button>` : '') +
     `<button class="ik-btn ik-done" data-ik="done" title="${te('ink.done')}">${icon('check')}</button>`;
   // on the press, not the click — see onPress() in helpers.js
   bar.querySelectorAll('[data-tool]').forEach((el) => onPress(el, () => setPen({ tool: el.dataset.tool })));
@@ -286,6 +289,7 @@ function buildInkBar() {
     else if (act === 'layer') toggleInkLayer();
     else if (act === 'clear') clearInk();
     else if (act === 'delsel') deleteInkSelection();
+    else if (act === 'phone') pairPhoneNow();
   }));
 }
 function toggleInkLayer() {

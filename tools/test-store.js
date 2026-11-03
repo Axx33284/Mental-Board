@@ -193,7 +193,51 @@ const fakeSdocx = require('./fake-sdocx.js');
     assert.ok(store.snapshot('a1', '{}', '2026-01-20').skipped);
   });
 
-  await test('a 1.x board.json migrates once, files and links included', ({ store, root, boards }) => {
+  await test('two boards with one name keep their own daily snapshots', ({ store, boards }) => {
+    store.saveAll({ boards: [board('a1', 'Ideas'), Object.assign(board('b2', 'Ideas'), { group: 'Work' })] });
+    const a = store.snapshot('a1', '{"v":"A"}', '2026-11-02');
+    const b = store.snapshot('b2', '{"v":"B"}', '2026-11-02');
+    assert.ok(a.ok && !a.skipped, 'the first board snapshots');
+    assert.ok(b.ok && !b.skipped, 'the second is not skipped as if it were the first');
+    assert.strictEqual(read(path.join(boards, 'Backups', 'Ideas', '2026-11-02.json')).v, 'A');
+    assert.strictEqual(read(path.join(boards, 'Backups', 'Work', 'Ideas', '2026-11-02.json')).v, 'B');
+  });
+
+  await test('a quit save that lands during a debounced one is not written over by it', async ({ store, boards }) => {
+    store.saveAll({ boards: [board('a1', 'Ideas', { v: 0 })] });
+    // the debounced write goes off-thread with the older bytes…
+    const older = store.saveAllAsync({ boards: [board('a1', 'Ideas', { v: 1 })] });
+    // …and Quit's blocking write arrives before it has renamed, with the newer
+    const r = store.saveAll({ boards: [board('a1', 'Ideas', { v: 2 })] });
+    assert.ok(r.ok);
+    const a = await older;
+    assert.ok(a.ok, 'the overtaken write is not reported as a failure');
+    assert.strictEqual(read(path.join(boards, 'Ideas', 'board.json')).v, 2);
+    assert.ok(!fs.existsSync(path.join(boards, 'Ideas', 'board.json.async.tmp')), 'its scratch file is gone');
+    // and an async write with nothing overtaking it still lands
+    await store.saveAllAsync({ boards: [board('a1', 'Ideas', { v: 3 })] });
+    assert.strictEqual(read(path.join(boards, 'Ideas', 'board.json')).v, 3);
+  });
+
+  await test('a file: URL naming another machine is never loaded, opened or revealed', ({ store }) => {
+    for (const u of ['file://evil.example/share/a.png', 'file:////evil.example/share/a.png',
+                     'file:///%5C%5Cevil.example/share/a.png', 'file:\\\\evil.example\\share\\a.png',
+                     'FILE://Evil.Example/x']) {
+      assert.ok(store.isRemoteFileUrl(u), u + ' is remote');
+      assert.strictEqual(store.pathOfUrl(u), '', u + ' has no path to open');
+    }
+    for (const u of ['file:///C:/Users/me/Documents/a.pdf', 'file://localhost/C:/a.png', 'file:///home/me/a.png',
+                     'mbf://a1/x.png', 'https://example.com/a.png']) {
+      assert.ok(!store.isRemoteFileUrl(u), u + ' is not remote');
+    }
+    // a Documents redirected to a server is the user's own, and stays usable
+    store.trustShares(['\\\\fileserver\\users\\me\\Documents']);
+    assert.ok(!store.isRemoteFileUrl('file://fileserver/users/me/Documents/My%20Boards/x.png'));
+    assert.ok(store.isRemoteFileUrl('file://fileserver/users/someone-else/x.png'));
+    assert.ok(store.isRemoteFileUrl('file://fileserver/users/me/Documents-not/x.png'));
+  });
+
+  await test('a 1.x board.json migrates once, files and links included',({ store, root, boards }) => {
     const old = path.join(root, 'appdata');
     fs.mkdirSync(path.join(old, 'files', 'b1'), { recursive: true });
     fs.writeFileSync(path.join(old, 'files', 'b1', 'cat.png'), 'meow');

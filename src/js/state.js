@@ -137,13 +137,9 @@ function syncActiveBoard() {
    and the Settings word count all call syncActiveBoard(), so opening any of
    them marked the board as freshly updated.
 
-   Stamping is now something a caller asks for, and writeNow() is the one that
-   asks — after it has compared, so it only ever fires when something really
-   did change. */
-function touchActiveBoard() {
-  const b = activeBoard();
-  if (b && !isLocked(b)) b.updatedAt = Date.now();
-}
+   Stamping is now done in one place, writeNow(), after it has compared — so it
+   only ever fires when something really did change. (The helper that once did
+   it, touchActiveBoard(), had no caller left and is gone, 3.3.) */
 
 function defaults() {
   const first = makeBoard('', 'sticky_note_2');
@@ -247,7 +243,7 @@ function defaults() {
          PDF page is drawn ('sharp' or 'quick'). What a new notebook is: its
          paper, its page ('a4' 'letter' 'square' 'wide') and how many pages. */
       skGuide: 'dots', inkPressure: true, skSmooth: 'off',
-      // the cursor glides as you type, as Word's does (3.1.1, editor.js placeCaret)
+      // the cursor glides as you type, as Word's does (3.1.1, editor.js paintCaret)
       smoothCaret: true,
       bookView: 'book', bookTurnFx: 'curl', bookSpeed: 'normal', bookDrag: true, bookWheel: true,
       bookFull: true, bookNumbers: true, bookQuality: 'sharp',
@@ -264,6 +260,7 @@ function defaults() {
          a YouTube link for 'youtube', and how it sits — opacity, a darkening
          veil, blur, how much rain or snow, and whether the video has sound. */
       wpKind: 'none', wpUrl: '', wpOpacity: 100, wpDim: 25, wpBlur: 0, wpAmount: 60, wpSound: false, wpGrid: true,
+      wpVolume: 50, wpDepth: true,       // 3.3: the drawn kinds' own sound, and their layers moving apart
       /* the face the app is set in (3.0.1, mental.css §84): 'clean' — the
          reference's Neue Frutiger and Univers Condensed — 'typewriter', or 'system' */
       uiFont: 'clean',
@@ -949,6 +946,8 @@ function adopt(raw, keepSettings) {
   st.wpBlur = clamp(Math.round(+st.wpBlur || 0), 0, 20);
   st.wpAmount = clamp(Math.round(+st.wpAmount || 0), 5, 100);
   st.wpSound = !!st.wpSound;
+  st.wpVolume = clamp(Math.round(Number.isFinite(+st.wpVolume) ? +st.wpVolume : 50), 0, 100);
+  st.wpDepth = st.wpDepth !== false;
   st.wpGrid = st.wpGrid !== false;
   if (!['clean', 'typewriter', 'system'].includes(st.uiFont)) st.uiFont = 'clean';
   {

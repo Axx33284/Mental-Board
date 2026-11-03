@@ -41,12 +41,16 @@ const PAD = window.mbPad || null;
 let padInfo = { state: 'off' };    // the last state main reported
 const padLive = new Map();         // phone stroke id -> a stroke being drawn, an eraser sweep, or a select gesture
 const padMine = [];                // ids of the strokes this pairing drew, for the phone's undo
+const padUndone = [];              // the phone's strokes its undo took back, newest last, for its redo (3.3)
 let padViewSent = '';
 let padViewTimer = 0;
 let padSize = { a: 0.5, px: 1080 }; // the phone's drawing area: aspect and device-pixel width
 let padNav = 0;                    // the last of the phone's pans and zooms applied here
 let padK = 0;                      // the last of the phone's strokes finished here
-const padShot = { n: 0, busy: false, dirty: false, last: 0, timer: 0, wait: 0 };
+const padShot = { n: 0, busy: false, dirty: false, last: 0, timer: 0, due: 0, wait: 0, changed: 0, settle: 0 };
+/* How long the board has to be still before a picture is taken sharp, and how
+   far apart pictures are while the phone's pen is drawing (3.3, MAP.md §4x). */
+const PAD_STILL_MS = 300, PAD_PEN_GAP_MS = 450, PAD_GAP_MS = 90;
 
 const padOn = () => padInfo.state === 'connected';
 
@@ -86,7 +90,14 @@ function onPadState(st) {
        asks for a picture: identical ones are dropped in main, so this only
        ever sends something a change missed (a picture finishing loading, a
        theme fading). */
-    padViewTimer = setInterval(() => { sendPadView(); paintPadArea(); padDirty(); }, 1000);
+    /* With a live wallpaper behind the board, no two pictures are ever the
+       same, so this tick alone would send the phone one every second; it asks
+       every third second instead (3.3, js/wallpaper.js wpAnimating). */
+    let tick = 0;
+    padViewTimer = setInterval(() => {
+      sendPadView(); paintPadArea();
+      if (!(typeof wpAnimating === 'function' && wpAnimating()) || ++tick % 3 === 0) padDirty(true);
+    }, 1000);
     paintPadArea();
     padDirty();
   }
@@ -97,11 +108,26 @@ function onPadState(st) {
     paintPadArea();
   }
   if (st.state === 'off') {
-    padMine.length = 0;
+    padMine.length = 0; padUndone.length = 0;
     padNav = padK = 0;
     if (was === 'connected' || was === 'away') toast(t('pad.toastOff'));
   }
   paintPadPanel();
+}
+
+/* The way in (3.3). Pairing lived three clicks deep, in Settings ▸ Extra; the
+   pen bar's phone button and the palette's "Pair a phone" open that panel
+   with the pairing already started, so the code is on screen at once. With a
+   phone already paired it is just the panel — its status, and Stop. */
+async function pairPhoneNow() {
+  if (!PAD) { toast(t('msg.needDesktop')); return; }
+  openSettings();
+  showSetTab('extra');
+  if (padInfo.state === 'off') await startPad();
+  // the code itself, once it is there — the row above it left the code half under the panel's edge
+  const box = $('padBox'), row = $('padBtn') && $('padBtn').closest('.set-row');
+  const at = box && !box.classList.contains('hidden') ? box : row;
+  if (at) requestAnimationFrame(() => at.scrollIntoView({ block: 'center', behavior: motionReduced() ? 'auto' : 'smooth' }));
 }
 
 /* ---- the panel in Settings ▸ Extra ---- */
@@ -110,6 +136,8 @@ function paintPadPanel() {
   const on = st !== 'off';
   $('padBtnLabel').textContent = t(on ? 'set.padStop' : 'set.padStart');
   $('padBox').classList.toggle('hidden', !on);
+  const ib0 = document.querySelector('#inkBar [data-ik="phone"]');
+  if (ib0) { ib0.classList.toggle('on', on); ib0.title = t(on ? 'ink.phoneOn' : 'ink.phone'); }
   if (!on) { $('padQr').textContent = ''; return; }
   if (padInfo.qr && $('padQr').dataset.url !== padInfo.url) {
     $('padQr').innerHTML = qrSvg(padInfo.qr);
@@ -120,6 +148,9 @@ function paintPadPanel() {
   const status = st === 'connected' ? t('pad.connected', { device: padInfo.device || '—' })
     : st === 'away' ? t('pad.away') : t('pad.waiting');
   $('padStatus').textContent = status;
+  // the pen bar's phone button is lit while a phone is paired (ink.js buildInkBar)
+  const ib = document.querySelector('#inkBar [data-ik="phone"]');
+  if (ib) { ib.classList.toggle('on', on); ib.title = t(on ? 'ink.phoneOn' : 'ink.phone'); }
   const addrs = padInfo.addresses || [];
   $('padAddrRow').classList.toggle('hidden', addrs.length < 2 || st === 'connected');
   const sel = $('padAddr');
@@ -181,8 +212,12 @@ function padRect() {
    the rectangle never contain it. */
 function paintPadArea() {
   let el = $('padArea');
-  if (!padOn()) { if (el) el.classList.add('hidden'); return; }
+  /* While the phone is away — asleep, most often (3.3) — the outline stays,
+     dashed: the pairing is alive and the phone will land in the same place. */
+  const away = padInfo.state === 'away';
+  if (!padOn() && !away) { if (el) el.classList.add('hidden'); return; }
   if (!el) { el = document.createElement('div'); el.id = 'padArea'; el.setAttribute('aria-hidden', 'true'); }
+  el.classList.toggle('away', away);
   if (el.parentNode !== padLayer()) padLayer().appendChild(el);
   const r = padHost().r, p = padRect();
   el.style.left = r.left + p.x + 'px'; el.style.top = r.top + p.y + 'px';
@@ -190,11 +225,38 @@ function paintPadArea() {
   el.classList.remove('hidden');
 }
 
-/* ---- the pictures ---- */
-function padDirty() {
+/* ---- the pictures ----
+   `idle` is the once-a-second tick asking in case a change was missed; every
+   other caller is a change. Two things changed in 3.3:
+
+   - **Sharp when still.** A picture taken while the board has been still for
+     PAD_STILL_MS is asked for as `still` (main encodes it at quality 90, not
+     70), and a change schedules one such picture for just after it settles.
+     The idle tick asks for `still` too, so it matches the last picture and
+     main's hash sends nothing.
+   - **The pen has the network to itself.** While the phone is drawing a line
+     — which it already shows, under the pen — pictures are PAD_PEN_GAP_MS
+     apart instead of PAD_GAP_MS: each one is a capture and an encode on main,
+     the thread that reads the pen's socket, and Wi-Fi airtime the pen's own
+     messages wait behind. The eraser and the arrow keep the fast pace,
+     because the phone sees what they do only in the pictures. A picture is
+     taken the moment the pen lifts. */
+const padDrawing = () => { for (const k of padLive.values()) if (!k.pick && !k.erase && !k.E) return true; return false; };
+function padDirty(idle) {
   if (!padOn()) return;
   padShot.dirty = true;
-  if (!padShot.timer) padShot.timer = setTimeout(padPump, Math.max(0, 90 - (performance.now() - padShot.last)));
+  if (!idle) {
+    padShot.changed = performance.now();
+    clearTimeout(padShot.settle);
+    padShot.settle = setTimeout(() => padDirty(true), PAD_STILL_MS + 20);
+  }
+  // a picture already waiting comes sooner if it should (the pen just lifted), never later
+  const now = performance.now();
+  const due = Math.max(now, padShot.last + (padDrawing() ? PAD_PEN_GAP_MS : PAD_GAP_MS));
+  if (padShot.timer && due >= padShot.due - 1) return;
+  clearTimeout(padShot.timer);
+  padShot.due = due;
+  padShot.timer = setTimeout(padPump, due - now);
 }
 async function padPump() {
   padShot.timer = 0;
@@ -211,10 +273,11 @@ async function padPump() {
   await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
   const r = padHost().r, p = padRect();
   const n = ++padShot.n;
+  const q = performance.now() - padShot.changed >= PAD_STILL_MS ? 'still' : 'move';
   let res = null;
-  try { res = await PAD.frame({ n, nav: padNav, k: padK, rect: { x: r.left + p.x, y: r.top + p.y, width: p.w, height: p.h } }); } catch (_) {}
+  try { res = await PAD.frame({ n, nav: padNav, k: padK, q, rect: { x: r.left + p.x, y: r.top + p.y, width: p.w, height: p.h } }); } catch (_) {}
   if (ring) ring.style.visibility = '';
-  if (!res || !res.sent) { padShot.busy = false; if (padShot.dirty) padDirty(); return; }
+  if (!res || !res.sent) { padShot.busy = false; if (padShot.dirty) padDirty(true); return; }
   // sent: wait for the phone to say it has it, but never for ever
   clearTimeout(padShot.wait);
   padShot.wait = setTimeout(() => padGot(n), 1500);
@@ -223,7 +286,7 @@ function padGot(n) {
   if (n !== padShot.n) return;
   clearTimeout(padShot.wait);
   padShot.busy = false;
-  if (padShot.dirty) padDirty();
+  if (padShot.dirty) padDirty(true);
 }
 
 /* ---- what the phone is told: whether it may draw, the colours, the selection ---- */
@@ -301,6 +364,8 @@ function onPadMessage(m) {
     else if (kind === 'book') bookUndo(true);
     else padUndo();
   }
+  // the editors keep no redo of their own, so the phone's redo is the board's
+  else if (m.t === 'redo') { if (padHost().kind === 'board') padRedo(); }
   else if (m.t === 'sel') padSelection(m);
   else if (m.t === 'sticky') padSticky(m);
   // the phone's arrows turn a book's pages
@@ -417,6 +482,7 @@ function endPadStroke(id) {
   pushUndoInk();
   state.ink.push(k.s);
   padMine.push(k.s.id);
+  padUndone.length = 0;
   drawInk(); updateEmpty(); saveSoon();
 }
 /* The eraser from the phone: whole strokes, along the whole sweep, as in
@@ -485,10 +551,29 @@ function padUndo() {
   if (!padCanDraw()) return;
   while (padMine.length) {
     const id = padMine.pop();
-    if (!state.ink.some((s) => s.id === id)) continue;
+    const s = state.ink.find((x) => x.id === id);
+    if (!s) continue;
     pushUndoInk();
-    state.ink = state.ink.filter((s) => s.id !== id);
+    state.ink = state.ink.filter((x) => x.id !== id);
     inkPathCache.delete(id);
+    padUndone.push({ s, board: state.activeBoard });
+    drawInk(); updateEmpty(); saveSoon();
+    return;
+  }
+}
+/* The phone's redo (3.3): the stroke its undo took back last, put back as it
+   was — same id, same points — as one `ink` step, so Ctrl+Z on the computer
+   takes it away again. Only on the board it came from; a new stroke from the
+   phone forgets what could be redone, as every editor's redo does. */
+function padRedo() {
+  if (!padCanDraw()) return;
+  while (padUndone.length) {
+    const u = padUndone.pop();
+    if (u.board !== state.activeBoard || state.ink.some((x) => x.id === u.s.id)) continue;
+    if (state.ink.length >= INK_MAX) { toast(t('ink.full')); return; }
+    pushUndoInk();
+    state.ink.push(u.s);
+    padMine.push(u.s.id);
     drawInk(); updateEmpty(); saveSoon();
     return;
   }

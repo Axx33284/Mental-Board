@@ -32,6 +32,10 @@ add a feature.**
   beats `tokens.css` because of where its `<link>` sits. Add CSS to the end of
   the last sheet (`mental.css`). Nothing may keep a second copy of either order
   — the checks parse `index.html` through `tools/app-source.js`.
+- **A top-level name in `src/js/` is declared once.** The scripts share one
+  global scope: a second `function foo` silently replaces the first
+  everywhere, and a second `const` stops the later script loading.
+  `npm run check:dupes` enforces it (MAP.md §7).
 - Notes and frames live in **world** coordinates. Never write screen pixels
   into `state`. `toWorld()` / `toScreen()` are the only converters, and
   `toScreen()` is viewport-relative (the titlebar is 38px).
@@ -54,10 +58,21 @@ theoretical.
   error }] }` per board — it never throws, so wrapping it in `try/catch` and
   assuming success is how a silent write failure disabled saving for a whole
   session. See `writeNow()` and `MAP.md` §7.
-- **There is exactly one copy of the built app, at `App/Mental Board.exe`.**
-  No installer, no auto-updater, no portable target, no publish feed, and no
-  shortcut — the build must not create one. Two builds on one machine are not
-  merely confusing: they share the single-instance lock (it is keyed to the
-  pinned userData path), so the older one silently swallows the newer one's
-  launch — it is not inert, it is a running app wearing the new one's launch.
-  If you are tempted to add any of them back, read `MAP.md` §6 first.
+- **There is exactly one copy of the built app on a machine.** For a
+  developer it is `App/Mental Board.exe`; for someone who downloads it, it is
+  `%LOCALAPPDATA%\Programs\Mental Board\Mental Board.exe`. Two downloads
+  put it there, both built from the same `App\` by `tools/build-app.js` on a
+  Windows runner (`.github/workflows/release.yml`) when a `v<version>` tag is
+  pushed: the **setup** (`tools/setup.iss`, built by `tools/build-setup.js`)
+  and the **zip**, put in place by hand (`INSTALL.md`). The setup installs
+  to that one place and no other (no folder page), replaces rather than
+  merges, refuses while the app runs, makes one Start-menu entry to that one
+  path, and uninstalls without touching `Documents\My Boards`; the workflow
+  tests all of that on the runner. No auto-updater, no portable target, no
+  update feed the app reads; `tools/build-app.js` still creates no shortcut.
+  Two builds on one machine are not merely confusing: they share the
+  single-instance lock (it is keyed to the pinned userData path), so the older
+  one silently swallows the newer one's launch — it is not inert, it is a
+  running app wearing the new one's launch. If you are tempted to add any of
+  them back, read `MAP.md` §6 first. If you change `INSTALL.md`'s PowerShell
+  block, the workflow runs it — keep it passing.

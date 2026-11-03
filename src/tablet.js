@@ -15,12 +15,17 @@
 
    - **Off until asked, and it stops by itself.** Nothing listens until Pair is
      pressed. It stops on Stop, when the app quits or the window reloads, five
-     minutes after pairing began if nobody scanned, and a minute after the
-     phone drops off if it does not come back.
+     minutes after pairing began if nobody scanned, and thirty minutes after
+     the phone drops off if it does not come back (3.3: it was one minute, and
+     a phone's screen goes dark after thirty seconds — every pause to think
+     ended the pairing). The door stays shut to anything but `resume` below.
    - **One phone, one use of the token.** The token in the QR code is 128 random
      bits and opens exactly one WebSocket; the socket that used it is given a
      second secret, `resume`, which is the only way back in after a drop. A
-     photo of the QR code taken after the phone paired opens nothing.
+     photo of the QR code taken after the phone paired opens nothing. A socket
+     that presents `resume` while the old one still looks open replaces it:
+     only that phone holds the secret, and the old socket is what a phone
+     that slept leaves behind (half open, silent until SILENT_MS).
    - **Bound to one LAN address, and private peers only.** Never 0.0.0.0, and a
      connection from anything but 10/8, 172.16/12, 192.168/16 or loopback is
      closed before a byte is read.
@@ -52,7 +57,7 @@ const path = require('path');
 const qr = require('./qr.js');
 
 const PAIR_MS = 5 * 60 * 1000;      // to scan the code, from Pair
-const RESUME_MS = 60 * 1000;        // for a phone that dropped off to come back
+const RESUME_MS = 30 * 60 * 1000;   // for a phone that dropped off — or slept — to come back
 const SILENT_MS = 15 * 1000;        // a socket this quiet is gone (the page pings every 2 s)
 const MAX_FRAME = 64 * 1024;
 const MAX_RATE = 500;               // messages a second; a pen at 240 Hz sends half that
@@ -148,6 +153,8 @@ function clean(m) {
       return f == null || x == null || y == null ? null : { t: 'zoom', f, x, y, n: int(m.n, 1e9) || 0 };
     }
     case 'undo': return { t: 'undo' };
+    // a three-finger tap: the phone's own last undone stroke back (3.3)
+    case 'redo': return { t: 'redo' };
     // a sticky note written on the phone, and where it was tapped (3.1.1)
     case 'sticky': {
       const x = num(m.x, -0.5, 1.5), y = num(m.y, -0.5, 1.5);
@@ -325,9 +332,19 @@ function onUpgrade(me, req, sock) {
      way there is never a second socket while one is open. */
   let first = false;
   const m = /^\/ws\/(r\/)?([0-9a-f]{32})$/.exec(url);
-  if (!m || me.sock) return refuse(sock, 403);
+  if (!m) return refuse(sock, 403);
   if (m[1]) { if (!me.resume || !same(m[2], me.resume)) return refuse(sock, 403); }
-  else { if (me.resume || !same(m[2], me.token)) return refuse(sock, 403); first = true; }
+  else { if (me.sock || me.resume || !same(m[2], me.token)) return refuse(sock, 403); first = true; }
+  /* The phone that holds `resume`, back while its old socket still looks open
+     here: a phone that slept leaves one half open, silent until SILENT_MS.
+     The new one wins (3.3) — it is the same phone, and only it has the secret.
+     The old one is let go without the "away" that a real drop would cause. */
+  if (me.sock) {
+    const old = me.sock;
+    me.sock = null;
+    clearInterval(me.silentTimer);
+    try { old.destroy(); } catch (_) {}
+  }
 
   const accept = crypto.createHash('sha1').update(key + WS_GUID).digest('base64');
   sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
@@ -405,7 +422,9 @@ function sendFrame(meta, jpeg) {
   const hash = jpeg ? crypto.createHash('sha1').update(jpeg).digest('hex') : '';
   const img = !!jpeg && hash !== pad.lastFrame;
   if (img) pad.lastFrame = hash;
-  const m = { t: 'frame', n: int(meta && meta.n, 1e9) || 0, nav: int(meta && meta.nav, 1e9) || 0, k: int(meta && meta.k, 1e9) || 0, img };
+  // `q`: a picture taken while the board moved, or once it was still and sharp (3.3)
+  const m = { t: 'frame', n: int(meta && meta.n, 1e9) || 0, nav: int(meta && meta.nav, 1e9) || 0, k: int(meta && meta.k, 1e9) || 0, img,
+    q: meta && meta.q === 'still' ? 'still' : 'move' };
   wsSend(pad.sock, JSON.stringify(m));
   if (img) wsBinary(pad.sock, jpeg);
   return { sent: img };

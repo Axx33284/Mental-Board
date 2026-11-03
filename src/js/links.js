@@ -102,6 +102,27 @@ function anchor(rect, to) {
   return { x: cx + dx * s, y: cy + dy * s };
 }
 
+/* Two top pins in a column (see ropePath): the way round, never through.
+   Each card is approached from above — the upper one 26px over its pin, the
+   lower one in the gap between the two when that gap is tighter than that —
+   and the side run sits 30px past the wider card's right edge. */
+function ropeAround(p1, p2, a, b) {
+  const lower = a.y > b.y ? a : b, upper = lower === a ? b : a;
+  const gapMid = (upper.y + upper.h + lower.y) / 2;
+  const level = (r) => (r === upper ? r.y - 32 : Math.max(r.y - 32, gapMid));
+  const xr = Math.max(a.x + a.w, b.x + b.w) + 30;
+  const pts = [p1, { x: p1.x, y: level(a) }, { x: xr, y: level(a) }, { x: xr, y: level(b) }, { x: p2.x, y: level(b) }, p2];
+  let d = `M ${p1.x} ${p1.y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const q = pts[i - 1], p = pts[i], n = pts[i + 1];
+    const lin = Math.hypot(p.x - q.x, p.y - q.y) || 1, lout = Math.hypot(n.x - p.x, n.y - p.y) || 1;
+    const r = Math.min(40, lin / 2, lout / 2);
+    d += ` L ${p.x + (q.x - p.x) * r / lin} ${p.y + (q.y - p.y) * r / lin}` +
+         ` Q ${p.x} ${p.y}, ${p.x + (n.x - p.x) * r / lout} ${p.y + (n.y - p.y) * r / lout}`;
+  }
+  return d + ` L ${p2.x} ${p2.y}`;
+}
+
 /* The path between two anchor points, in the shape the user picked. */
 function ropePath(p1, p2, a, b) {
   const style = corkMode() ? 'thread' : state.settings.linkStyle;
@@ -131,15 +152,18 @@ function ropePath(p1, p2, a, b) {
        line that overshoots above the higher pin — a stray tail sticking out of
        the top of the note. Bow it out to the side instead, far enough to clear
        the wider of the two cards, so the rope goes around rather than through.
-       `bow` is the half-width of the widest note plus a margin, which is why
-       the rects are passed in rather than just their pins. */
+
+       It used to be one cubic bowed out by half the wider card plus 46px. A
+       cubic only reaches three quarters of its control offset and leaves the
+       pin heading down and out, so it ran through the upper card's body — and
+       the ropes of a selected note are drawn over the notes (#ropesTop), so it
+       struck through the note's own text. Now it is a route with round
+       corners: up off the pin, across above the card, down past the wider
+       card's edge, back across in the gap above the lower card, and down onto
+       its pin. It cannot enter either card, which is why the rects are passed
+       in rather than just their pins. */
     const dxs = p2.x - p1.x;
-    if (Math.abs(dxs) < 30) {
-      const bow = Math.max(a.w, b.w) / 2 + 46;
-      const c1y = p1.y + (p2.y - p1.y) * 0.15;
-      const c2y = p1.y + (p2.y - p1.y) * 0.85;
-      return `M ${p1.x} ${p1.y} C ${p1.x + bow} ${c1y}, ${p2.x + bow} ${c2y}, ${p2.x} ${p2.y}`;
-    }
+    if (Math.abs(dxs) < 30 && a && b) return ropeAround(p1, p2, a, b);
     const top = Math.min(p1.y, p2.y) - lift;
     return `M ${p1.x} ${p1.y} C ${p1.x} ${top}, ${p2.x} ${top}, ${p2.x} ${p2.y}`;
   }

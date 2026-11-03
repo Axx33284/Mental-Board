@@ -1,10 +1,10 @@
 @echo off
 :: Builds the app into ..\App. It makes no shortcuts and touches none:
 ::
-:: This is the only way the app gets updated now. There is no installer, no
-:: Add/Remove Programs entry, and nothing downloads a new version behind your
-:: back. You edit the files in this project, you run this, and the thing you
-:: double-click is that code.
+:: This is how a build from source gets updated. Nothing downloads a new
+:: version behind your back: you edit the files in this project, you run this,
+:: and the thing you double-click is that code. (Build Setup.cmd packs this
+:: same App\ into the setup file other people install from.)
 ::
 :: App\ is DELETED and rebuilt every time rather than written over, because a
 :: file left behind by an older build is exactly what makes a new build behave
@@ -12,7 +12,7 @@
 :: minute it was built, and the version also sits in the titlebar — so "is this
 :: really the build I just made?" is always answerable.
 ::
-:: Your notes live in %APPDATA%\Mental Board and are never touched by a build.
+:: Your boards live in Documents\My Boards and are never touched by a build.
 title Build Mental Board
 cd /d "%~dp0.."
 

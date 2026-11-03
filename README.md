@@ -23,7 +23,27 @@ can make sounds and your typing can sound like a mechanical keyboard (Settings �
 machine, the accent defaults to white on dark and black on light, and a theme
 change fades.
 
+**3.3**, the latest, installs with a setup file (one place, no administrator,
+replaced on update, uninstalled without touching your boards); keeps a paired
+phone through a sleep, redoes as well as undoes from it, and sends it sharper
+pictures that keep out of the pen's way; turns the live wallpaper into a
+place — depth as the pointer leans and the board pans, a city behind fogged
+glass, a new night sky with an aurora, and their own sound, made as it plays;
+and runs on Electron 44.
+
 ![the board](src/assets/icon.png)
+
+## Download and install
+
+**Just want to use it?** Download **`Mental-Board-Setup-<version>.exe`**
+from [Releases](https://github.com/axx33284/mental-board/releases/latest) and
+run it — no administrator needed. It puts the app in its one folder,
+`%LOCALAPPDATA%\Programs\Mental Board`, adds it to the Start menu, and on
+the next version replaces it. Your boards stay in `Documents\My Boards`.
+Rather not run a setup? The same release has the app as a zip; follow
+**[INSTALL.md](INSTALL.md)**.
+
+The rest of this section is for running it from the source.
 
 ## Getting it running
 
@@ -63,8 +83,13 @@ double-click is always the code in this folder.
 version sits in the titlebar, so you can always confirm you are looking at the
 build you just made.
 
-Nothing downloads anything. There is no installer, no auto-updater and no
-release feed, and that is deliberate.
+The app itself never downloads anything. There is no auto-updater, and that
+is deliberate. The downloads are the release's setup file and zip (see
+[INSTALL.md](INSTALL.md)): the same `App\` folder, built by
+`.github/workflows/release.yml` on Windows when a version tag is pushed, put
+in its one place by the setup or by hand. Use either a download or a build
+from source on one machine, never both. To build the setup yourself, after
+`npm run build`: `npm run setup` (needs Inno Setup 6).
 
 > **What went wrong in 1.3.** It shipped an NSIS installer, a portable exe that
 > self-extracted to `%TEMP%` on every launch, and an auto-updater that staged a

@@ -72,7 +72,9 @@ const IGNORE = [
   /* Claude Code's own folder: settings, and the git worktrees of side sessions,
      each a whole second copy of the project with a node_modules link inside. */
   /^\/\.claude($|\/)/,
-  /^\/(MAP|README|CLAUDE)\.md$/, /^\/\.gitattributes$/, /^\/\.gitignore$/,
+  /^\/(MAP|README|CLAUDE|INSTALL|REVIEW)\.md$/, /^\/\.gitattributes$/, /^\/\.gitignore$/,
+  // the release workflow (MAP.md §6) — it builds the app, it is not part of it
+  /^\/\.github($|\/)/,
   /^\/package-lock\.json$/, /\.map$/,
   /* prune leaves this behind. It is only npm's own bookkeeping, and there are
      no runtime dependencies for it to describe. node_modules itself is NOT

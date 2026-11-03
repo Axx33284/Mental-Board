@@ -234,8 +234,9 @@ async function run() {
     const expected = [
       /broken\.avi|DEMUXER|MEDIA_ELEMENT_ERROR|Format error/i,                // the clip that cannot play
       /ERR_FILE_NOT_FOUND.*mbf|mbf:\/\/.*(404|ERR_)/i,
-      // the writes the save tests make fail on purpose (a directory where board.json goes)
-      /^console\.error: board save failed: (boom|EPERM: operation not permitted, rename .*board\.json(\.async)?\.tmp')/
+      // the writes the save tests make fail on purpose (a directory where board.json goes):
+      // Windows says EPERM, Linux and macOS say EISDIR
+      /^console\.error: board save failed: (boom|(EPERM: operation not permitted|EISDIR: illegal operation on a directory), rename .*board\.json(\.async)?\.tmp')/
     ];
     const real = pageErrors.filter((e) => !expected.some((re) => re.test(e)));
     ok(!real.length, real.join('\n       '));
@@ -374,7 +375,8 @@ async function quitSuite() {
     seed();
     PORT = await freePort();
     const electron = require('electron');            // the path to the binary, from node
-    child = spawn(electron, ['.', `--user-data-dir=${UDD}`, `--remote-debugging-port=${PORT}`], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
+    // --pad-host: the phone's server on loopback, so a test can be the phone (main.js PAD_TEST_HOST)
+    child = spawn(electron, ['.', `--user-data-dir=${UDD}`, `--remote-debugging-port=${PORT}`, '--pad-host=127.0.0.1'], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
     await connect();
     await send('Runtime.enable');
     await send('Log.enable');

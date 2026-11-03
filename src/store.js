@@ -110,8 +110,21 @@ function parseFileUrl(url) {
 
 /* Atomic writes. Two scratch names, because the sync writer (the way out) and
    the async one (every other save) can overlap on the same file; each renames
-   its own tmp, and the last rename — the sync one, with the newer bytes —
-   wins. */
+   its own tmp.
+
+   The sync write always carries the newer bytes — the renderer builds it after
+   the async one, from everything not yet landed — but it does NOT always
+   rename last. It runs whole inside one IPC handler, so an async write that
+   was mid-`await` when it arrived resumes afterwards and renames its older tmp
+   over the top: Quit during a debounced save put the board on disk as it was a
+   few seconds earlier (3.3). So every sync write stamps its file in
+   `syncWrites` with the next `writeSeq`, and an async write throws its tmp
+   away instead of renaming it when its file was stamped after the save was
+   *asked for* — not after it started: one still queued behind the last
+   async save starts after the sync one has already landed. */
+const syncWrites = new Map();
+let writeSeq = 0;
+const writeKey = (file) => path.resolve(file).toLowerCase();
 function writeAtomic(file, text) {
   const tmp = file + '.tmp';
   const bak = file.replace(/\.json$/, '.bak.json');
@@ -120,19 +133,27 @@ function writeAtomic(file, text) {
     fs.writeFileSync(tmp, text, 'utf8');
     try { if (exists(file)) fs.copyFileSync(file, bak); } catch (_) {}
     fs.renameSync(tmp, file);
+    syncWrites.set(writeKey(file), ++writeSeq);
     return { ok: true };
   } catch (err) {
     try { fs.rmSync(tmp, { force: true }); } catch (_) {}
     return { ok: false, error: errMsg(err) };
   }
 }
-async function writeAtomicAsync(file, text) {
+async function writeAtomicAsync(file, text, asked) {
   const tmp = file + '.async.tmp';
   const bak = file.replace(/\.json$/, '.bak.json');
+  const k = writeKey(file);
+  // a sync write landed after this save was asked for: its bytes are newer, keep them
+  const overtaken = () => (syncWrites.get(k) || 0) > asked;
+  const drop = async () => { try { await fsp.rm(tmp, { force: true }); } catch (_) {} return { ok: true, superseded: true }; };
   try {
     await fsp.mkdir(path.dirname(file), { recursive: true });
+    if (overtaken()) return { ok: true, superseded: true };
     await fsp.writeFile(tmp, text, 'utf8');
+    if (overtaken()) return drop();
     try { await fsp.copyFile(file, bak); } catch (_) { /* first write */ }
+    if (overtaken()) return drop();
     await fsp.rename(tmp, file);
     return { ok: true };
   } catch (err) {
@@ -306,17 +327,18 @@ function saveAll(payload) {
 }
 let chain = Promise.resolve();
 function saveAllAsync(payload) {
+  const asked = writeSeq;
   const run = async () => {
     const out = { ok: true, errors: [], dirs: {} };
     const p = payload || {};
     if (typeof p.settings === 'string') {
-      const r = await writeAtomicAsync(settingsFile(), p.settings);
+      const r = await writeAtomicAsync(settingsFile(), p.settings, asked);
       if (!r.ok) { out.ok = false; out.errors.push({ id: '', error: r.error }); }
     }
     for (const b of (Array.isArray(p.boards) ? p.boards : [])) {
       const d = ensureDir(b.id, b.name, b.group);      // sync, but it is one mkdir/rename
       if (!d.dir) { out.ok = false; out.errors.push({ id: b.id, error: d.error || '?' }); continue; }
-      const r = await writeAtomicAsync(path.join(d.dir, BOARD), b.json);
+      const r = await writeAtomicAsync(path.join(d.dir, BOARD), b.json, asked);
       if (!r.ok) { out.ok = false; out.errors.push({ id: b.id, error: r.error }); }
       out.dirs[b.id] = d.dir;
     }
@@ -329,11 +351,21 @@ function saveAllAsync(payload) {
 /* ---------- snapshots ----------
    Backups\<Board name>\<day>.json — one per board per day, newest 14 kept —
    and Backups\<Board name>\before-<version>.json, kept apart so it never
-   ages out. Keyed by the folder's current name so a person can find it. */
+   ages out. Keyed by the folder's current name so a person can find it.
+
+   A board inside a group is Backups\<Group>\<Board name>\ — the same path it
+   has under My Boards, which is unique by construction. It used to be the
+   board's folder name alone, so "Ideas" and "Work ▸ Ideas" shared one folder:
+   whichever saved first each day took the day's file, the other's snapshot
+   came back `skipped` (a success), and the two pruned each other's fourteen
+   days (3.3). A top-level board keeps the folder it always had. */
 const KEEP_DAYS = 14;
 function snapshotDir(id) {
   const d = boardDir(id);
-  return path.join(backupsDir(), d ? path.basename(d) : idSeg(id));
+  if (!d) return path.join(backupsDir(), idSeg(id));
+  const rel = path.relative(root, d);
+  const safe = rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : path.basename(d);
+  return path.join(backupsDir(), safe);
 }
 function snapshot(id, json, day) {
   try {
@@ -499,12 +531,62 @@ function readImage(url) {
     return `data:${mime};base64,` + fs.readFileSync(p).toString('base64');
   } catch (_) { return null; }
 }
+/* A file: URL that names another machine — `file://server/share/x`, or the
+   four-slash and backslash spellings Windows also reads as \\server\share.
+
+   Loading one is not reading a file. Windows answers it by opening an SMB
+   connection to that server and offering the signed-in user's NTLM
+   credentials, so a board somebody mailed you — or a pasted web page — with
+   `<img src="file://their-server/x.png">` in a note hands them a crackable
+   hash of your Windows password the moment the note is drawn. Main refuses
+   every such load (main.js, the file: guard before createWindow) and
+   pathOfUrl() below will not open or reveal one. A link to a document on
+   this machine is unaffected (3.3). */
+/* The network path a file: URL names, as `//server/share/...` in lower case
+   with forward slashes — or '' when it names this machine. */
+function remoteOf(url) {
+  const u = String(url || '');
+  if (!/^file:/i.test(u)) return '';
+  let x;
+  try { x = new URL(u); } catch (_) { return '//?'; }
+  let p = x.pathname || '';
+  try { p = decodeURIComponent(p); } catch (_) { return '//?'; }
+  p = p.replace(/\\/g, '/');
+  const host = (x.hostname || '').toLowerCase();
+  if (host && host !== 'localhost') return ('//' + host + p).toLowerCase();
+  // file:////server/share and file:///\\server\share are \\server\share too
+  if (/^\/{2,}[^/]/.test(p)) return ('//' + p.replace(/^\/+/, '')).toLowerCase();
+  // file:\\server, file:/\server — no URL parser should be trusted to read those the same way twice
+  if (/^file:[\\/]?\\/i.test(u)) return '//?';
+  return '';
+}
+/* Folders on a share that are this user's own — a Documents (and so My
+   Boards) redirected to a server, an app run from one. Main sets them once. */
+let trustedShares = [];
+function trustShares(dirs) {
+  trustedShares = (dirs || []).map((d) => String(d || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase())
+    .filter((d) => /^\/\/[^/]/.test(d));
+}
+function isRemoteFileUrl(url) {
+  const r = remoteOf(url);
+  if (!r) return false;
+  return !trustedShares.some((d) => r === d || r.startsWith(d + '/'));
+}
+const isRemotePath = (p) => {
+  const s = String(p || '').replace(/\\/g, '/').toLowerCase();
+  if (!/^\/\//.test(s)) return false;
+  return !trustedShares.some((d) => s === d || s.startsWith(d + '/'));
+};
+
 // the real path behind an mbf:// or file:// URL, for "show me where it is"
 function pathOfUrl(url) {
   const u = String(url || '');
   const ref = parseFileUrl(u);
   if (ref) return resolveFile(ref.id, ref.name);
-  if (/^file:/i.test(u)) { try { return fileURLToPath(u); } catch (_) { return ''; } }
+  if (/^file:/i.test(u)) {
+    if (isRemoteFileUrl(u)) return '';
+    try { const p = fileURLToPath(u); return isRemotePath(p) ? '' : p; } catch (_) { return ''; }
+  }
   return '';
 }
 
@@ -901,7 +983,7 @@ async function readSamsung(p, id) {
 module.exports = {
   init, rootDir, scan, saveAll, saveAllAsync, snapshot, versionSnapshot,
   boardDir, filesDir, resolveFile, parseFileUrl, fileUrl, safeName,
-  attachFile, attachBytes, listFiles, carryFiles, cleanup, readImage, pathOfUrl,
+  attachFile, attachBytes, listFiles, carryFiles, cleanup, readImage, pathOfUrl, isRemoteFileUrl, trustShares,
   duplicateFiles, removeBoardDir, exportBoard, readExternal, adoptExternalFiles,
   mirrorTo, backupAllTo, tally, reset, migrateLegacy, settingsFile, backupsDir,
   writeCanvas, readCanvas, resolveCanvasFiles, attachBuffer, readSamsung

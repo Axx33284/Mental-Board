@@ -115,6 +115,43 @@ for (const m of html.matchAll(/>([^<>{}]+)</g)) {
   }
 }
 
+/* ---- 5. no key is written twice in a catalogue --------------------------
+   A catalogue is one object literal, and a key written twice is not an error
+   in JavaScript: the later one silently wins, everywhere. `set.padHint` was
+   both the phone pairing's explanation and the note-padding sliders' hint, so
+   Settings ▸ Extra explained the padding sliders where it should have said
+   what the phone is sent (3.3). The keys are read with a small tokenizer that
+   knows strings and comments, not a regex: values hold quotes and colons. */
+function catalogueKeys(text) {
+  const out = [];
+  let i = 0, depth = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; continue; }
+    if (c === '/' && text[i + 1] === '*') { const e = text.indexOf('*/', i + 2); i = e < 0 ? text.length : e + 2; continue; }
+    if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1, str = '';
+      while (j < text.length && text[j] !== c) { if (text[j] === '\\') { str += text[j + 1]; j += 2; continue; } str += text[j++]; }
+      let k = j + 1;
+      while (k < text.length && /\s/.test(text[k])) k++;
+      if (depth === 1 && text[k] === ':') out.push({ key: str, line: text.slice(0, i).split('\n').length });
+      i = j + 1;
+      continue;
+    }
+    if (c === '{' || c === '[' || c === '(') depth++;
+    else if (c === '}' || c === ']' || c === ')') depth--;
+    i++;
+  }
+  return out;
+}
+for (const id of ids) {
+  const seen = new Map();
+  for (const { key, line } of catalogueKeys(fs.readFileSync(path.join(LANG_DIR, id + '.js'), 'utf8'))) {
+    if (seen.has(key)) fail(`${id}.js: '${key}' is written twice (lines ${seen.get(key)} and ${line}) — the second silently wins`);
+    else seen.set(key, line);
+  }
+}
+
 if (bad) {
   console.error(`\n${bad} problem(s).`);
   process.exit(1);
